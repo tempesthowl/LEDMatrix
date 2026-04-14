@@ -154,8 +154,8 @@ class VegasModeConfig:
 
         if self.buffer_ahead < 1:
             errors.append(f"buffer_ahead must be >= 1, got {self.buffer_ahead}")
-        if self.buffer_ahead > 5:
-            errors.append(f"buffer_ahead must be <= 5, got {self.buffer_ahead}")
+        if self.buffer_ahead > 10:
+            errors.append(f"buffer_ahead must be <= 10, got {self.buffer_ahead}")
 
         return errors
 
