@@ -54,15 +54,43 @@
     async function refreshNowShowing() {
         const el = document.getElementById('now-showing-content');
         try {
-            const data = await api('/display/current');
-            const payload = data?.data || {};
-            const plugin = payload.current_plugin || payload.plugin || 'Idle';
-            const title  = payload.title || payload.subtitle || payload.current_mode || '';
-            const prettyPlugin = plugin.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+            const [odRes, gamesRes] = await Promise.allSettled([
+                api('/display/on-demand/status'),
+                api('/games/live'),
+            ]);
+
+            const od = odRes.status === 'fulfilled' ? (odRes.value?.data || {}) : {};
+            const games = gamesRes.status === 'fulfilled' ? (gamesRes.value?.data || {}) : {};
+            const state = od.state || {};
+            const gameModeActive = !!games.game_mode_active;
+
+            let heading = 'Vegas Ticker';
+            let sub = '';
+
+            if (state.active) {
+                const mode = state.mode || '';
+                const plugin = state.plugin || state.plugin_id || '';
+                if (gameModeActive || /game_focus/i.test(mode)) {
+                    heading = 'Game Mode';
+                    // Try to surface the focused game title if present in games list
+                    const focused = (games.games || []).find(g => String(g.game_id) === String(state.game_id));
+                    if (focused) {
+                        sub = `${focused.away_team} ${focused.away_score ?? ''} – ${focused.home_score ?? ''} ${focused.home_team}`;
+                    } else if (state.game_id) {
+                        sub = `Game ${state.game_id}`;
+                    }
+                } else if (plugin) {
+                    heading = plugin.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                    sub = mode || '';
+                } else if (mode) {
+                    heading = mode.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                }
+            }
+
             el.classList.remove('empty');
             el.innerHTML = `
-                <div style="font-size:18px;font-weight:600;">${prettyPlugin}</div>
-                ${title ? `<div style="color:#6b7280;margin-top:4px;">${title}</div>` : ''}
+                <div style="font-size:18px;font-weight:600;">${heading}</div>
+                ${sub ? `<div style="color:#6b7280;margin-top:4px;">${sub}</div>` : ''}
             `;
         } catch (e) {
             el.classList.add('empty');
@@ -108,7 +136,7 @@
         try {
             const data = await api('/config/main');
             const cfg = data?.data || {};
-            autoFocusEnabled = !!(cfg.auto_game_focus ?? cfg.display?.auto_game_focus);
+            autoFocusEnabled = !!(cfg.game_mode?.auto_detect);
             const el = document.getElementById('auto-focus-toggle');
             el.setAttribute('aria-checked', autoFocusEnabled.toString());
         } catch (_) { /* ignore */ }
@@ -119,7 +147,7 @@
         const newValue = !autoFocusEnabled;
         el.setAttribute('aria-checked', newValue.toString());
         try {
-            await api('/config/main', { method: 'POST', body: { auto_game_focus: newValue } });
+            await api('/config/main', { method: 'POST', body: { game_mode: { auto_detect: newValue } } });
             autoFocusEnabled = newValue;
             showToast(newValue ? 'Auto-focus on' : 'Auto-focus off');
         } catch (e) {
