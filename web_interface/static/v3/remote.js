@@ -70,11 +70,43 @@
         }
     }
 
+    // --- Zone: Mode buttons ---
+    let gameModeActive = false;
+
+    async function refreshMode() {
+        try {
+            const data = await api('/games/live');
+            gameModeActive = !!data?.data?.game_mode_active;
+        } catch (_) { /* leave last value */ }
+
+        const btnTicker = document.getElementById('btn-ticker');
+        const btnGame   = document.getElementById('btn-game');
+        btnTicker.setAttribute('aria-pressed', (!gameModeActive).toString());
+        btnGame.setAttribute('aria-pressed',   gameModeActive.toString());
+    }
+
+    window.setMode = async function (mode) {
+        try {
+            if (mode === 'ticker') {
+                await api('/display/on-demand/stop', { method: 'POST' });
+                showToast('Switching to ticker…');
+            } else if (mode === 'game') {
+                await api('/display/on-demand/start', { method: 'POST', body: {} });
+                showToast('Switching to game mode…');
+            }
+            gameModeActive = (mode === 'game');
+            await refreshAll();
+        } catch (e) {
+            showToast('Failed to switch mode');
+        }
+    };
+
     // --- Master polling loop ---
     async function refreshAll() {
         await Promise.allSettled([
             refreshStatus(),
             refreshNowShowing(),
+            refreshMode(),
         ]);
     }
 
@@ -92,7 +124,6 @@
     }
 
     // --- Public stubs (filled in by later tasks in this same session) ---
-    window.setMode = function () { showToast('Mode control not wired yet'); };
     window.toggleAutoFocus = function () { showToast('Auto-focus not wired yet'); };
     window.onBrightnessInput = function (v) { document.getElementById('brightness-value').textContent = v + '%'; };
     window.onBrightnessCommit = function () { showToast('Brightness not wired yet'); };
