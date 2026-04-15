@@ -101,12 +101,40 @@
         }
     };
 
+    // --- Zone: Auto-focus toggle ---
+    let autoFocusEnabled = false;
+
+    async function refreshAutoFocus() {
+        try {
+            const data = await api('/config/main');
+            const cfg = data?.data || {};
+            autoFocusEnabled = !!(cfg.auto_game_focus ?? cfg.display?.auto_game_focus);
+            const el = document.getElementById('auto-focus-toggle');
+            el.setAttribute('aria-checked', autoFocusEnabled.toString());
+        } catch (_) { /* ignore */ }
+    }
+
+    window.toggleAutoFocus = async function () {
+        const el = document.getElementById('auto-focus-toggle');
+        const newValue = !autoFocusEnabled;
+        el.setAttribute('aria-checked', newValue.toString());
+        try {
+            await api('/config/main', { method: 'POST', body: { auto_game_focus: newValue } });
+            autoFocusEnabled = newValue;
+            showToast(newValue ? 'Auto-focus on' : 'Auto-focus off');
+        } catch (e) {
+            el.setAttribute('aria-checked', autoFocusEnabled.toString());
+            showToast('Failed to save auto-focus');
+        }
+    };
+
     // --- Master polling loop ---
     async function refreshAll() {
         await Promise.allSettled([
             refreshStatus(),
             refreshNowShowing(),
             refreshMode(),
+            refreshAutoFocus(),
         ]);
     }
 
@@ -124,7 +152,6 @@
     }
 
     // --- Public stubs (filled in by later tasks in this same session) ---
-    window.toggleAutoFocus = function () { showToast('Auto-focus not wired yet'); };
     window.onBrightnessInput = function (v) { document.getElementById('brightness-value').textContent = v + '%'; };
     window.onBrightnessCommit = function () { showToast('Brightness not wired yet'); };
 
