@@ -58,7 +58,9 @@ def mock_plugin_manager():
 def client(mock_config_manager, mock_plugin_manager):
     """Create a Flask test client with mocked dependencies."""
     # Create a minimal Flask app for testing
-    test_app = Flask(__name__)
+    template_dir = str(project_root / 'web_interface' / 'templates')
+    static_dir = str(project_root / 'web_interface' / 'static')
+    test_app = Flask(__name__, template_folder=template_dir, static_folder=static_dir)
     test_app.config['TESTING'] = True
     test_app.config['SECRET_KEY'] = 'test-secret-key'
     
@@ -93,9 +95,34 @@ def client(mock_config_manager, mock_plugin_manager):
     api_v3.plugin_state_manager.get_all_states.return_value = {}
     
     test_app.register_blueprint(api_v3, url_prefix='/api/v3')
-    
+
+    # Register pages_v3 blueprint so page routes (e.g. /remote) are reachable
+    from web_interface.blueprints.pages_v3 import pages_v3
+    pages_v3.config_manager = mock_config_manager
+    pages_v3.plugin_manager = mock_plugin_manager
+    pages_v3.plugin_store_manager = MagicMock()
+    test_app.register_blueprint(pages_v3)
+
     with test_app.test_client() as client:
         yield client
+
+
+def test_remote_route_returns_200(client):
+    """GET /remote should return the remote control page with 200."""
+    response = client.get('/remote')
+    assert response.status_code == 200
+
+
+def test_remote_route_contains_zones(client):
+    """Remote page should include all six control zones."""
+    response = client.get('/remote')
+    html = response.data.decode('utf-8')
+    assert 'id="status-pill"' in html
+    assert 'id="now-showing"' in html
+    assert 'id="mode-controls"' in html
+    assert 'id="live-games"' in html
+    assert 'id="plugin-toggles"' in html
+    assert 'id="brightness-control"' in html
 
 
 class TestConfigAPI:

@@ -49,6 +49,12 @@ def index():
                            main_config=main_config_data,
                            secrets_config=secrets_config_data)
 
+@pages_v3.route('/remote')
+def remote():
+    """Phone-first remote control page."""
+    return render_template('v3/partials/remote.html')
+
+
 @pages_v3.route('/partials/<partial_name>')
 def load_partial(partial_name):
     """Load HTMX partials dynamically"""
