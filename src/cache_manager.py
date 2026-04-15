@@ -87,6 +87,21 @@ class CacheManager:
 
     def _get_writable_cache_dir(self) -> Optional[str]:
         """Tries to find or create a writable cache directory, preferring a system path when available."""
+        # Attempt 0: Explicit override via env var — guarantees every process
+        # in the stack (display controller + Flask) agrees on the same dir.
+        override = os.environ.get('LEDMATRIX_CACHE_DIR')
+        if override:
+            try:
+                os.makedirs(override, exist_ok=True)
+                test_file = os.path.join(override, '.writetest')
+                with open(test_file, 'w') as f:
+                    f.write('test')
+                os.remove(test_file)
+                self.logger.info(f"Using LEDMATRIX_CACHE_DIR override: {override}")
+                return override
+            except (IOError, OSError) as err:
+                self.logger.warning(f"LEDMATRIX_CACHE_DIR set but not writable ({override}): {err}")
+
         # Attempt 1: System-wide persistent cache directory (preferred for services)
         try:
             system_cache_dir = '/var/cache/ledmatrix'
