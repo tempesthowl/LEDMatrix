@@ -184,7 +184,7 @@
                                 ${g.period_label || ''} · ${g.league || ''}
                             </div>
                         </div>
-                        <button class="focus-btn" onclick="focusGame('${g.game_id}','${g.league || ''}')"
+                        <button class="focus-btn" onclick="focusGame('${g.game_id}','${g.plugin_id || ''}','${g.league || ''}')"
                                 ${isFocused ? 'disabled' : ''}>
                             ${isFocused ? 'FOCUSED' : 'FOCUS'}
                         </button>
@@ -197,11 +197,16 @@
         }
     }
 
-    window.focusGame = async function (gameId, league) {
+    window.focusGame = async function (gameId, pluginId, league) {
         try {
             await api('/display/on-demand/start', {
                 method: 'POST',
-                body: { game_id: gameId, league: league }
+                body: {
+                    plugin_id: pluginId || undefined,
+                    mode: 'game_focus',
+                    game_id: gameId,
+                    start_service: false,
+                }
             });
             showToast('Focusing…');
             await refreshAll();

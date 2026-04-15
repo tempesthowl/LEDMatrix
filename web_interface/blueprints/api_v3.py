@@ -154,7 +154,12 @@ def _coerce_to_bool(value):
     return False
 
 def _get_display_service_status():
-    """Return status information about the ledmatrix service."""
+    """Return status information about the ledmatrix service.
+
+    On hosts without systemd (Windows dev, macOS, containers) we can't
+    manage the service — we return unmanaged=True so callers can decide
+    to proceed without the stop/restart dance.
+    """
     try:
         result = subprocess.run(
             ['systemctl', 'is-active', 'ledmatrix'],
@@ -166,21 +171,36 @@ def _get_display_service_status():
             'active': result.stdout.strip() == 'active',
             'returncode': result.returncode,
             'stdout': result.stdout.strip(),
-            'stderr': result.stderr.strip()
+            'stderr': result.stderr.strip(),
+            'unmanaged': False,
         }
     except subprocess.TimeoutExpired:
         return {
             'active': False,
             'returncode': -1,
             'stdout': '',
-            'stderr': 'timeout'
+            'stderr': 'timeout',
+            'unmanaged': False,
         }
-    except Exception as err:
+    except FileNotFoundError:
+        # systemctl not on PATH — not a systemd host.
         return {
             'active': False,
             'returncode': -1,
             'stdout': '',
-            'stderr': str(err)
+            'stderr': 'systemctl not available',
+            'unmanaged': True,
+        }
+    except Exception as err:
+        msg = str(err)
+        # WinError 2: system cannot find the file — same as FileNotFoundError for systemctl
+        unmanaged = ('WinError 2' in msg) or ('cannot find the file' in msg.lower())
+        return {
+            'active': False,
+            'returncode': -1,
+            'stdout': '',
+            'stderr': msg,
+            'unmanaged': unmanaged,
         }
 
 def _run_systemctl_command(args):
@@ -1665,9 +1685,12 @@ def start_on_demand_display():
         # Check if display service is running (or will be started)
         service_status = _get_display_service_status()
         service_was_running = service_status.get('active', False)
-        
+        service_unmanaged = service_status.get('unmanaged', False)
+
         # Stop the display service first to ensure clean state when we will restart it
-        if service_was_running and start_service:
+        # Skip on unmanaged hosts (Windows/macOS/container) — the user runs the
+        # controller manually; it polls the cache for requests.
+        if service_was_running and start_service and not service_unmanaged:
             import time as time_module
             logger.info("[Display] Stopping display service before starting on-demand mode")
             _stop_display_service()
@@ -1675,7 +1698,7 @@ def start_on_demand_display():
             time_module.sleep(1.5)
             logger.info("[Display] Display service stopped, now starting with on-demand request")
 
-        if not service_status.get('active') and not start_service:
+        if not service_status.get('active') and not start_service and not service_unmanaged:
             return jsonify({
                 'status': 'error',
                 'message': 'Display service is not running. Please start the display service or enable "Start Service" option.',
@@ -1683,7 +1706,7 @@ def start_on_demand_display():
             }), 400
 
         service_result = None
-        if start_service:
+        if start_service and not service_unmanaged:
             service_result = _ensure_display_service_running()
             # Check if service actually started
             if service_result and not service_result.get('active'):
@@ -1692,9 +1715,13 @@ def start_on_demand_display():
                     'message': 'Failed to start display service. Please check service logs or start it manually.',
                     'service_result': service_result
                 }), 500
-            
+
             # Service was restarted (or started fresh) with on-demand request in cache
             # The display controller will read the request during initialization or when it polls
+        elif service_unmanaged:
+            # Not on a systemd host — trust the manually-started controller to
+            # poll `display_on_demand_request` from cache on its next tick.
+            service_result = {'unmanaged': True, 'note': 'service management unavailable on this host'}
 
         response_data = {
             'request_id': request_id,
