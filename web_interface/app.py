@@ -26,6 +26,9 @@ from src.wifi_manager import WiFiManager
 # Create Flask app
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
+# Local-only app (see CSRF comment below) — reload templates from disk on every
+# request so edits to partials take effect without restarting the server.
+app.config['TEMPLATES_AUTO_RELOAD'] = True
 config_manager = ConfigManager()
 
 # CSRF protection disabled for local-only application
