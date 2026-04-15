@@ -128,6 +128,60 @@
         }
     };
 
+    // --- Zone: Live games ---
+    let focusedGameId = null;
+
+    async function refreshLiveGames() {
+        const el = document.getElementById('live-games-content');
+        try {
+            const data = await api('/games/live');
+            const games = data?.data?.games || [];
+            focusedGameId = data?.data?.focused_game_id || null;
+
+            if (games.length === 0) {
+                el.classList.add('empty');
+                el.textContent = 'No live games right now.';
+                return;
+            }
+            el.classList.remove('empty');
+            el.innerHTML = games.map(g => {
+                const isFocused = String(g.game_id) === String(focusedGameId);
+                return `
+                    <div class="game-card" data-focused="${isFocused}">
+                        <div>
+                            <div style="font-weight:600;">
+                                ${g.away_team} ${g.away_score ?? ''} – ${g.home_score ?? ''} ${g.home_team}
+                            </div>
+                            <div style="font-size:12px;color:#6b7280;margin-top:2px;">
+                                ${g.period_label || ''} · ${g.league || ''}
+                            </div>
+                        </div>
+                        <button class="focus-btn" onclick="focusGame('${g.game_id}','${g.league || ''}')"
+                                ${isFocused ? 'disabled' : ''}>
+                            ${isFocused ? 'FOCUSED' : 'FOCUS'}
+                        </button>
+                    </div>
+                `;
+            }).join('');
+        } catch (e) {
+            el.classList.add('empty');
+            el.textContent = 'Could not load live games.';
+        }
+    }
+
+    window.focusGame = async function (gameId, league) {
+        try {
+            await api('/display/on-demand/start', {
+                method: 'POST',
+                body: { game_id: gameId, league: league }
+            });
+            showToast('Focusing…');
+            await refreshAll();
+        } catch (e) {
+            showToast('Focus failed');
+        }
+    };
+
     // --- Master polling loop ---
     async function refreshAll() {
         await Promise.allSettled([
@@ -135,6 +189,7 @@
             refreshNowShowing(),
             refreshMode(),
             refreshAutoFocus(),
+            refreshLiveGames(),
         ]);
     }
 
