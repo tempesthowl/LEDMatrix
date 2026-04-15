@@ -13,9 +13,21 @@ plugin_store_manager = None
 
 pages_v3 = Blueprint('pages_v3', __name__)
 
+MOBILE_UA_MARKERS = ('iphone', 'android', 'ipad', 'mobile', 'blackberry', 'opera mini')
+
+
+def _is_mobile_request():
+    ua = (request.headers.get('User-Agent') or '').lower()
+    if request.args.get('desktop') == '1':
+        return False
+    return any(m in ua for m in MOBILE_UA_MARKERS)
+
+
 @pages_v3.route('/')
 def index():
     """Main v3 interface page"""
+    if _is_mobile_request():
+        return redirect(url_for('pages_v3.remote'))
     try:
         if pages_v3.config_manager:
             # Load configuration data

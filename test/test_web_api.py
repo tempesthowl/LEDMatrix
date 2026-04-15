@@ -744,3 +744,23 @@ def test_remote_js_is_served(client):
     response = client.get('/static/v3/remote.js')
     assert response.status_code == 200
     assert b'refreshAll' in response.data
+
+
+def test_index_redirects_mobile_ua_to_remote(client):
+    """Mobile user-agent on / should 302 to /remote."""
+    ua = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15'
+    response = client.get('/', headers={'User-Agent': ua})
+    assert response.status_code == 302
+    assert '/remote' in response.headers.get('Location', '')
+
+def test_index_does_not_redirect_desktop(client):
+    """Desktop user-agent on / should stay on the desktop page."""
+    ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+    response = client.get('/', headers={'User-Agent': ua})
+    assert response.status_code == 200
+
+def test_index_desktop_override_on_mobile_ua(client):
+    """?desktop=1 should suppress the mobile redirect."""
+    ua = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15'
+    response = client.get('/?desktop=1', headers={'User-Agent': ua})
+    assert response.status_code == 200
