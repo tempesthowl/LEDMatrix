@@ -26,23 +26,52 @@
     }
 
     // --- Zone: Status pill ---
+    // Prefer evidence that the display controller is actually producing data
+    // (a recent snapshot) over systemd service status — on Windows dev and
+    // other non-systemd hosts the systemd check is noise.
     async function refreshStatus() {
         const pill = document.getElementById('status-pill');
         const text = document.getElementById('status-text');
+
+        let running = null; // null = unknown; don't punish the user for unknown
+
+        // Evidence 1: /display/current returns a recent snapshot if the controller is alive
         try {
-            const data = await api('/system/status');
-            const running = (data?.data?.display_service?.status === 'active')
-                         || (data?.data?.display_running === true);
-            pill.classList.toggle('pill-live', running);
-            pill.classList.toggle('pill-off', !running);
-            text.textContent = running ? 'Live' : 'Off';
-            setControlsEnabled(running);
-        } catch (e) {
+            const curr = await api('/display/current');
+            const ts = curr?.data?.timestamp;
+            if (typeof ts === 'number' && (Date.now() / 1000 - ts) < 30) {
+                running = true;
+            }
+        } catch (_) { /* ignore, try next */ }
+
+        // Evidence 2: /system/status (works on Linux with psutil; optional)
+        if (running === null) {
+            try {
+                const sys = await api('/system/status');
+                if (sys?.data?.display_service?.status === 'active'
+                    || sys?.data?.display_running === true) {
+                    running = true;
+                }
+            } catch (_) { /* 503 or missing psutil — stays unknown */ }
+        }
+
+        if (running === true) {
+            pill.classList.add('pill-live');
+            pill.classList.remove('pill-off');
+            text.textContent = 'Live';
+        } else if (running === false) {
             pill.classList.remove('pill-live');
             pill.classList.add('pill-off');
-            text.textContent = 'Offline';
-            setControlsEnabled(false);
+            text.textContent = 'Off';
+        } else {
+            // Unknown — be honest but don't block controls
+            pill.classList.remove('pill-live');
+            pill.classList.add('pill-off');
+            text.textContent = 'Unknown';
         }
+
+        // Only disable controls when we're CERTAIN the display is down.
+        setControlsEnabled(running !== false);
     }
 
     function setControlsEnabled(enabled) {
