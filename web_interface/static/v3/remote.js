@@ -182,6 +182,52 @@
         }
     };
 
+    // --- Zone: Plugin toggles ---
+    async function refreshPlugins() {
+        const el = document.getElementById('plugin-toggles-content');
+        try {
+            const data = await api('/plugins/installed');
+            const plugins = data?.data?.plugins || data?.plugins || [];
+            const visible = plugins
+                .filter(p => p.id && p.category !== 'system')
+                .sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
+
+            if (visible.length === 0) {
+                el.classList.add('empty');
+                el.textContent = 'No plugins installed.';
+                return;
+            }
+            el.classList.remove('empty');
+            el.innerHTML = visible.map(p => `
+                <div class="toggle-row">
+                    <label for="plugin-toggle-${p.id}">${p.name || p.id}</label>
+                    <button class="toggle" id="plugin-toggle-${p.id}"
+                            role="switch" aria-checked="${!!p.enabled}"
+                            onclick="togglePlugin('${p.id}', this)"></button>
+                </div>
+            `).join('');
+        } catch (e) {
+            el.classList.add('empty');
+            el.textContent = 'Could not load plugins.';
+        }
+    }
+
+    window.togglePlugin = async function (pluginId, btn) {
+        const was = btn.getAttribute('aria-checked') === 'true';
+        const now = !was;
+        btn.setAttribute('aria-checked', now.toString());
+        try {
+            await api('/plugins/toggle', {
+                method: 'POST',
+                body: { plugin_id: pluginId, enabled: now }
+            });
+            showToast(`${pluginId} ${now ? 'on' : 'off'}`);
+        } catch (e) {
+            btn.setAttribute('aria-checked', was.toString());
+            showToast('Failed to toggle plugin');
+        }
+    };
+
     // --- Master polling loop ---
     async function refreshAll() {
         await Promise.allSettled([
@@ -190,6 +236,7 @@
             refreshMode(),
             refreshAutoFocus(),
             refreshLiveGames(),
+            refreshPlugins(),
         ]);
     }
 
