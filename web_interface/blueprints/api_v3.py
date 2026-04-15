@@ -1541,6 +1541,47 @@ def get_display_current():
         logger.exception("[Display] get_current_display failed")
         return jsonify({'status': 'error', 'message': 'Failed to get current display'}), 500
 
+@api_v3.route('/games/live', methods=['GET'])
+def get_live_games():
+    """Return all live games across all sport plugins with game focus support.
+
+    The web UI runs in a separate process from the display controller,
+    so we read live games from the shared CacheManager rather than
+    calling plugins directly (the web UI's plugins have no live data).
+    """
+    try:
+        cache = _ensure_cache_manager()
+
+        # Read live games cached by the display controller's _check_auto_game_focus().
+        # Window 600s: controller refreshes every 30s, but on slower hardware
+        # the main loop can go longer between auto-detect passes.
+        cached = cache.get('game_mode_live_games', max_age=600)
+        if cached and isinstance(cached, dict):
+            unique = cached.get('games', [])
+            game_mode_active = cached.get('game_mode_active', False)
+        else:
+            unique = []
+            game_mode_active = False
+
+        # Also check on-demand state for game mode status
+        if not game_mode_active:
+            on_demand_state = cache.get('display_on_demand_state', max_age=120)
+            if on_demand_state and on_demand_state.get('active'):
+                mode = on_demand_state.get('mode', '')
+                game_mode_active = 'game_focus' in str(mode)
+
+        return jsonify({
+            'status': 'success',
+            'data': {
+                'games': unique,
+                'game_mode_active': game_mode_active,
+            }
+        })
+    except Exception as exc:
+        logger.exception("[Games] get_live_games failed")
+        return jsonify({'status': 'error', 'message': 'Failed to get live games'}), 500
+
+
 @api_v3.route('/display/on-demand/status', methods=['GET'])
 def get_on_demand_status():
     """Return the current on-demand display state."""
