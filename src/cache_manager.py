@@ -89,11 +89,15 @@ class CacheManager:
         """Tries to find or create a writable cache directory, preferring a system path when available."""
         # Attempt 0: Explicit override via env var — guarantees every process
         # in the stack (display controller + Flask) agrees on the same dir.
+        # Use a per-PID/thread-unique writetest so concurrent instances in the
+        # same process (Flask spawns several CacheManager objects during startup)
+        # don't race on the same `.writetest` file (Windows locks it briefly).
         override = os.environ.get('LEDMATRIX_CACHE_DIR')
         if override:
             try:
                 os.makedirs(override, exist_ok=True)
-                test_file = os.path.join(override, '.writetest')
+                test_file = os.path.join(
+                    override, f'.writetest.{os.getpid()}.{threading.get_ident()}')
                 with open(test_file, 'w') as f:
                     f.write('test')
                 os.remove(test_file)

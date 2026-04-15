@@ -1575,7 +1575,11 @@ def get_live_games():
         # Read live games cached by the display controller's _check_auto_game_focus().
         # Window 600s: controller refreshes every 30s, but on slower hardware
         # the main loop can go longer between auto-detect passes.
-        cached = cache.get('game_mode_live_games', max_age=600)
+        # memory_ttl=2: the display controller writes from a separate process,
+        # so we must re-read disk frequently — otherwise Flask's memory cache
+        # returns a stale snapshot for hundreds of seconds.
+        cached_rec = cache.get_cached_data('game_mode_live_games', max_age=600, memory_ttl=2)
+        cached = cached_rec.get('data') if isinstance(cached_rec, dict) and 'data' in cached_rec else cached_rec
         if cached and isinstance(cached, dict):
             unique = cached.get('games', [])
             game_mode_active = cached.get('game_mode_active', False)
@@ -1583,9 +1587,10 @@ def get_live_games():
             unique = []
             game_mode_active = False
 
-        # Also check on-demand state for game mode status
+        # Also check on-demand state for game mode status (fresh read — see above)
         if not game_mode_active:
-            on_demand_state = cache.get('display_on_demand_state', max_age=120)
+            od_rec = cache.get_cached_data('display_on_demand_state', max_age=120, memory_ttl=2)
+            on_demand_state = od_rec.get('data') if isinstance(od_rec, dict) and 'data' in od_rec else od_rec
             if on_demand_state and on_demand_state.get('active'):
                 mode = on_demand_state.get('mode', '')
                 game_mode_active = 'game_focus' in str(mode)
@@ -1607,7 +1612,11 @@ def get_on_demand_status():
     """Return the current on-demand display state."""
     try:
         cache = _ensure_cache_manager()
-        state = cache.get('display_on_demand_state', max_age=120)
+        # Short memory_ttl so cross-process writes from the display controller
+        # are visible on the next poll instead of being hidden by Flask's
+        # in-memory cache layer.
+        state_rec = cache.get_cached_data('display_on_demand_state', max_age=120, memory_ttl=2)
+        state = state_rec.get('data') if isinstance(state_rec, dict) and 'data' in state_rec else state_rec
         if state is None:
             state = {
                 'active': False,

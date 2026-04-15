@@ -61,6 +61,15 @@
 
     <section class="remote-section" id="now-showing">
         <h3>Now Showing</h3>
+        <div id="led-preview-wrap"
+             style="background:#000;border-radius:6px;padding:8px;margin-bottom:12px;
+                    display:flex;align-items:center;justify-content:center;min-height:48px;">
+            <img id="led-preview" alt="LED preview"
+                 style="image-rendering:pixelated;image-rendering:crisp-edges;
+                        max-width:100%;height:auto;display:none;"/>
+            <span id="led-preview-empty"
+                  style="color:#9ca3af;font-size:12px;font-style:italic;">Waiting for display…</span>
+        </div>
         <div id="now-showing-content" class="empty">Loading…</div>
     </section>
 
@@ -95,6 +104,6 @@
 
     <div id="toast" class="toast" aria-live="polite"></div>
 
-    <script src="/static/v3/remote.js?v=3" defer></script>
+    <script src="/static/v3/remote.js?v=5" defer></script>
 </body>
 </html>

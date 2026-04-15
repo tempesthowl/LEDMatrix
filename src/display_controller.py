@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from datetime import datetime
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed  # pylint: disable=no-name-in-module
 import pytz
 
@@ -67,9 +68,9 @@ class DisplayController:
             logger.warning(f"Startup validation could not be completed: {e}")
         
         config_time = time.time()
-        self.display_manager = DisplayManager(self.config)
+        self.display_manager = DisplayManager(self.config, suppress_test_pattern=True)
         logger.info("DisplayManager initialized in %.3f seconds", time.time() - config_time)
-        
+
         # Initialize Font Manager
         font_time = time.time()
         self.font_manager = FontManager(self.config)
@@ -111,7 +112,16 @@ class DisplayController:
         self.on_demand_last_event: Optional[str] = None
         self.on_demand_schedule_override = False
         self.rotation_resume_index: Optional[int] = None
-        
+
+        # Game Mode state
+        self._game_mode_active = False
+        self._game_mode_rotation_list: List[Dict[str, Any]] = []
+        self._game_mode_current_index = 0
+        self._game_mode_last_switch = 0.0
+        self._game_mode_last_check = 0.0
+        self._game_mode_finals: Dict[str, float] = {}  # game_id -> time went final
+        self._game_mode_update_interval = 20.0  # seconds between plugin updates in game mode (lockstep with Kalshi)
+
         # WiFi status message tracking
         global WIFI_STATUS_FILE
         if WIFI_STATUS_FILE is None:
@@ -170,8 +180,22 @@ class DisplayController:
             logger.info("Discovered %d plugin(s)", len(discovered_plugins))
 
             # Check for on-demand plugin filter from cache
-            on_demand_config = self.cache_manager.get('display_on_demand_config', max_age=3600)
+            on_demand_config = self.cache_manager.get('display_on_demand_config', max_age=300)
             on_demand_plugin_id = on_demand_config.get('plugin_id') if on_demand_config else None
+
+            # Ignore stale game_focus pins from prior sessions when game_mode auto-detect
+            # is enabled — game_mode will re-activate on the right game after startup, and
+            # restoring the pin would lock us to one plugin and block multi-league rotation.
+            if on_demand_plugin_id and on_demand_config.get('mode') == 'game_focus':
+                gm_cfg = self.config.get('game_mode', {})
+                if gm_cfg.get('enabled', False) and gm_cfg.get('auto_detect', True):
+                    logger.info(
+                        "Ignoring stale game_focus on-demand pin for '%s' — game_mode auto-detect will re-activate",
+                        on_demand_plugin_id,
+                    )
+                    self.cache_manager.clear_cache('display_on_demand_config')
+                    on_demand_plugin_id = None
+                    on_demand_config = None
 
             if on_demand_plugin_id:
                 logger.info("On-demand mode detected during initialization: filtering to plugin '%s' only", on_demand_plugin_id)
@@ -191,6 +215,13 @@ class DisplayController:
                             self.config[on_demand_plugin_id] = {}
                         self.config[on_demand_plugin_id]['enabled'] = True
                     enabled_plugins = [on_demand_plugin_id]
+                    # Also load supplementary data plugins for game_focus
+                    if on_demand_config.get('mode') == 'game_focus':
+                        for supp_id in ['kalshi-markets']:
+                            if supp_id != on_demand_plugin_id and supp_id in discovered_plugins:
+                                if self.config.get(supp_id, {}).get('enabled', False):
+                                    enabled_plugins.append(supp_id)
+                                    logger.info("Also loading supplementary plugin '%s' for game_focus", supp_id)
                     # Set on-demand state from cached config
                     self.on_demand_active = True
                     self.on_demand_plugin_id = on_demand_plugin_id
@@ -201,6 +232,12 @@ class DisplayController:
                     self.on_demand_expires_at = on_demand_config.get('expires_at')
                     self.on_demand_status = 'active'
                     self.on_demand_schedule_override = True
+                    # Restore game mode state if on-demand was from game_focus
+                    if on_demand_config.get('mode') == 'game_focus':
+                        self._game_mode_active = True
+                        # Clear stale Kalshi cache so first render uses live API data
+                        self._clear_kalshi_game_cache()
+                        logger.info("Restored game_mode_active from cached game_focus on-demand state")
                     logger.info("On-demand mode: loading only plugin '%s'", on_demand_plugin_id)
             else:
                 enabled_plugins = [p for p in discovered_plugins if self.config.get(p, {}).get('enabled', False)]
@@ -351,13 +388,42 @@ class DisplayController:
         except (OSError, ValueError, RuntimeError) as err:
             logger.debug("Initial on-demand state publish failed: %s", err, exc_info=True)
 
-        # Initial data update for plugins (ensures data available on first display)
-        logger.info("Performing initial plugin data update...")
-        update_start = time.time()
-        self._update_modules()
-        logger.info("Initial plugin update completed in %.3f seconds", time.time() - update_start)
+        # --- Parallel startup: boot animation + data loading run concurrently ---
+        # Data fetching is pure network I/O, animation owns the display.
+        # They don't share resources, so we overlap them for a seamless UX.
 
-        # Initialize Vegas mode coordinator
+        _data_ready = threading.Event()
+        _data_load_error = None
+
+        def _background_data_load():
+            nonlocal _data_load_error
+            try:
+                logger.info("Background data load started")
+                load_start = time.time()
+                self._update_modules_parallel()
+                logger.info("Background data load completed in %.3f seconds", time.time() - load_start)
+            except Exception as e:
+                logger.exception("Background data load failed")
+                _data_load_error = e
+            finally:
+                _data_ready.set()
+
+        data_thread = threading.Thread(
+            target=_background_data_load, daemon=True, name="startup-data-load"
+        )
+        data_thread.start()
+
+        # Play boot animation — progress bar stays on screen until data is ready
+        from src.startup_animation import StartupAnimation
+        self._boot_animation = StartupAnimation(self.display_manager)
+        self._boot_animation.play(data_ready_event=_data_ready)
+
+        if _data_load_error:
+            logger.error("Background data load had errors: %s", _data_load_error)
+
+        data_thread.join(timeout=5.0)
+
+        # Initialize Vegas mode coordinator (needs completed data)
         self.vegas_coordinator = None
         self._initialize_vegas_mode()
 
@@ -711,10 +777,78 @@ class DisplayController:
                     if hasattr(self.plugin_manager, 'health_tracker') and self.plugin_manager.health_tracker:
                         self.plugin_manager.health_tracker.record_failure(plugin_id, exc)
 
+    def _update_modules_parallel(self):
+        """Update all plugin modules in parallel. Used only during startup."""
+        if not self.plugin_manager:
+            return
+
+        plugins_dict = (
+            getattr(self.plugin_manager, 'loaded_plugins', None)
+            or getattr(self.plugin_manager, 'plugins', {})
+        )
+        if not plugins_dict:
+            return
+
+        update_targets = []
+        for plugin_id, plugin_instance in plugins_dict.items():
+            if (hasattr(self.plugin_manager, 'health_tracker')
+                    and self.plugin_manager.health_tracker
+                    and self.plugin_manager.health_tracker.should_skip_plugin(plugin_id)):
+                logger.debug("Skipping startup update for %s (circuit breaker)", plugin_id)
+                continue
+            update_targets.append((plugin_id, plugin_instance))
+
+        if not update_targets:
+            return
+
+        logger.info("Starting parallel startup update for %d plugins", len(update_targets))
+
+        def _safe_update(pid, pinst):
+            try:
+                start = time.time()
+                if hasattr(self.plugin_manager, 'plugin_executor'):
+                    success = self.plugin_manager.plugin_executor.execute_update(pinst, pid)
+                    if success and hasattr(self.plugin_manager, 'plugin_last_update'):
+                        self.plugin_manager.plugin_last_update[pid] = time.time()
+                else:
+                    if hasattr(pinst, 'update'):
+                        pinst.update()
+                        if hasattr(self.plugin_manager, 'plugin_last_update'):
+                            self.plugin_manager.plugin_last_update[pid] = time.time()
+                        if (hasattr(self.plugin_manager, 'health_tracker')
+                                and self.plugin_manager.health_tracker):
+                            self.plugin_manager.health_tracker.record_success(pid)
+                logger.info("Parallel update for %s completed in %.3fs", pid, time.time() - start)
+                return pid, True, None
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.exception("Error in parallel update for plugin %s", pid)
+                if (hasattr(self.plugin_manager, 'health_tracker')
+                        and self.plugin_manager.health_tracker):
+                    self.plugin_manager.health_tracker.record_failure(pid, exc)
+                return pid, False, exc
+
+        with ThreadPoolExecutor(max_workers=min(len(update_targets), 8)) as executor:
+            futures = {
+                executor.submit(_safe_update, pid, pinst): pid
+                for pid, pinst in update_targets
+            }
+            for future in as_completed(futures):
+                pid, success, error = future.result()
+                if not success:
+                    logger.warning("Plugin %s startup update failed: %s", pid, error)
+
     def _tick_plugin_updates(self):
         """Run scheduled plugin updates if the plugin manager supports them."""
         if not self.plugin_manager:
             return
+
+        # Game mode: force accelerated updates (20s) on the active plugin
+        # instead of waiting for its configured interval (often 3600s)
+        if self._game_mode_active and self.on_demand_plugin_id:
+            pid = self.on_demand_plugin_id
+            last = self.plugin_manager.plugin_last_update.get(pid, 0.0)
+            if last > 0 and (time.time() - last) >= self._game_mode_update_interval:
+                self.plugin_manager.plugin_last_update[pid] = 0.0
 
         if hasattr(self.plugin_manager, "run_scheduled_updates"):
             try:
@@ -916,9 +1050,16 @@ class DisplayController:
     def _poll_on_demand_requests(self) -> None:
         """Poll cache for new on-demand requests from external controllers."""
         try:
-            # Use a long max_age (1 hour) to ensure requests aren't expired before processing
-            # The request_id check prevents duplicate processing
-            request = self.cache_manager.get('display_on_demand_request', max_age=3600)
+            # max_age 3600: persisted requests stay valid for an hour so a
+            # web-UI-requested mode survives a controller restart.
+            # memory_ttl 2: the memory cache re-reads disk every couple seconds
+            # so NEW requests written by Flask (in a different process) are
+            # actually seen. Without this, the in-memory layer would keep
+            # returning the first request we ever read, forever.
+            request = self.cache_manager.get_cached_data(
+                'display_on_demand_request', max_age=3600, memory_ttl=2)
+            if request is not None and 'data' in request:
+                request = request['data']
         except (OSError, RuntimeError, ValueError, TypeError) as err:
             logger.error("Failed to read on-demand request: %s", err, exc_info=True)
             return
@@ -1312,10 +1453,300 @@ class DisplayController:
                     logger.warning("Error checking live priority for %s: %s", mode_name, e)
         return None
 
+    # ------------------------------------------------------------------
+    # Game Mode — Auto-Detect + Multi-Game Rotation
+    # ------------------------------------------------------------------
+
+    def _get_game_mode_config(self) -> Dict[str, Any]:
+        """Return game_mode config section with defaults."""
+        return self.config.get("game_mode", {})
+
+    def _check_auto_game_focus(self) -> None:
+        """Poll sport plugins for live games involving favorite teams.
+
+        Called periodically (~30s) in the main loop.  When a favorite
+        is detected and Game Mode is not already active, activates
+        game focus via on-demand mechanism.
+        """
+        gm_config = self._get_game_mode_config()
+        if not gm_config.get("enabled", False) or not gm_config.get("auto_detect", True):
+            logger.debug("Game Mode: disabled in config (enabled=%s, auto_detect=%s)",
+                         gm_config.get("enabled"), gm_config.get("auto_detect"))
+            return
+
+        now = time.monotonic()
+        if now - self._game_mode_last_check < 30.0:
+            return
+        self._game_mode_last_check = now
+
+        logger.info("Game Mode: running auto-detect check (active=%s)", self._game_mode_active)
+
+        # Already in on-demand mode that isn't game mode — don't interrupt
+        if self.on_demand_active and not self._game_mode_active:
+            logger.debug("Game Mode: skipping — on-demand active (not game mode)")
+            return
+
+        # Parse favorites — each entry is "TEAM" (any league) or "TEAM:LEAGUE" (specific league).
+        # League-qualified entries disambiguate teams that share abbreviations across sports
+        # (e.g., MIA = Miami Heat in NBA, Miami Marlins in MLB).
+        raw_favorites = gm_config.get("favorite_teams", [])
+        favorite_filters = []
+        for fav in raw_favorites:
+            if ":" in fav:
+                team, league = fav.split(":", 1)
+                favorite_filters.append((team.strip().upper(), league.strip().lower()))
+            else:
+                favorite_filters.append((fav.strip().upper(), None))
+        if not favorite_filters:
+            logger.debug("Game Mode: no favorite_teams configured")
+            return
+
+        # Collect all live games from all sport plugins that support game focus
+        all_live = []
+        checked_plugins = set()
+        for mode_name, plugin_instance in self.plugin_modes.items():
+            pid = id(plugin_instance)
+            if pid in checked_plugins:
+                continue
+            checked_plugins.add(pid)
+            if hasattr(plugin_instance, "get_live_games"):
+                try:
+                    live_games = plugin_instance.get_live_games()
+                    all_live.extend(live_games)
+                    logger.debug("Game Mode: %s returned %d live games", mode_name, len(live_games))
+                except Exception as e:
+                    logger.warning("Game Mode: get_live_games failed for %s: %s", mode_name, e)
+
+        # Deduplicate by game_id
+        seen_ids = set()
+        unique_live = []
+        for g in all_live:
+            gid = g.get("game_id", "")
+            if gid and gid not in seen_ids:
+                seen_ids.add(gid)
+                unique_live.append(g)
+
+        logger.info("Game Mode: %d unique live games found across all plugins", len(unique_live))
+
+        # Cache live games for web UI access (web UI runs in a separate process)
+        if self.cache_manager and unique_live:
+            try:
+                self.cache_manager.set("game_mode_live_games", {
+                    "games": unique_live,
+                    "game_mode_active": self._game_mode_active,
+                })
+            except Exception as e:
+                logger.debug("Game Mode: failed to cache live games: %s", e)
+
+        # Filter for favorite teams — respects optional league qualifier
+        favorite_games = []
+        for g in unique_live:
+            away = g.get("away_team", "").upper()
+            home = g.get("home_team", "").upper()
+            game_league = g.get("league", "").lower()
+            for fav_team, fav_league in favorite_filters:
+                if fav_team in (away, home) and (fav_league is None or fav_league == game_league):
+                    favorite_games.append(g)
+                    logger.info("Game Mode: favorite match — %s @ %s (league=%s, game_id=%s)",
+                                away, home, game_league, g.get("game_id"))
+                    break
+
+        if not favorite_games:
+            if unique_live:
+                teams_in_play = [(g.get("away_team"), g.get("home_team"), g.get("league")) for g in unique_live[:5]]
+                logger.info("Game Mode: no favorites in %d live games (favorites=%s, sample teams=%s)",
+                            len(unique_live), raw_favorites, teams_in_play)
+            # No favorites live — exit game mode if active
+            if self._game_mode_active:
+                self._exit_game_mode("no-favorites-live")
+            return
+
+        # Update rotation list
+        self._game_mode_rotation_list = favorite_games
+
+        if not self._game_mode_active:
+            # Activate game mode
+            self._activate_game_mode(favorite_games)
+
+    def _activate_game_mode(self, games: List[Dict[str, Any]]) -> None:
+        """Activate game mode with the given list of favorite games."""
+        if not games:
+            return
+
+        first_game = games[0]
+        plugin_id = first_game.get("plugin_id", "")
+        game_id = first_game.get("game_id", "")
+
+        logger.info(
+            "Game Mode auto-activating for %d favorite game(s), first: %s vs %s",
+            len(games),
+            first_game.get("away_team"),
+            first_game.get("home_team"),
+        )
+
+        # Set the game_focus_game_id on the plugin
+        plugin_instance = None
+        for mode_name, pi in self.plugin_modes.items():
+            if getattr(pi, "plugin_id", "") == plugin_id:
+                plugin_instance = pi
+                break
+
+        if plugin_instance:
+            plugin_instance.config["game_focus_game_id"] = game_id
+
+        # Multiple plugins register "game_focus" mode — ensure the mapping
+        # points to the correct plugin for this activation
+        if plugin_instance and self.plugin_modes.get("game_focus") is not plugin_instance:
+            logger.debug("Game Mode: remapping game_focus mode from %s to %s",
+                         getattr(self.plugin_modes.get("game_focus"), "plugin_id", "?"), plugin_id)
+            self.plugin_modes["game_focus"] = plugin_instance
+            self.mode_to_plugin_id["game_focus"] = plugin_id
+
+        # Activate via on-demand mechanism
+        request = {
+            "plugin_id": plugin_id,
+            "mode": "game_focus",
+            "pinned": True,
+        }
+        self._activate_on_demand(request)
+
+        # Pin to game_focus only — don't rotate through mlb_recent/upcoming
+        self.on_demand_modes = ["game_focus"]
+        self.on_demand_mode_index = 0
+
+        self._game_mode_active = True
+        self._game_mode_current_index = 0
+        self._game_mode_last_switch = time.monotonic()
+        self._game_mode_finals = {}
+
+        # Force immediate data refresh so game mode starts with fresh data
+        if self.plugin_manager and hasattr(self.plugin_manager, 'plugin_last_update'):
+            if plugin_id:
+                self.plugin_manager.plugin_last_update[plugin_id] = 0.0
+                logger.info("Game Mode: forced immediate update for plugin %s (20s refresh)", plugin_id)
+
+        self._clear_kalshi_game_cache()
+
+    def _clear_kalshi_game_cache(self) -> None:
+        """Remove Kalshi game odds from both memory and disk cache."""
+        if not self.cache_manager:
+            return
+        # Clear disk cache files
+        cache_dir = getattr(self.cache_manager, 'cache_dir', None)
+        if cache_dir:
+            import glob as _glob
+            for f in _glob.glob(os.path.join(cache_dir, "kalshi_game_*.json")):
+                try:
+                    os.remove(f)
+                except OSError:
+                    pass
+        # Clear memory cache entries
+        mem = getattr(self.cache_manager, '_memory_cache_component', None)
+        if mem and hasattr(mem, '_cache'):
+            stale_keys = [k for k in mem._cache if k.startswith("kalshi_game_")]
+            for k in stale_keys:
+                mem._cache.pop(k, None)
+                mem._timestamps.pop(k, None)
+        logger.info("Game Mode: cleared Kalshi game cache (disk + memory)")
+
+    def _rotate_game_mode(self) -> None:
+        """Handle multi-game rotation (60s intervals) and final-score exits."""
+        if not self._game_mode_active or not self._game_mode_rotation_list:
+            return
+
+        gm_config = self._get_game_mode_config()
+        rotation_interval = gm_config.get("rotation_interval", 60)
+        final_hold = gm_config.get("final_hold_duration", 60)
+        now = time.monotonic()
+
+        # Check for games that went final
+        games_to_remove = []
+        for g in self._game_mode_rotation_list:
+            gid = g.get("game_id", "")
+            state = g.get("status_state", "")
+            if state == "post":
+                if gid not in self._game_mode_finals:
+                    self._game_mode_finals[gid] = now
+                    logger.info("Game %s went final, holding for %ds", gid, final_hold)
+                elif now - self._game_mode_finals[gid] > final_hold:
+                    games_to_remove.append(gid)
+
+        # Remove expired finals
+        for gid in games_to_remove:
+            self._game_mode_rotation_list = [
+                g for g in self._game_mode_rotation_list if g.get("game_id") != gid
+            ]
+            self._game_mode_finals.pop(gid, None)
+            logger.info("Removed finalized game %s from rotation", gid)
+
+        if not self._game_mode_rotation_list:
+            self._exit_game_mode("all-games-final")
+            return
+
+        # Rotate to next game after interval (rotation_interval=0 disables rotation)
+        if len(self._game_mode_rotation_list) > 1 and rotation_interval > 0:
+            if now - self._game_mode_last_switch >= rotation_interval:
+                self._game_mode_current_index = (
+                    (self._game_mode_current_index + 1) % len(self._game_mode_rotation_list)
+                )
+                self._game_mode_last_switch = now
+
+                # Update the plugin's game_focus_game_id
+                current_game = self._game_mode_rotation_list[self._game_mode_current_index]
+                plugin_id = current_game.get("plugin_id", "")
+                game_id = current_game.get("game_id", "")
+
+                target_plugin = None
+                for mode_name, pi in self.plugin_modes.items():
+                    if getattr(pi, "plugin_id", "") == plugin_id:
+                        pi.config["game_focus_game_id"] = game_id
+                        target_plugin = pi
+                        break
+
+                # Ensure game_focus mode points to correct plugin
+                if target_plugin and self.plugin_modes.get("game_focus") is not target_plugin:
+                    self.plugin_modes["game_focus"] = target_plugin
+                    self.mode_to_plugin_id["game_focus"] = plugin_id
+
+                # If switching plugin, update on-demand target
+                if self.on_demand_plugin_id != plugin_id:
+                    request = {
+                        "plugin_id": plugin_id,
+                        "mode": "game_focus",
+                        "pinned": True,
+                    }
+                    self._activate_on_demand(request)
+
+                logger.info(
+                    "Game Mode rotated to game %d/%d: %s vs %s",
+                    self._game_mode_current_index + 1,
+                    len(self._game_mode_rotation_list),
+                    current_game.get("away_team"),
+                    current_game.get("home_team"),
+                )
+
+    def _exit_game_mode(self, reason: str) -> None:
+        """Exit game mode and return to normal display (Vegas ticker)."""
+        logger.info("Exiting Game Mode: %s", reason)
+        self._game_mode_active = False
+        self._game_mode_rotation_list = []
+        self._game_mode_current_index = 0
+        self._game_mode_finals = {}
+
+        if self.on_demand_active:
+            self._clear_on_demand(reason=f"game-mode-{reason}")
+
+    def _clear_boot_screen(self):
+        """Clear the boot animation / loading screen if it's still showing."""
+        if hasattr(self, '_boot_animation'):
+            self._boot_animation.clear_loading()
+            del self._boot_animation
+
     def run(self):
         """Run the display controller, switching between displays."""
         if not self.available_modes:
             logger.warning("No display modes are enabled. Exiting.")
+            self._clear_boot_screen()
             self.display_manager.cleanup()
             return
              
@@ -1330,7 +1761,12 @@ class DisplayController:
                 self._poll_on_demand_requests()
                 self._check_on_demand_expiration()
                 self._tick_plugin_updates()
-                
+
+                # Game Mode: auto-detect favorite teams going live
+                self._check_auto_game_focus()
+                # Game Mode: handle multi-game rotation
+                self._rotate_game_mode()
+
                 # Clean up expired WiFi status messages
                 self._cleanup_expired_wifi_status()
                 
@@ -1369,7 +1805,7 @@ class DisplayController:
                     continue
                 
                 logger.info(f"Display active, processing mode: {self.current_display_mode}")
-                
+
                 # Plugins update on their own schedules - no forced sync updates needed
                 # Each plugin has its own update_interval and background services
                 
@@ -1412,6 +1848,11 @@ class DisplayController:
                     live_mode = self._check_live_priority()
                     if not live_mode:
                         try:
+                            # Ensure Vegas is started (composes content on first call)
+                            if not self.vegas_coordinator.is_active:
+                                self.vegas_coordinator.start()
+                            # Boot screen stays visible until content is composed
+                            self._clear_boot_screen()
                             # Run Vegas mode iteration
                             if self.vegas_coordinator.run_iteration():
                                 # Vegas completed an iteration, continue to next loop
@@ -1422,6 +1863,9 @@ class DisplayController:
                         except Exception:
                             logger.exception("Vegas mode error")
                             # Fall through to normal rotation on error
+
+                # Clear boot screen before any non-Vegas display (no-op after first call)
+                self._clear_boot_screen()
 
                 if self.on_demand_active:
                     # Guard against empty on_demand_modes
@@ -1976,6 +2420,11 @@ class DisplayController:
                 
                 # Move to next mode
                 if self.on_demand_active:
+                    # Game mode: stay pinned on game_focus, don't rotate
+                    if self._game_mode_active:
+                        self.current_display_mode = "game_focus"
+                        self.force_change = True
+                        continue
                     # Guard against empty on_demand_modes to prevent ZeroDivisionError
                     if not self.on_demand_modes:
                         logger.warning("On-demand active but no modes available, clearing on-demand mode")
@@ -1985,7 +2434,7 @@ class DisplayController:
                         # Rotate to next on-demand mode
                         self.on_demand_mode_index = (self.on_demand_mode_index + 1) % len(self.on_demand_modes)
                         next_mode = self.on_demand_modes[self.on_demand_mode_index]
-                        logger.info("Rotating to next on-demand mode: %s (index %d/%d)", 
+                        logger.info("Rotating to next on-demand mode: %s (index %d/%d)",
                                    next_mode, self.on_demand_mode_index, len(self.on_demand_modes))
                         self.current_display_mode = next_mode
                         self.force_change = True

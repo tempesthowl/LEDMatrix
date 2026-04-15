@@ -127,6 +127,42 @@
         }
     }
 
+    // --- Zone: LED preview (live snapshot from the running display) ---
+    // Poll /display/current on a faster cadence than the 5s master loop so the
+    // preview feels live. This updates the base64 PNG inline — same data the
+    // display controller writes after each frame render.
+    let previewTimer = null;
+    const PREVIEW_MS = 1000;
+
+    async function refreshPreview() {
+        const img = document.getElementById('led-preview');
+        const emp = document.getElementById('led-preview-empty');
+        if (!img || !emp) return;
+        try {
+            const data = await api('/display/current');
+            const b64 = data?.data?.image;
+            if (b64) {
+                img.src = 'data:image/png;base64,' + b64;
+                img.style.display = 'block';
+                emp.style.display = 'none';
+            } else {
+                img.style.display = 'none';
+                emp.style.display = 'block';
+            }
+        } catch (_) {
+            img.style.display = 'none';
+            emp.style.display = 'block';
+        }
+    }
+
+    function startPreviewLoop() {
+        if (previewTimer) return;
+        refreshPreview();
+        previewTimer = setInterval(() => {
+            if (!document.hidden) refreshPreview();
+        }, PREVIEW_MS);
+    }
+
     // --- Zone: Mode buttons ---
     let gameModeActive = false;
 
@@ -148,7 +184,20 @@
                 await api('/display/on-demand/stop', { method: 'POST' });
                 showToast('Switching to ticker…');
             } else if (mode === 'game') {
-                await api('/display/on-demand/start', { method: 'POST', body: {} });
+                // Prefer the first live game's plugin so game_focus has a
+                // plugin to delegate to. Fall back to basketball-scoreboard,
+                // which is the first game-mode-aware plugin in the default
+                // rotation.
+                let pluginId = 'basketball-scoreboard';
+                try {
+                    const gl = await api('/games/live');
+                    const games = gl?.data?.games || [];
+                    if (games.length && games[0].plugin_id) pluginId = games[0].plugin_id;
+                } catch (_) { /* use fallback */ }
+                await api('/display/on-demand/start', {
+                    method: 'POST',
+                    body: { plugin_id: pluginId, mode: 'game_focus', start_service: false }
+                });
                 showToast('Switching to game mode…');
             }
             gameModeActive = (mode === 'game');
@@ -357,9 +406,12 @@
     };
 
     // --- Bootstrap ---
-    document.addEventListener('DOMContentLoaded', startPolling);
+    document.addEventListener('DOMContentLoaded', () => {
+        startPolling();
+        startPreviewLoop();
+    });
     document.addEventListener('visibilitychange', () => {
-        if (!document.hidden) refreshAll();
+        if (!document.hidden) { refreshAll(); refreshPreview(); }
     });
 
     window.refreshAll = refreshAll;
