@@ -737,3 +737,10 @@ class TestDottedKeyNormalization:
         teams = soccer_cfg.get('leagues', {}).get('eng.1', {}).get('favorite_teams')
         assert isinstance(teams, list), f"Expected list, got: {type(teams)}"
         assert teams == [], f"Expected empty default list, got: {teams}"
+
+
+def test_remote_js_is_served(client):
+    """The remote.js file must be reachable from the static path."""
+    response = client.get('/static/v3/remote.js')
+    assert response.status_code == 200
+    assert b'refreshAll' in response.data
