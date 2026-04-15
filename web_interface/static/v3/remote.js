@@ -50,9 +50,32 @@
             .forEach(el => { el.disabled = !enabled; });
     }
 
+    // --- Zone: Now Showing ---
+    async function refreshNowShowing() {
+        const el = document.getElementById('now-showing-content');
+        try {
+            const data = await api('/display/current');
+            const payload = data?.data || {};
+            const plugin = payload.current_plugin || payload.plugin || 'Idle';
+            const title  = payload.title || payload.subtitle || payload.current_mode || '';
+            const prettyPlugin = plugin.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+            el.classList.remove('empty');
+            el.innerHTML = `
+                <div style="font-size:18px;font-weight:600;">${prettyPlugin}</div>
+                ${title ? `<div style="color:#6b7280;margin-top:4px;">${title}</div>` : ''}
+            `;
+        } catch (e) {
+            el.classList.add('empty');
+            el.textContent = 'Display service unreachable';
+        }
+    }
+
     // --- Master polling loop ---
     async function refreshAll() {
-        await Promise.allSettled([refreshStatus()]);
+        await Promise.allSettled([
+            refreshStatus(),
+            refreshNowShowing(),
+        ]);
     }
 
     function startPolling() {
