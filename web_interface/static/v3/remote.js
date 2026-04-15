@@ -237,6 +237,7 @@
             refreshAutoFocus(),
             refreshLiveGames(),
             refreshPlugins(),
+            refreshBrightness(),
         ]);
     }
 
@@ -253,9 +254,45 @@
         pollTimer = null;
     }
 
-    // --- Public stubs (filled in by later tasks in this same session) ---
-    window.onBrightnessInput = function (v) { document.getElementById('brightness-value').textContent = v + '%'; };
-    window.onBrightnessCommit = function () { showToast('Brightness not wired yet'); };
+    // --- Zone: Brightness ---
+    let brightnessDebounce = null;
+    let currentBrightness = 65;
+
+    async function refreshBrightness() {
+        try {
+            const data = await api('/config/main');
+            const b = data?.data?.display?.hardware?.brightness;
+            if (typeof b === 'number') {
+                currentBrightness = b;
+                const slider = document.getElementById('brightness-slider');
+                if (slider && document.activeElement !== slider) slider.value = b;
+                document.getElementById('brightness-value').textContent = b + '%';
+            }
+        } catch (_) { /* ignore */ }
+    }
+
+    window.onBrightnessInput = function (v) {
+        document.getElementById('brightness-value').textContent = v + '%';
+    };
+
+    window.onBrightnessCommit = function (v) {
+        const value = parseInt(v, 10);
+        clearTimeout(brightnessDebounce);
+        brightnessDebounce = setTimeout(async () => {
+            try {
+                await api('/config/main', {
+                    method: 'POST',
+                    body: { display: { hardware: { brightness: value } } }
+                });
+                currentBrightness = value;
+                showToast(`Brightness ${value}% — display restarting`);
+            } catch (e) {
+                document.getElementById('brightness-slider').value = currentBrightness;
+                document.getElementById('brightness-value').textContent = currentBrightness + '%';
+                showToast('Brightness save failed');
+            }
+        }, 1500);
+    };
 
     // --- Bootstrap ---
     document.addEventListener('DOMContentLoaded', startPolling);
