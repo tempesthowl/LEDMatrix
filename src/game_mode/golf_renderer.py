@@ -13,7 +13,7 @@ Fonts: reuses assets/fonts/PressStart2P-Regular.ttf (8pt) and 4x6-font.ttf (6pt)
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -55,7 +55,7 @@ class GolfLeaderboardRenderer:
         }
     """
 
-    # Layout constants (320×32 baseline; scales with display width).
+    # Layout constants (tuned for 320×32; other dimensions unsupported).
     HEADER_H = 8       # top strip for tournament name + round
     ROW_H = 8          # each player row is 8px tall
     MAX_ROWS = 3       # how many rows we lay out (blank if fewer players)
@@ -153,7 +153,9 @@ class GolfLeaderboardRenderer:
         name = str(player.get("display_name", ""))
         score = str(player.get("score", ""))
         thru = str(player.get("thru", ""))
-        pct = int(player.get("kalshi_pct", 0))
+        # Defensive clamp: upstream contract says 0..99, but one bad
+        # payload shouldn't overflow the bar column.
+        pct = max(0, min(int(player.get("kalshi_pct", 0)), 99))
 
         row_font = self._fonts["row"]
         small_font = self._fonts["small"]

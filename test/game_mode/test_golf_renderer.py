@@ -123,4 +123,18 @@ def test_final_status_label_gray(renderer, sample_focus_data):
     data["status_state"] = "post"
     data["round_label"] = "FINAL"
     img = renderer.render(data)
-    assert img.size == (320, 32)
+    # Scan the right half of the header row — suffix is right-aligned,
+    # so it lives at x >= 160. We expect gray (140, 140, 140) from the
+    # "R2 · BY ODDS" suffix, and specifically NO gold (255, 215, 0) there
+    # (the tournament name text on the left may still be gold).
+    gray_in_suffix = False
+    gold_in_suffix = False
+    for y in range(7):
+        for x in range(160, 320):
+            px = img.getpixel((x, y))
+            if px == (140, 140, 140):
+                gray_in_suffix = True
+            if px == (255, 215, 0):
+                gold_in_suffix = True
+    assert gray_in_suffix, "Expected gray pixels in suffix area for post-round status"
+    assert not gold_in_suffix, "Expected no gold pixels in suffix area for post-round status"
