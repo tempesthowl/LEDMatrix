@@ -122,6 +122,41 @@ class TestDisplayControllerOnDemand:
         assert controller.is_display_active is True
         assert controller.on_demand_schedule_override is True
 
+    def test_activate_on_demand_game_focus_sets_game_mode_active(self, test_display_controller):
+        """game_focus mode via on-demand must flip _game_mode_active so
+        _tick_plugin_updates accelerates the focused plugin to 20s lockstep."""
+        controller = test_display_controller
+        controller.available_modes = ["mode1"]
+        controller.plugin_modes = {"mode1": MagicMock(), "game_focus": MagicMock()}
+        controller.plugin_display_modes = {"pga-tour-leaderboard": ["game_focus"]}
+        controller.mode_to_plugin_id = {"game_focus": "pga-tour-leaderboard"}
+        controller._game_mode_active = False  # starts False
+
+        request = {
+            "plugin_id": "pga-tour-leaderboard",
+            "mode": "game_focus",
+            "pinned": True,
+        }
+        controller._activate_on_demand(request)
+
+        assert controller._game_mode_active is True
+        assert controller.on_demand_active is True
+        assert controller.on_demand_plugin_id == "pga-tour-leaderboard"
+
+    def test_activate_on_demand_non_focus_mode_leaves_game_mode_active_unchanged(self, test_display_controller):
+        """Only game_focus triggers the flag. Other modes must not."""
+        controller = test_display_controller
+        controller.available_modes = ["mode1", "od_mode"]
+        controller.plugin_modes = {"mode1": MagicMock(), "od_mode": MagicMock()}
+        controller.plugin_display_modes = {"od_plugin": ["od_mode"]}
+        controller.mode_to_plugin_id = {"od_mode": "od_plugin"}
+        controller._game_mode_active = False
+
+        controller._activate_on_demand({"plugin_id": "od_plugin", "mode": "od_mode"})
+
+        assert controller._game_mode_active is False
+        assert controller.on_demand_active is True
+
 
 class TestDisplayControllerLivePriority:
     """Test live priority content switching."""

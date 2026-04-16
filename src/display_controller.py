@@ -1305,7 +1305,14 @@ class DisplayController:
         self.on_demand_last_event = 'started'
         self.on_demand_schedule_override = True
         self.force_change = True
-        
+
+        # Mirror the assignment at _activate_game_mode(): the direct
+        # on-demand path (e.g. programmatic Golf Mode trigger, or any
+        # caller asking for game_focus) must flip the flag too, so
+        # _tick_plugin_updates accelerates the focused plugin to 20s.
+        if resolved_mode == "game_focus":
+            self._game_mode_active = True
+
         # Clear display before switching to on-demand mode
         try:
             self.display_manager.clear()
