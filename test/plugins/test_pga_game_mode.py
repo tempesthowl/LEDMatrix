@@ -4,6 +4,7 @@ Mocks the ESPN/Kalshi data sources and verifies the three contract
 methods return the expected shapes.
 """
 
+import importlib
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -17,10 +18,19 @@ if str(_PGA) not in sys.path:
     sys.path.insert(0, str(_PGA))
 
 
+@pytest.fixture(scope="module")
+def pga_module():
+    """Load the PGA manager module, bypassing any stale 'manager' cache
+    left behind by other test suites (e.g. kalshi-markets conftest)."""
+    sys.modules.pop("manager", None)
+    import manager as _pga_module
+    importlib.reload(_pga_module)
+    return _pga_module
+
+
 @pytest.fixture
-def pga_plugin():
+def pga_plugin(pga_module):
     """Build a PGA plugin with mocked I/O and seeded tournament state."""
-    import manager as pga_module
     PluginClass = pga_module.PGATourLeaderboardPlugin
 
     # Stub out __init__ — we don't want network/logo loading in unit tests.
@@ -82,7 +92,7 @@ def test_get_live_games_empty_when_tournament_not_in_progress(pga_plugin):
     assert pga_plugin.get_live_games() == []
 
 
-def test_get_game_focus_data_returns_golf_dict(pga_plugin, monkeypatch):
+def test_get_game_focus_data_returns_golf_dict(pga_plugin, pga_module, monkeypatch):
     # Mock match_tournament_winners to return top-3 odds
     def fake_match(pm, tournament_name, names):
         return {
@@ -90,7 +100,6 @@ def test_get_game_focus_data_returns_golf_dict(pga_plugin, monkeypatch):
             "Rory McIlroy":      {"pct": 18, "payout": 5.56, "ticker": "B"},
             "Jordan Spieth":     {"pct": 12, "payout": 8.33, "ticker": "C"},
         }
-    import manager as pga_module
     monkeypatch.setattr(pga_module, "kalshi_match_tournament_winners", fake_match, raising=False)
 
     data = pga_plugin.get_game_focus_data("any")
@@ -109,8 +118,7 @@ def test_get_game_focus_data_returns_golf_dict(pga_plugin, monkeypatch):
     assert data["no_markets"] is False
 
 
-def test_get_game_focus_data_no_markets_flags(pga_plugin, monkeypatch):
-    import manager as pga_module
+def test_get_game_focus_data_no_markets_flags(pga_plugin, pga_module, monkeypatch):
     monkeypatch.setattr(pga_module, "kalshi_match_tournament_winners",
                         lambda pm, tn, names: {}, raising=False)
 
@@ -119,8 +127,7 @@ def test_get_game_focus_data_no_markets_flags(pga_plugin, monkeypatch):
     assert data["players"] == []
 
 
-def test_display_game_focus_renders_when_markets_exist(pga_plugin, monkeypatch):
-    import manager as pga_module
+def test_display_game_focus_renders_when_markets_exist(pga_plugin, pga_module, monkeypatch):
     monkeypatch.setattr(pga_module, "kalshi_match_tournament_winners",
                         lambda pm, tn, names: {"Scottie Scheffler":
                             {"pct": 32, "payout": 3.13, "ticker": "A"}},
@@ -131,8 +138,7 @@ def test_display_game_focus_renders_when_markets_exist(pga_plugin, monkeypatch):
     pga_plugin.display_manager.update_display.assert_called_once()
 
 
-def test_display_game_focus_returns_false_when_no_markets(pga_plugin, monkeypatch):
-    import manager as pga_module
+def test_display_game_focus_returns_false_when_no_markets(pga_plugin, pga_module, monkeypatch):
     monkeypatch.setattr(pga_module, "kalshi_match_tournament_winners",
                         lambda pm, tn, names: {}, raising=False)
 
@@ -141,7 +147,7 @@ def test_display_game_focus_returns_false_when_no_markets(pga_plugin, monkeypatc
     pga_plugin.display_manager.update_display.assert_not_called()
 
 
-def test_display_dispatches_to_game_focus(pga_plugin, monkeypatch):
+def test_display_dispatches_to_game_focus(pga_plugin):
     """When display() is called with display_mode='game_focus', route to _display_game_focus."""
     called = {"yes": False}
 
