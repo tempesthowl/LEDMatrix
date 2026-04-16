@@ -141,3 +141,29 @@ def test_match_tournament_winners_ascii_folds_diacritics():
     result = match_tournament_winners(pm, "RBC Heritage", ["Ludvig Åberg"])
     assert "Ludvig Åberg" in result
     assert result["Ludvig Åberg"]["pct"] == 16
+
+
+def test_fetch_tournament_winner_markets_caches_for_20s_lockstep():
+    """Cache TTL must match fetch_game_odds (20s) so Game Mode's 20s
+    refresh tick picks up fresh Kalshi odds on each cycle."""
+    events = {"events": [{"event_ticker": "KXPGATOUR-RBH26", "title": "RBC Heritage Winner"}]}
+    markets = {"markets": [
+        {"ticker": "KXPGATOUR-RBH26-SSCH", "yes_sub_title": "Scottie Scheffler",
+         "yes_bid_dollars": 0.32, "yes_ask_dollars": 0.34},
+    ]}
+    plugin = _make_kalshi_plugin_stub(events, markets)
+
+    from plugin_repos_kalshi_markets_manager import KalshiMarketsPlugin as K
+    K.fetch_tournament_winner_markets(plugin, "RBC Heritage")
+
+    # Populated-result set call — verify ttl=20
+    set_calls = plugin.cache_manager.set.call_args_list
+    assert len(set_calls) >= 1
+    ttl_set = {c.kwargs.get("ttl") for c in set_calls if c.kwargs.get("ttl") is not None}
+    assert 30 not in ttl_set, "TTL must be 20s (lockstep) not 30s"
+    assert 20 in ttl_set, f"Expected ttl=20 in cache.set calls, got: {ttl_set}"
+
+    # Get call — verify max_age=20
+    get_calls = plugin.cache_manager.get.call_args_list
+    max_ages = {c.kwargs.get("max_age") for c in get_calls if c.kwargs.get("max_age") is not None}
+    assert max_ages == {20}, f"Expected max_age=20 on get, got: {max_ages}"

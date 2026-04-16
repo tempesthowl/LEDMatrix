@@ -763,7 +763,7 @@ class KalshiMarketsPlugin(BasePlugin):
             return {}
 
         cache_key = f"kalshi_tournament_{tournament_name.lower().replace(' ', '_')}"
-        cached = self.cache_manager.get(cache_key, max_age=30)
+        cached = self.cache_manager.get(cache_key, max_age=20)
         if cached is not None:
             return cached if cached else {}
 
@@ -798,7 +798,7 @@ class KalshiMarketsPlugin(BasePlugin):
                 self.logger.debug(
                     "No Kalshi event matched tournament '%s'", tournament_name
                 )
-                self.cache_manager.set(cache_key, {}, ttl=30)
+                self.cache_manager.set(cache_key, {}, ttl=20)
                 return {}
 
             event_ticker = matched_event.get("event_ticker", "")
@@ -853,7 +853,7 @@ class KalshiMarketsPlugin(BasePlugin):
                     "ticker": m.get("ticker", ""),
                 }
 
-            self.cache_manager.set(cache_key, result, ttl=30)
+            self.cache_manager.set(cache_key, result, ttl=20)
             self.logger.info(
                 "Kalshi tournament odds: %d players for '%s'",
                 len(result), tournament_name,
