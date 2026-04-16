@@ -68,6 +68,7 @@ def pga_plugin(pga_module):
     plugin.previous_tournament = None
     plugin.previous_leaderboard_data = []
     plugin._golf_view_index = 0
+    plugin._golf_last_rotation_ts = 0.0
     return plugin
 
 
@@ -218,3 +219,41 @@ def test_get_game_focus_data_view_index_1_shows_ranks_4_through_6(pga_plugin, pg
     assert [p["display_name"] for p in data["players"]] == ["DOE", "DOE", "DOE"]
     # pct sequence desc: 29,28,27,26,25,24,23,22,21 → view 1 = indices 3,4,5 = 26,25,24
     assert [p["kalshi_pct"] for p in data["players"]] == [26, 25, 24]
+
+
+def test_display_game_focus_advances_view_after_rotation_interval(pga_plugin, pga_module, monkeypatch):
+    """After rotation_interval seconds elapse, _golf_view_index advances by 1
+    (modulo rotation_views) on the next _display_game_focus call."""
+    monkeypatch.setattr(pga_module, "kalshi_match_tournament_winners",
+                        lambda pm, tn, names: {"Scottie Scheffler":
+                            {"pct": 32, "payout": 3.13, "ticker": "A"}},
+                        raising=False)
+    pga_plugin.config = {"golf_game_mode": {"rotation_interval": 5, "rotation_views": 3, "top_n": 3}}
+    pga_plugin._golf_view_index = 0
+    pga_plugin._golf_last_rotation_ts = 1000.0
+
+    # Fast-forward to 1003 — before interval — no advance
+    monkeypatch.setattr(pga_module.time, "time", lambda: 1003.0)
+    pga_plugin._display_game_focus(force_clear=False)
+    assert pga_plugin._golf_view_index == 0, "Should not rotate before interval"
+
+    # Fast-forward to 1006 — past interval — advance to view 1
+    monkeypatch.setattr(pga_module.time, "time", lambda: 1006.0)
+    pga_plugin._display_game_focus(force_clear=False)
+    assert pga_plugin._golf_view_index == 1
+    assert pga_plugin._golf_last_rotation_ts == 1006.0
+
+
+def test_display_game_focus_wraps_view_index_at_rotation_views(pga_plugin, pga_module, monkeypatch):
+    """_golf_view_index modulos by rotation_views: view 2 → view 0."""
+    monkeypatch.setattr(pga_module, "kalshi_match_tournament_winners",
+                        lambda pm, tn, names: {"Scottie Scheffler":
+                            {"pct": 32, "payout": 3.13, "ticker": "A"}},
+                        raising=False)
+    pga_plugin.config = {"golf_game_mode": {"rotation_interval": 5, "rotation_views": 3, "top_n": 3}}
+    pga_plugin._golf_view_index = 2
+    pga_plugin._golf_last_rotation_ts = 1000.0
+
+    monkeypatch.setattr(pga_module.time, "time", lambda: 1006.0)
+    pga_plugin._display_game_focus(force_clear=False)
+    assert pga_plugin._golf_view_index == 0, "Should wrap 2 → 0"
