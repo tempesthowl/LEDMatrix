@@ -21,7 +21,8 @@
         .pill-dot  { width: 8px; height: 8px; border-radius: 50%; }
         .pill-live .pill-dot { background: #10b981; }
         .pill-off  .pill-dot { background: #ef4444; }
-        .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .btn-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+        .btn-big { padding: 8px 4px; font-size: 13px; min-height: 64px; }
         .btn-big  { display: flex; flex-direction: column; align-items: center; justify-content: center;
                     min-height: 72px; border-radius: 12px; border: 2px solid #e5e7eb;
                     background: #fff; color: #111827; font-size: 15px; font-weight: 600;
@@ -51,6 +52,32 @@
                  font-size: 14px; z-index: 100; opacity: 0; transition: opacity .2s; }
         .toast.show { opacity: 1; }
         .empty { color: #9ca3af; font-size: 14px; font-style: italic; }
+        .toggle.pending { box-shadow: 0 0 0 2px #f59e0b; }
+        .toggle-row.pending label::after {
+            content: ' •'; color: #f59e0b; font-weight: 700;
+        }
+        .pending-bar {
+            position: fixed; bottom: 0; left: 0; right: 0;
+            background: #111827; color: #fff; padding: 12px 16px;
+            display: none; align-items: center; justify-content: space-between;
+            gap: 12px; box-shadow: 0 -2px 8px rgba(0,0,0,.2); z-index: 50;
+        }
+        .pending-bar.show { display: flex; }
+        .pending-count { font-size: 14px; font-weight: 600; }
+        .pending-discard, .pending-apply {
+            min-height: 40px; padding: 8px 14px; border-radius: 8px;
+            border: none; font-weight: 600; cursor: pointer; font-size: 14px;
+        }
+        .pending-discard { background: transparent; color: #e5e7eb; border: 1px solid #4b5563; }
+        .pending-apply { background: #10b981; color: #fff; }
+        .pending-apply:disabled { opacity: .6; cursor: wait; }
+        body.has-pending { padding-bottom: 80px; }
+        .select-toolbar { display: flex; justify-content: flex-end; gap: 12px; margin-bottom: 8px; }
+        .select-link { font-size: 13px; color: #2563eb; cursor: pointer; background: none;
+                       border: none; padding: 0; font-weight: 500; text-decoration: underline; }
+        .game-check { width: 20px; height: 20px; accent-color: #2563eb; cursor: pointer;
+                      flex-shrink: 0; margin-right: 10px; }
+        .game-card-inner { display: flex; align-items: center; flex: 1; min-width: 0; }
     </style>
 </head>
 <body>
@@ -59,30 +86,22 @@
         <div id="status-pill" class="pill pill-off"><span class="pill-dot"></span><span id="status-text">Loading…</span></div>
     </header>
 
-    <section class="remote-section" id="now-showing">
-        <h3>Now Showing</h3>
-        <div id="led-preview-wrap"
-             style="background:#000;border-radius:6px;padding:8px;margin-bottom:12px;
-                    display:flex;align-items:center;justify-content:center;min-height:48px;">
-            <img id="led-preview" alt="LED preview"
-                 style="image-rendering:pixelated;image-rendering:crisp-edges;
-                        max-width:100%;height:auto;display:none;"/>
-            <span id="led-preview-empty"
-                  style="color:#9ca3af;font-size:12px;font-style:italic;">Waiting for display…</span>
-        </div>
-        <div id="now-showing-content" class="empty">Loading…</div>
-    </section>
-
     <section class="remote-section" id="mode-controls">
         <h3>Mode</h3>
         <div class="btn-grid">
-            <button class="btn-big" id="btn-ticker" aria-pressed="true" onclick="setMode('ticker')">TICKER</button>
+            <button class="btn-big" id="btn-ticker" aria-pressed="true"  onclick="setMode('ticker')">TICKER</button>
             <button class="btn-big" id="btn-game"   aria-pressed="false" onclick="setMode('game')">GAME MODE</button>
+            <button class="btn-big" id="btn-golf"   aria-pressed="false" onclick="setMode('golf')">GOLF MODE</button>
         </div>
         <div class="toggle-row" style="margin-top:12px;">
             <label for="auto-focus-toggle">Auto-focus live game</label>
             <button class="toggle" id="auto-focus-toggle" role="switch" aria-checked="false"
                     onclick="toggleAutoFocus()"></button>
+        </div>
+        <div class="toggle-row" style="margin-top:4px;">
+            <label for="auto-cycle-toggle">Auto-cycle games</label>
+            <button class="toggle" id="auto-cycle-toggle" role="switch" aria-checked="true"
+                    onclick="toggleAutoCycle()"></button>
         </div>
     </section>
 
@@ -104,6 +123,12 @@
 
     <div id="toast" class="toast" aria-live="polite"></div>
 
-    <script src="/static/v3/remote.js?v=5" defer></script>
+    <div id="pending-bar" class="pending-bar" aria-hidden="true">
+        <div class="pending-count"><span id="pending-count">0</span> changes pending</div>
+        <button type="button" class="pending-discard" onclick="discardPending()">Discard</button>
+        <button type="button" class="pending-apply" onclick="applyPending()">Apply &amp; Restart</button>
+    </div>
+
+    <script src="/static/v3/remote.js?v=9" defer></script>
 </body>
 </html>
