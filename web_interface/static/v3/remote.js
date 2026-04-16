@@ -103,7 +103,11 @@
 
         document.getElementById('btn-ticker').setAttribute('aria-pressed', (activeMode === 'ticker').toString());
         document.getElementById('btn-game').setAttribute('aria-pressed',   (activeMode === 'game').toString());
-        document.getElementById('btn-golf').setAttribute('aria-pressed',   (activeMode === 'golf').toString());
+        // btn-golf is currently hidden from the UI (the plan is to fold
+        // golf into GAME MODE auto-detection later). Guard the lookup so
+        // refreshMode() still works if the button is absent. setMode('golf')
+        // remains a dispatchable code path for programmatic activation.
+        document.getElementById('btn-golf')?.setAttribute('aria-pressed', (activeMode === 'golf').toString());
     }
 
     async function awaitOnDemandOutcome({ tries = 6, delayMs = 250 } = {}) {
