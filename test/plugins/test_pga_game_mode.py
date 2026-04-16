@@ -67,6 +67,7 @@ def pga_plugin(pga_module):
     ]
     plugin.previous_tournament = None
     plugin.previous_leaderboard_data = []
+    plugin._golf_view_index = 0
     return plugin
 
 
@@ -173,3 +174,47 @@ def test_display_dispatches_to_game_focus(pga_plugin):
     pga_plugin._display_game_focus = fake_focus
     pga_plugin.display(display_mode="game_focus", force_clear=False)
     assert called["yes"] is True
+
+
+def test_get_game_focus_data_view_index_0_shows_top_3(pga_plugin, pga_module, monkeypatch):
+    """View 0 with top_n=3 and 9+ Kalshi markets shows ranks 1-3."""
+    def fake_match(pm, tournament_name, names):
+        return {
+            "Scottie Scheffler": {"pct": 32, "payout": 3.13, "ticker": "A"},
+            "Rory McIlroy":      {"pct": 18, "payout": 5.56, "ticker": "B"},
+            "Jordan Spieth":     {"pct": 12, "payout": 8.33, "ticker": "C"},
+            "Jon Rahm":          {"pct": 10, "payout": 10.0, "ticker": "D"},
+            "Collin Morikawa":   {"pct":  8, "payout": 12.5, "ticker": "E"},
+        }
+    monkeypatch.setattr(pga_module, "kalshi_match_tournament_winners", fake_match, raising=False)
+    pga_plugin._golf_view_index = 0
+
+    data = pga_plugin.get_game_focus_data("any")
+    assert [p["rank_by_odds"] for p in data["players"]] == [1, 2, 3]
+    assert [p["display_name"] for p in data["players"]] == ["SCHEFFLER", "MCILROY", "SPIETH"]
+
+
+def test_get_game_focus_data_view_index_1_shows_ranks_4_through_6(pga_plugin, pga_module, monkeypatch):
+    """View 1 with top_n=3 shows ranks 4-6 from the same ranking."""
+    # Extend leaderboard with 9 known players so slicing has data to show.
+    pga_plugin.leaderboard_data = [
+        {"position": i, "name": f"Player {i}", "short_name": f"P{i}. Doe",
+         "score": f"-{10-i}", "thru": "F", "on_course": False, "status": "active"}
+        for i in range(1, 10)
+    ]
+
+    def fake_match(pm, tournament_name, names):
+        # Rank i gets pct = 30-i. Higher i → lower pct.
+        return {f"Player {i}": {"pct": 30 - i, "payout": 100.0 / (30 - i),
+                                 "ticker": f"T{i}"} for i in range(1, 10)}
+    monkeypatch.setattr(pga_module, "kalshi_match_tournament_winners", fake_match, raising=False)
+
+    pga_plugin._golf_view_index = 1
+
+    data = pga_plugin.get_game_focus_data("any")
+    # View 1 → ranks 4, 5, 6
+    assert [p["rank_by_odds"] for p in data["players"]] == [4, 5, 6]
+    # After stripping "P{i}. " prefix, short_name "P{i}. Doe" becomes "DOE"
+    assert [p["display_name"] for p in data["players"]] == ["DOE", "DOE", "DOE"]
+    # pct sequence desc: 29,28,27,26,25,24,23,22,21 → view 1 = indices 3,4,5 = 26,25,24
+    assert [p["kalshi_pct"] for p in data["players"]] == [26, 25, 24]
