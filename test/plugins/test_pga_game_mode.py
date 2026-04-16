@@ -69,6 +69,7 @@ def pga_plugin(pga_module):
     plugin.previous_leaderboard_data = []
     plugin._golf_view_index = 0
     plugin._golf_last_rotation_ts = 0.0
+    plugin._golf_total_ranked = 0
     return plugin
 
 
@@ -224,13 +225,21 @@ def test_get_game_focus_data_view_index_1_shows_ranks_4_through_6(pga_plugin, pg
 def test_display_game_focus_advances_view_after_rotation_interval(pga_plugin, pga_module, monkeypatch):
     """After rotation_interval seconds elapse, _golf_view_index advances by 1
     (modulo rotation_views) on the next _display_game_focus call."""
+    # Use 9 markets (top_n=3, rotation_views=3) so effective_views stays at 3
+    # across all frames — tests the timing/interval logic, not the clamp.
+    pga_plugin.leaderboard_data = [
+        {"position": i, "name": f"Player {i}", "short_name": f"P{i}. Doe",
+         "score": f"-{10-i}", "thru": "F", "on_course": False, "status": "active"}
+        for i in range(1, 10)
+    ]
     monkeypatch.setattr(pga_module, "kalshi_match_tournament_winners",
-                        lambda pm, tn, names: {"Scottie Scheffler":
-                            {"pct": 32, "payout": 3.13, "ticker": "A"}},
+                        lambda pm, tn, names: {f"Player {i}": {"pct": 30 - i, "payout": 1.0, "ticker": f"T{i}"}
+                                               for i in range(1, 10)},
                         raising=False)
     pga_plugin.config = {"golf_game_mode": {"rotation_interval": 5, "rotation_views": 3, "top_n": 3}}
     pga_plugin._golf_view_index = 0
     pga_plugin._golf_last_rotation_ts = 1000.0
+    pga_plugin._golf_total_ranked = 9  # seed so first frame sees full rotation width
 
     # Fast-forward to 1003 — before interval — no advance
     monkeypatch.setattr(pga_module.time, "time", lambda: 1003.0)
@@ -257,3 +266,45 @@ def test_display_game_focus_wraps_view_index_at_rotation_views(pga_plugin, pga_m
     monkeypatch.setattr(pga_module.time, "time", lambda: 1006.0)
     pga_plugin._display_game_focus(force_clear=False)
     assert pga_plugin._golf_view_index == 0, "Should wrap 2 → 0"
+
+
+def test_display_game_focus_skips_empty_windows_when_fewer_markets(pga_plugin, pga_module, monkeypatch):
+    """With 5 Kalshi markets and top_n=3: view 0 ok, view 1 ok (2 players),
+    view 2 would be empty, so rotation wraps view 1 → view 0 (not view 2)."""
+    pga_plugin.leaderboard_data = [
+        {"position": i, "name": f"Player {i}", "short_name": f"P{i}. Doe",
+         "score": f"-{10-i}", "thru": "F", "on_course": False, "status": "active"}
+        for i in range(1, 6)
+    ]
+
+    def fake_match(pm, tournament_name, names):
+        return {f"Player {i}": {"pct": 30 - i, "payout": 100.0 / (30 - i),
+                                 "ticker": f"T{i}"} for i in range(1, 6)}
+    monkeypatch.setattr(pga_module, "kalshi_match_tournament_winners", fake_match, raising=False)
+
+    pga_plugin.config = {"golf_game_mode": {"rotation_interval": 5, "rotation_views": 3, "top_n": 3}}
+    pga_plugin._golf_total_ranked = 5   # simulate one prior render having populated this
+    pga_plugin._golf_view_index = 1
+    pga_plugin._golf_last_rotation_ts = 1000.0
+
+    monkeypatch.setattr(pga_module.time, "time", lambda: 1006.0)
+    pga_plugin._display_game_focus(force_clear=False)
+    # Effective views = ceil(5/3) = 2; wrap 1 → 0 (not → 2).
+    assert pga_plugin._golf_view_index == 0, "Should wrap to 0, not advance to empty view 2"
+
+
+def test_display_game_focus_freezes_rotation_during_final_hold(pga_plugin, pga_module, monkeypatch):
+    """status_state == 'post' → rotation does not tick, view stays put."""
+    pga_plugin.current_tournament["status"] = "post"
+    monkeypatch.setattr(pga_module, "kalshi_match_tournament_winners",
+                        lambda pm, tn, names: {"Scottie Scheffler":
+                            {"pct": 32, "payout": 3.13, "ticker": "A"}},
+                        raising=False)
+    pga_plugin.config = {"golf_game_mode": {"rotation_interval": 5, "rotation_views": 3, "top_n": 3}}
+    pga_plugin._golf_view_index = 1
+    pga_plugin._golf_last_rotation_ts = 1000.0
+
+    monkeypatch.setattr(pga_module.time, "time", lambda: 1010.0)
+    pga_plugin._display_game_focus(force_clear=False)
+    # Past interval, but tournament is post — must not advance.
+    assert pga_plugin._golf_view_index == 1, "Should freeze rotation when status_state == 'post'"
