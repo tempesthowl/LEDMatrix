@@ -151,11 +151,18 @@
                 return;
             }
             if (mode === 'golf') {
+                // Pass a sentinel game_id so the display controller pins
+                // on_demand_modes to ['game_focus'] only — without it, the
+                // controller rotates between game_focus and pga_leaderboard,
+                // which makes the Golf frame flash back to the scrolling
+                // leaderboard every few seconds. The PGA plugin ignores
+                // game_id itself (only one tournament at a time).
                 await api('/display/on-demand/start', {
                     method: 'POST',
                     body: {
                         plugin_id: 'pga-tour-leaderboard',
                         mode: 'game_focus',
+                        game_id: 'pga-tournament',
                         start_service: false
                     }
                 });
