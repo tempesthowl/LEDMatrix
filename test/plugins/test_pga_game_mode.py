@@ -92,6 +92,21 @@ def test_get_live_games_empty_when_tournament_not_in_progress(pga_plugin):
     assert pga_plugin.get_live_games() == []
 
 
+def test_get_live_games_handles_espn_nested_status_dict(pga_plugin):
+    """ESPN sometimes stores tournament status as a nested dict
+    {"type": {"state": "in", ...}} rather than a plain string.
+    Both shapes must be recognized as 'in progress'."""
+    pga_plugin.current_tournament["status"] = {
+        "type": {"state": "in", "description": "In Progress"}
+    }
+    games = pga_plugin.get_live_games()
+    assert len(games) == 1
+    assert games[0]["status_state"] == "in"
+
+    pga_plugin.current_tournament["status"] = {"type": {"state": "pre"}}
+    assert pga_plugin.get_live_games() == []
+
+
 def test_get_game_focus_data_returns_golf_dict(pga_plugin, pga_module, monkeypatch):
     # Mock match_tournament_winners to return top-3 odds
     def fake_match(pm, tournament_name, names):
