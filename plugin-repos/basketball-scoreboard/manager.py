@@ -27,11 +27,12 @@ except ImportError:
 try:
     from src.game_mode.renderer import GameModeRenderer
     from src.game_mode.kalshi_matcher import match_game as kalshi_match_game
-    from src.game_mode.team_colors import get_team_color
+    from src.game_mode.team_colors import get_team_color, get_contrasting_pair
 except ImportError:
     GameModeRenderer = None
     kalshi_match_game = None
     get_team_color = None
+    get_contrasting_pair = None
 
 # Import scroll display components
 try:
@@ -941,36 +942,48 @@ class BasketballScoreboardPlugin(BasePlugin if BasePlugin else object):
 
     def update(self) -> None:
         """Update basketball game data using parallel manager updates."""
-        if not self.is_enabled:
-            return
+        # No is_enabled gate here: Game Mode's get_live_games() needs fresh
+        # data from every sport plugin even when the ticker toggle is OFF.
+        # Per project convention (CLAUDE.md): "Enabled toggle = ticker
+        # visibility only." Sub-section flags (nba_enabled etc.) still gate
+        # recent/upcoming fetches below — only live runs unconditionally.
 
-        # Collect all manager update tasks
+        # Collect all manager update tasks.
+        # Live fetches run regardless of sub-section enabled flags — Game Mode
+        # needs live games from any league with activity, not just ticker-visible
+        # ones. Recent/upcoming stay gated (ticker-only views). Guard with
+        # hasattr since sub-managers are only instantiated when the
+        # corresponding sub-section is enabled in config.
         update_tasks = []
-        
+        if hasattr(self, "nba_live"):
+            update_tasks.append(("NBA Live", self.nba_live.update))
+        if hasattr(self, "wnba_live"):
+            update_tasks.append(("WNBA Live", self.wnba_live.update))
+        if hasattr(self, "ncaam_live"):
+            update_tasks.append(("NCAA Men's Live", self.ncaam_live.update))
+        if hasattr(self, "ncaaw_live"):
+            update_tasks.append(("NCAA Women's Live", self.ncaaw_live.update))
+
         if self.nba_enabled:
             update_tasks.extend([
-                ("NBA Live", self.nba_live.update),
                 ("NBA Recent", self.nba_recent.update),
                 ("NBA Upcoming", self.nba_upcoming.update),
             ])
-        
+
         if self.wnba_enabled:
             update_tasks.extend([
-                ("WNBA Live", self.wnba_live.update),
                 ("WNBA Recent", self.wnba_recent.update),
                 ("WNBA Upcoming", self.wnba_upcoming.update),
             ])
-        
+
         if self.ncaam_enabled:
             update_tasks.extend([
-                ("NCAA Men's Live", self.ncaam_live.update),
                 ("NCAA Men's Recent", self.ncaam_recent.update),
                 ("NCAA Men's Upcoming", self.ncaam_upcoming.update),
             ])
-        
+
         if self.ncaaw_enabled:
             update_tasks.extend([
-                ("NCAA Women's Live", self.ncaaw_live.update),
                 ("NCAA Women's Recent", self.ncaaw_recent.update),
                 ("NCAA Women's Upcoming", self.ncaaw_upcoming.update),
             ])
@@ -3401,16 +3414,18 @@ class BasketballScoreboardPlugin(BasePlugin if BasePlugin else object):
 
         Each dict has: plugin_id, game_id, away_team, home_team,
         away_score, home_score, period_label, status_state, league.
+
+        No enabled-gate: Game Mode is a valid consumer regardless of which
+        leagues are visible in the ticker. The `enabled` flag controls
+        ticker visibility only per project convention.
         """
         games = []
 
         for league_id, registry in self._league_registry.items():
-            if not registry.get("enabled", False):
-                continue
             live_manager = registry.get("managers", {}).get("live")
             if not live_manager:
                 continue
-            game_list = getattr(live_manager, "games_list", []) or []
+            game_list = self._get_manager_games(live_manager, "live")
             for g in game_list:
                 if not g.get("is_live", False):
                     continue
@@ -3428,13 +3443,41 @@ class BasketballScoreboardPlugin(BasePlugin if BasePlugin else object):
 
         return games
 
+    def _find_live_manager_for_game(self, game_id: str):
+        """Return the live manager holding a game, or None.
+
+        Used by get_game_focus_data() to target refresh_focused_game()
+        at the one manager that owns the game's live state.
+        """
+        for league_id, registry in self._league_registry.items():
+            mgr = registry.get("managers", {}).get("live")
+            if not mgr:
+                continue
+            for g in getattr(mgr, "live_games", []) or []:
+                if str(g.get("id", "")) == str(game_id):
+                    return mgr
+        return None
+
     def get_game_focus_data(self, game_id: str) -> Optional[Dict[str, Any]]:
         """Build a GameFocusData dict for a specific game ID.
 
         Searches all managers for the game, then enriches with
         Kalshi odds and ESPN betting lines.
+
+        For live games, triggers a targeted ESPN refresh (max_age=10s)
+        so the scorebug stays in sync with Kalshi odds (which fetch
+        inline). Falls back to the cached game dict if no refresh is
+        available.
         """
-        game = self._find_game_by_id(game_id)
+        fresh: Optional[Dict] = None
+        live_mgr = self._find_live_manager_for_game(game_id)
+        if live_mgr is not None and hasattr(live_mgr, "refresh_focused_game"):
+            try:
+                fresh = live_mgr.refresh_focused_game(game_id)
+            except Exception as e:  # pylint: disable=broad-except
+                self.logger.debug("refresh_focused_game failed: %s", e)
+
+        game = fresh if fresh else self._find_game_by_id(game_id)
         if not game:
             return None
 
@@ -3444,23 +3487,42 @@ class BasketballScoreboardPlugin(BasePlugin if BasePlugin else object):
         away_logo = self._load_game_logo(game, "away")
         home_logo = self._load_game_logo(game, "home")
 
-        # Determine status_state
-        if game.get("is_live"):
+        # Determine status_state — prefer the fresh-fetch signal over the
+        # cached dict so a just-gone-final game renders "FINAL" on the
+        # next frame instead of lingering with stale "live" state.
+        if fresh is not None and fresh.get("is_final"):
+            status_state = "post"
+        elif fresh is not None and fresh.get("is_live"):
+            status_state = "in"
+        elif game.get("is_live"):
             status_state = "in"
         elif game.get("is_final"):
             status_state = "post"
         else:
             status_state = "pre"
 
+        # Resolve colors with collision detection (navy-vs-navy etc.)
+        _league_key = league or "nba"
+        _away_abbr = game.get("away_abbr", "")
+        _home_abbr = game.get("home_abbr", "")
+        if get_contrasting_pair is not None:
+            _home_color, _away_color = get_contrasting_pair(_home_abbr, _away_abbr, _league_key)
+        elif get_team_color is not None:
+            _home_color = get_team_color(_home_abbr, _league_key)
+            _away_color = get_team_color(_away_abbr, _league_key)
+        else:
+            _home_color = COLOR_WHITE
+            _away_color = COLOR_WHITE
+
         # Build focus data
         focus_data: Dict[str, Any] = {
             "sport": "basketball",
-            "league": league or "nba",
+            "league": _league_key,
             "game_id": game_id,
-            "away_team": game.get("away_abbr", ""),
-            "home_team": game.get("home_abbr", ""),
-            "away_color": get_team_color(game.get("away_abbr", ""), league or "nba") if get_team_color else COLOR_WHITE,
-            "home_color": get_team_color(game.get("home_abbr", ""), league or "nba") if get_team_color else COLOR_WHITE,
+            "away_team": _away_abbr,
+            "home_team": _home_abbr,
+            "away_color": _away_color,
+            "home_color": _home_color,
             "away_score": int(game.get("away_score", 0)),
             "home_score": int(game.get("home_score", 0)),
             "status_state": status_state,
@@ -3471,13 +3533,7 @@ class BasketballScoreboardPlugin(BasePlugin if BasePlugin else object):
             "home_logo": home_logo,
             "kalshi": None,
             "espn_odds": None,
-            "extras": {
-                "possession": game.get("possession_indicator", ""),
-                "is_bonus": game.get("is_bonus", False),
-                "is_double_bonus": game.get("is_double_bonus", False),
-                "home_timeouts": game.get("home_timeouts", 0),
-                "away_timeouts": game.get("away_timeouts", 0),
-            },
+            "extras": {},  # middle panel renders league logo; no data needed
         }
 
         # Kalshi odds
@@ -3510,6 +3566,15 @@ class BasketballScoreboardPlugin(BasePlugin if BasePlugin else object):
 
         return focus_data
 
+    def _get_manager_games(self, mgr, mgr_type: str) -> list:
+        """Get games list from a manager — live managers use `live_games`,
+        recent/upcoming use `games_list`."""
+        if mgr_type == "live":
+            games = getattr(mgr, "live_games", None)
+            if games is not None:
+                return games
+        return getattr(mgr, "games_list", []) or []
+
     def _find_game_by_id(self, game_id: str) -> Optional[Dict]:
         """Find a game dict across all managers by ESPN event ID."""
         for league_id, registry in self._league_registry.items():
@@ -3519,8 +3584,7 @@ class BasketballScoreboardPlugin(BasePlugin if BasePlugin else object):
                 mgr = registry.get("managers", {}).get(mgr_type)
                 if not mgr:
                     continue
-                game_list = getattr(mgr, "games_list", []) or []
-                for g in game_list:
+                for g in self._get_manager_games(mgr, mgr_type):
                     if str(g.get("id", "")) == str(game_id):
                         return g
         return None
@@ -3534,8 +3598,7 @@ class BasketballScoreboardPlugin(BasePlugin if BasePlugin else object):
                 mgr = registry.get("managers", {}).get(mgr_type)
                 if not mgr:
                     continue
-                game_list = getattr(mgr, "games_list", []) or []
-                for g in game_list:
+                for g in self._get_manager_games(mgr, mgr_type):
                     if str(g.get("id", "")) == str(game_id):
                         return league_id
         return None
