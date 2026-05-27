@@ -113,15 +113,22 @@
         document.getElementById('btn-golf')?.setAttribute('aria-pressed', (activeMode === 'golf').toString());
     }
 
-    async function awaitOnDemandOutcome({ tries = 6, delayMs = 250 } = {}) {
+    // 2026-05-28: exponential backoff. Was constant 250ms × 6 = up to 1.5s
+    // of UI hang waiting for mode confirmation, even though the display
+    // controller picks up the request within ~50ms via cache-IPC. Now
+    // first poll at 50ms catches the fast path; later polls back off
+    // toward 400ms in case of slow plugin startup. Worst-case unchanged.
+    async function awaitOnDemandOutcome({ tries = 6, initialDelayMs = 50, maxDelayMs = 400 } = {}) {
+        let delay = initialDelayMs;
         for (let i = 0; i < tries; i++) {
-            await new Promise(r => setTimeout(r, delayMs));
+            await new Promise(r => setTimeout(r, delay));
             try {
                 const s = await api('/display/on-demand/status');
                 const st = s?.data?.state || {};
                 if (st.status === 'active' || st.active === true) return { ok: true, state: st };
                 if (st.status === 'error') return { ok: false, state: st };
             } catch (_) { /* keep polling */ }
+            delay = Math.min(delay * 2, maxDelayMs);
         }
         return { ok: null, state: null };
     }
@@ -670,6 +677,20 @@
                 // batch didn't actually flip any plugin's enabled state.
                 if (resp && resp.data && resp.data.requires_restart === false) {
                     requiresRestart = false;
+                }
+                // 2026-05-28: use the authoritative applied[] payload from
+                // the toggle response to update pluginBaseline immediately.
+                // Previously the baseline only refreshed on the 2s POLL_MS
+                // cycle (plus the 200/1500ms post-Apply setTimeouts), so a
+                // re-tap inside that window would mis-detect baseline and
+                // surface a stale toggle state. Server already returned
+                // the truth — consume it inline.
+                if (resp && resp.data && Array.isArray(resp.data.applied)) {
+                    resp.data.applied.forEach(item => {
+                        if (item && item.plugin_id) {
+                            pluginBaseline[item.plugin_id] = !!item.enabled;
+                        }
+                    });
                 }
             }
             if (kalshiChange !== null) {
