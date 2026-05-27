@@ -422,6 +422,38 @@ class StreamManager:
 
                 plugin_id = self._ordered_plugins[self._prefetch_index]
 
+                # 2026-05-28: ticker_enabled re-check before slow fetch.
+                # _ordered_plugins is rebuilt by _refresh_plugin_list filtering
+                # on ticker_enabled, but a remote toggle can flip a plugin
+                # OFF between rebuilds. Without this guard, the prefetch
+                # walks ahead with a stale index and starts a 20-second
+                # fetch (e.g. stock-ticker's 41,592px image gen) for a
+                # plugin that's no longer supposed to render. Result: the
+                # main render thread blocks waiting for content the user
+                # already said they don't want, AND the disabled plugin
+                # ends up on the panels anyway because we shoved it into
+                # the buffer. Cheap pre-check stops both outcomes.
+                try:
+                    is_enabled = (
+                        self.plugin_manager.ticker_enabled.get(plugin_id, True)
+                        if hasattr(self.plugin_manager, 'ticker_enabled')
+                        else True
+                    )
+                except Exception:
+                    is_enabled = True
+                if not is_enabled:
+                    logger.debug(
+                        "[%s] skipping prefetch — ticker_enabled is False",
+                        plugin_id,
+                    )
+                    trace_event(
+                        "fetch", "skipped",
+                        plugin_id=plugin_id, reason="ticker_disabled_pre_fetch",
+                    )
+                    # Advance past the now-disabled plugin and continue.
+                    self._prefetch_index = (self._prefetch_index + 1) % num_plugins
+                    continue
+
                 # Release lock for potentially slow content fetch
                 self._buffer_lock.release()
                 try:
@@ -430,7 +462,30 @@ class StreamManager:
                     self._buffer_lock.acquire()
 
                 if segment:
-                    self._active_buffer.append(segment)
+                    # 2026-05-28: ticker_enabled POST-fetch re-check. The
+                    # fetch can take 20+ seconds for stock-ticker. If the
+                    # user toggled the plugin OFF mid-fetch, we still have
+                    # the segment in hand — but shoving it into the buffer
+                    # would cause the disabled plugin to render. Drop it.
+                    try:
+                        still_enabled = (
+                            self.plugin_manager.ticker_enabled.get(plugin_id, True)
+                            if hasattr(self.plugin_manager, 'ticker_enabled')
+                            else True
+                        )
+                    except Exception:
+                        still_enabled = True
+                    if not still_enabled:
+                        logger.info(
+                            "[%s] discarding fetched segment — ticker_enabled flipped to False mid-fetch",
+                            plugin_id,
+                        )
+                        trace_event(
+                            "fetch", "discarded",
+                            plugin_id=plugin_id, reason="ticker_disabled_post_fetch",
+                        )
+                    else:
+                        self._active_buffer.append(segment)
 
                 # Revalidate num_plugins after reacquiring lock (may have changed)
                 num_plugins = len(self._ordered_plugins)
