@@ -28,25 +28,33 @@ class PluginHealthTracker:
     - HALF_OPEN: Testing if plugin has recovered (after cooldown)
     """
     
-    def __init__(self, cache_manager, failure_threshold: int = 3, 
-                 cooldown_period: float = 300.0, half_open_timeout: float = 60.0):
+    def __init__(self, cache_manager, failure_threshold: int = 3,
+                 cooldown_period: float = 300.0, half_open_timeout: float = 60.0,
+                 skip_warn_interval: float = 60.0):
         """
         Initialize plugin health tracker.
-        
+
         Args:
             cache_manager: Cache manager instance for persistence
             failure_threshold: Number of consecutive failures before opening circuit
             cooldown_period: Seconds to wait before attempting recovery (default: 5 minutes)
             half_open_timeout: Seconds to wait in half-open state before closing (default: 1 minute)
+            skip_warn_interval: Seconds between WARN logs per plugin while circuit is open (default: 60s)
         """
         self.cache_manager = cache_manager
         self.failure_threshold = failure_threshold
         self.cooldown_period = cooldown_period
         self.half_open_timeout = half_open_timeout
+        self.skip_warn_interval = skip_warn_interval
         self.logger = logging.getLogger(__name__)
-        
+
         # In-memory health state (also persisted to cache)
         self._health_state: Dict[str, Dict[str, Any]] = {}
+
+        # Rate-limit the "circuit open, skipping" WARNs — without this, every
+        # plugin loop tick logs a duplicate line.  Tracks per-plugin epoch of
+        # the last WARN emitted.
+        self._last_skip_warn_time: Dict[str, float] = {}
     
     def _get_health_key(self, plugin_id: str) -> str:
         """Get cache key for plugin health data."""
@@ -164,6 +172,20 @@ class PluginHealthTracker:
                 self._save_health_state(plugin_id, state)
                 self.logger.info(f"Plugin {plugin_id} circuit moved to half-open state for testing")
                 return False  # Allow one attempt
+            # Still in cooldown — emit a rate-limited WARN so the silent skip
+            # is visible in journalctl without flooding the log.
+            last_warn = self._last_skip_warn_time.get(plugin_id, 0.0)
+            if current_time - last_warn >= self.skip_warn_interval:
+                self._last_skip_warn_time[plugin_id] = current_time
+                time_since_open = (
+                    current_time - circuit_opened_time if circuit_opened_time else 0.0
+                )
+                self.logger.warning(
+                    "Plugin %s skipped: circuit=open, time_since_open=%.1fs, "
+                    "cooldown=%.1fs, consecutive_failures=%d",
+                    plugin_id, time_since_open, self.cooldown_period,
+                    state.get('consecutive_failures', 0)
+                )
             return True  # Still in cooldown
         
         if circuit_state == CircuitState.HALF_OPEN.value:

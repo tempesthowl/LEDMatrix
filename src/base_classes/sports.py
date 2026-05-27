@@ -1286,12 +1286,24 @@ class SportsRecent(SportsCore):
 
 class SportsLive(SportsCore):
 
+    # Grace window for transient ESPN "no live games" responses. When a
+    # prior poll had live games but the next poll returns zero hits, we
+    # hold the prior list for this many seconds before wiping. Prevents
+    # the "games come and go" flicker on /v3/remote caused by ESPN
+    # returning empty or mid-transition events for one or two polls.
+    EMPTY_GRACE_SEC = 120
+
     def __init__(self, config: Dict[str, Any], display_manager: DisplayManager, cache_manager: CacheManager, logger: logging.Logger, sport_key: str):
         super().__init__(config, display_manager, cache_manager, logger, sport_key)
         self.update_interval = self.mode_config.get("live_update_interval", 15)
-        self.no_data_interval = 300
+        # 60s when no live games exist (was 300s). Shorter idle polling
+        # means a newly-starting game becomes visible within ~70s of first
+        # pitch (60s idle + 5s cache publish + 5s remote poll). Once any
+        # live game is detected, update_interval (15s) takes over.
+        self.no_data_interval = 60
         self.last_update = 0
         self.live_games = []
+        self._empty_since_ts: Optional[float] = None
         self.current_game_index = 0
         self.last_game_switch = 0  # Will be set to current_time when games are first loaded
         self.game_display_duration = self.mode_config.get("live_game_duration", 20)
@@ -1374,6 +1386,11 @@ class SportsLive(SportsCore):
 
                     # Update game list and current game
                     if new_live_games:
+                        # Got live games this poll — reset the empty-response
+                        # grace tracker so the next empty response starts a
+                        # fresh grace window.
+                        self._empty_since_ts = None
+
                         # Check if the games themselves changed, not just scores/time
                         new_game_ids = {g['id'] for g in new_live_games}
                         current_game_ids = {g['id'] for g in self.live_games}
@@ -1412,12 +1429,36 @@ class SportsLive(SportsCore):
                         # Display update handled by main loop based on interval
 
                     else:
-                        # No live games found
-                        if self.live_games: # Were there games before?
-                            self.logger.info("Live games previously showing have ended or are no longer live.") # Changed log prefix
-                        self.live_games = []
-                        self.current_game = None
-                        self.current_game_index = 0
+                        # No live games found in this ESPN response.
+                        # Grace-period guard: if we had games before, don't
+                        # wipe immediately — hold them for EMPTY_GRACE_SEC
+                        # to absorb transient ESPN empty/mid-transition
+                        # responses. A definitive state="post" for an
+                        # individual game still removes only that game on
+                        # the next poll once ESPN reports it.
+                        if self.live_games:
+                            if self._empty_since_ts is None:
+                                self._empty_since_ts = current_time
+                                self.logger.info(
+                                    "ESPN returned no live games; holding %d games in grace (up to %ds)",
+                                    len(self.live_games), self.EMPTY_GRACE_SEC,
+                                )
+                            elapsed = current_time - self._empty_since_ts
+                            if elapsed < self.EMPTY_GRACE_SEC:
+                                self.logger.debug(
+                                    "ESPN empty for %.0fs; still holding %d games (grace=%ds)",
+                                    elapsed, len(self.live_games), self.EMPTY_GRACE_SEC,
+                                )
+                            else:
+                                self.logger.info(
+                                    "Live games previously showing have ended or are no longer live (grace expired after %.0fs).",
+                                    elapsed,
+                                )
+                                self.live_games = []
+                                self.current_game = None
+                                self.current_game_index = 0
+                                self._empty_since_ts = None
+                        # else: nothing was showing; nothing to hold
 
                 else:
                     # Error fetching data or no events

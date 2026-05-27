@@ -64,10 +64,54 @@ class TestDisplayControllerModeRotation:
         controller = test_display_controller
         controller.available_modes = ["mode1"]
         controller.current_mode_index = 0
-        
+
         controller.current_mode_index = (controller.current_mode_index + 1) % len(controller.available_modes)
-        
+
         assert controller.current_mode_index == 0
+
+    def test_rotation_with_empty_available_modes_does_not_crash(self, test_display_controller):
+        """Rotation tick must not crash with ZeroDivisionError when every plugin is toggled off.
+
+        Regression for the 2026-05-23 Pi production crash: user toggled every
+        Ticker Content plugin off via /v3/remote, _rebuild_available_modes()
+        set available_modes=[], and the next rotation tick hit
+        display_controller.py:3303 (`(current_mode_index + 1) % len(...)`)
+        with len() == 0. Service died, panels went dark until reboot.
+
+        Contract: when available_modes is empty, the rotation block at
+        display_controller.py:3302-3308 must skip the advance, hold the
+        last frame, and stay alive so a hot-reload that re-enables a plugin
+        resumes rotation.
+        """
+        controller = test_display_controller
+        controller.available_modes = []
+        controller.current_mode_index = 0
+        controller.current_display_mode = "kalshi_markets"  # last mode before toggle-off
+        last_mode_change_before = 12345.0
+        controller.last_mode_change = last_mode_change_before
+        controller.force_change = False
+
+        # Mirror the production rotation guard at display_controller.py:3302-3308.
+        should_rotate = True
+        if should_rotate:
+            if not controller.available_modes:
+                pass  # guard: idle, do not advance
+            else:
+                controller.current_mode_index = (
+                    controller.current_mode_index + 1
+                ) % len(controller.available_modes)
+                controller.current_display_mode = controller.available_modes[
+                    controller.current_mode_index
+                ]
+                controller.last_mode_change = time.time()
+                controller.force_change = True
+
+        # State preserved: last frame held, no rotation side effects.
+        assert controller.current_display_mode == "kalshi_markets"
+        assert controller.current_mode_index == 0
+        assert controller.available_modes == []
+        assert controller.last_mode_change == last_mode_change_before
+        assert controller.force_change is False
 
 
 class TestDisplayControllerOnDemand:

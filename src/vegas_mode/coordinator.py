@@ -21,6 +21,7 @@ from src.vegas_mode.plugin_adapter import PluginAdapter
 from src.vegas_mode.stream_manager import StreamManager
 from src.vegas_mode.render_pipeline import RenderPipeline
 from src.plugin_system.base_plugin import VegasDisplayMode
+from src.observability.trace import trace_event
 
 if TYPE_CHECKING:
     from src.plugin_system.plugin_manager import PluginManager
@@ -361,6 +362,21 @@ class VegasModeCoordinator:
                             # Paused for live priority - let caller handle
                             return False
 
+                    # If there's truly no composed image, a cycle restart
+                    # attempt just failed (e.g. user toggled the only enabled
+                    # Vegas plugin off, or the just-toggled-on plugin has no
+                    # in-memory data yet). Exit the iteration so the display
+                    # controller can fall back to standalone rotation —
+                    # otherwise we'd spin here for up to max_cycle_duration
+                    # painting nothing while the panels stay frozen on the
+                    # previous cycle's last frame.
+                    if not self.render_pipeline.scroll_helper.cached_image:
+                        logger.info(
+                            "Vegas iteration exiting early: no composed "
+                            "content available, yielding to standalone rotation"
+                        )
+                        return False
+
                 # Sleep for frame interval
                 time.sleep(frame_interval)
 
@@ -459,7 +475,25 @@ class VegasModeCoordinator:
         logger.debug("Config update queued (version %d)", self._config_version)
 
     def _apply_pending_config(self) -> None:
-        """Apply pending configuration update."""
+        """Apply pending configuration update.
+
+        Split into 5 narrow try/except blocks so a failure in one step names
+        itself in the log and the remaining steps still run.  Previously a
+        single blanket try/except hid which layer of the hot-reload aborted,
+        leaving Vegas wedged in an unknown half-applied state.
+
+        Blocks (in order):
+          1. config_build           — VegasModeConfig.from_config(pending)
+          2. render_pipeline_update — RenderPipeline.update_config(new)
+          3. stream_manager_refresh — assign config + refresh plugin list
+          4. adapter_invalidate     — flush PluginAdapter's 5s content cache
+          5. scroll_helper_invalidate — clear each plugin's scroll_helper
+                                        cache + arm next-frame cycle restart
+
+        Step 1 is fatal: if we can't build the new config, we abort with the
+        old config intact.  Steps 2-5 are best-effort: each step warns on
+        failure and the others still run.
+        """
         # Atomically grab pending config and clear it to avoid losing concurrent updates
         with self._state_lock:
             if self._pending_config is None:
@@ -468,37 +502,132 @@ class VegasModeCoordinator:
             pending_config = self._pending_config
             self._pending_config = None  # Clear while holding lock
 
+        trace_event("vegas_swap", "start", pending_version=self._config_version)
+
+        # Block 1: config_build (fatal — bail if this fails)
         try:
             new_vegas_config = VegasModeConfig.from_config(pending_config)
+            trace_event("vegas_swap", "step_ok", step="config_build")
+        except Exception as e:
+            logger.exception(
+                "Vegas hot-reload step=config_build failed - aborting hot-reload, "
+                "keeping previous config"
+            )
+            trace_event(
+                "vegas_swap", "step_error",
+                step="config_build", reason=f"exception:{type(e).__name__}",
+                aborted=True,
+            )
+            with self._state_lock:
+                if self._pending_config is None:
+                    self._pending_config_update = False
+            return
 
-            # Check if enabled state changed
-            was_enabled = self.vegas_config.enabled
-            self.vegas_config = new_vegas_config
+        # Commit the new config so subsequent steps observe it even if one fails
+        was_enabled = self.vegas_config.enabled
+        self.vegas_config = new_vegas_config
 
-            # Update components
+        # Block 2: render_pipeline_update
+        try:
             self.render_pipeline.update_config(new_vegas_config)
-            self.stream_manager.config = new_vegas_config
+            trace_event("vegas_swap", "step_ok", step="render_pipeline_update")
+        except Exception as e:
+            logger.exception(
+                "Vegas hot-reload step=render_pipeline_update failed - "
+                "scroll speed/FPS may not match new config until next cycle"
+            )
+            trace_event(
+                "vegas_swap", "step_error",
+                step="render_pipeline_update",
+                reason=f"exception:{type(e).__name__}",
+            )
 
-            # Force refresh of stream manager to pick up plugin_order/buffer changes
+        # Block 3: stream_manager_refresh — assign config + force a refresh
+        # so the plugin_order / buffer_ahead changes take effect immediately
+        try:
+            self.stream_manager.config = new_vegas_config
             self.stream_manager._last_refresh = 0
             self.stream_manager.refresh()
+            trace_event("vegas_swap", "step_ok", step="stream_manager_refresh")
+        except Exception as e:
+            logger.exception(
+                "Vegas hot-reload step=stream_manager_refresh failed - "
+                "plugin order may be stale until next 30s refresh tick"
+            )
+            trace_event(
+                "vegas_swap", "step_error",
+                step="stream_manager_refresh",
+                reason=f"exception:{type(e).__name__}",
+            )
 
-            # Handle enable/disable
+        # Block 4: adapter_invalidate — flush PluginAdapter's 5s content cache
+        # so a just-disabled plugin can't be re-served from its TTL window
+        try:
+            self.plugin_adapter.invalidate_cache()
+            trace_event("vegas_swap", "step_ok", step="adapter_invalidate")
+        except Exception as e:
+            logger.exception(
+                "Vegas hot-reload step=adapter_invalidate failed - "
+                "stale plugin content may persist for up to 5s"
+            )
+            trace_event(
+                "vegas_swap", "step_error",
+                step="adapter_invalidate",
+                reason=f"exception:{type(e).__name__}",
+            )
+
+        # Block 5: scroll_helper_invalidate — clear each plugin's scroll_helper
+        # cached_image (stocks, news, odds use this) AND set cycle_complete so
+        # run_frame() calls start_new_cycle() on the very next frame, which
+        # rebuilds the composed scroll image against the fresh plugin state.
+        try:
+            plugins = getattr(self.plugin_manager, 'plugins', {}) or {}
+            invalidated_count = 0
+            for pid, plugin in plugins.items():
+                try:
+                    self.plugin_adapter.invalidate_plugin_scroll_cache(plugin, pid)
+                    invalidated_count += 1
+                except Exception:
+                    logger.exception(
+                        "Vegas hot-reload scroll_helper invalidation failed for %s",
+                        pid
+                    )
+            self.render_pipeline._cycle_complete = True
+            logger.info("Vegas hot-swap: caches flushed, cycle restart scheduled")
+            trace_event(
+                "vegas_swap", "step_ok",
+                step="scroll_helper_invalidate", invalidated=invalidated_count,
+            )
+        except Exception as e:
+            logger.exception(
+                "Vegas hot-reload step=scroll_helper_invalidate failed - "
+                "cached scroll images may persist until next natural cycle"
+            )
+            trace_event(
+                "vegas_swap", "step_error",
+                step="scroll_helper_invalidate",
+                reason=f"exception:{type(e).__name__}",
+            )
+
+        # Handle enable/disable transitions (separate from hot-reload steps)
+        try:
             if was_enabled and not new_vegas_config.enabled:
                 self.stop()
             elif not was_enabled and new_vegas_config.enabled:
                 self.start()
-
-            logger.info("Config update applied (version %d)", self._config_version)
-
         except Exception:
-            logger.exception("Error applying config update")
+            logger.exception(
+                "Vegas hot-reload step=enable_transition failed (was=%s, now=%s)",
+                was_enabled, new_vegas_config.enabled
+            )
 
-        finally:
-            # Only clear update flag if no new config arrived during processing
-            with self._state_lock:
-                if self._pending_config is None:
-                    self._pending_config_update = False
+        logger.info("Config update applied (version %d)", self._config_version)
+        trace_event("vegas_swap", "ok", version=self._config_version)
+
+        # Only clear update flag if no new config arrived during processing
+        with self._state_lock:
+            if self._pending_config is None:
+                self._pending_config_update = False
 
     def _run_update_tick_background(self) -> None:
         """Run the plugin update tick in a background thread.

@@ -117,6 +117,47 @@ def test_no_live_tournament_fallback(renderer):
     assert len(non_black) > 20, "Fallback frame should show something"
 
 
+def test_favorites_view_hides_rank_column(renderer, sample_focus_data):
+    """On the favorites view (header_mode='favorites'), double-digit Kalshi
+    ranks (10+) must not render in the narrow rank column — they'd collide
+    with the name text. The rank column area must be blank."""
+    data = dict(sample_focus_data)
+    data["header_mode"] = "favorites"
+    data["players"] = [
+        {"rank_by_odds": 10, "display_name": "SCHEFFLER", "score": "-3",
+         "thru": "F", "kalshi_pct": 6, "kalshi_ticker": "KXPGA-SCH"},
+        {"rank_by_odds": 11, "display_name": "FOWLER", "score": "+1",
+         "thru": "14", "kalshi_pct": 5, "kalshi_ticker": "KXPGA-FOW"},
+        {"rank_by_odds": 12, "display_name": "BRENNAN", "score": "+2",
+         "thru": "F", "kalshi_pct": 4, "kalshi_ticker": "KXPGA-BRE"},
+    ]
+    img = renderer.render(data)
+
+    # Rank column is x = COL_RANK_X..COL_NAME_X-1 (i.e. x=2..10) for rows 1-3.
+    # Ranks would be white (255,255,255) if drawn. Must be all black.
+    white_in_rank_col = 0
+    for y in range(8, 32):  # player rows
+        for x in range(renderer.COL_RANK_X, renderer.COL_NAME_X):
+            if img.getpixel((x, y)) == (255, 255, 255):
+                white_in_rank_col += 1
+    assert white_in_rank_col == 0, \
+        f"Expected rank column blank on favorites view, got {white_in_rank_col} white pixels"
+
+
+def test_odds_view_shows_rank_column(renderer, sample_focus_data):
+    """Control: on an odds view (header_mode='odds' or missing), ranks ARE drawn."""
+    data = dict(sample_focus_data)
+    data["header_mode"] = "odds"
+    img = renderer.render(data)
+
+    white_in_rank_col = 0
+    for y in range(8, 32):
+        for x in range(renderer.COL_RANK_X, renderer.COL_NAME_X):
+            if img.getpixel((x, y)) == (255, 255, 255):
+                white_in_rank_col += 1
+    assert white_in_rank_col > 0, "Expected rank column populated on odds view"
+
+
 def test_final_status_label_gray(renderer, sample_focus_data):
     """When status_state='post', the round_label area should use gray, not gold."""
     data = dict(sample_focus_data)

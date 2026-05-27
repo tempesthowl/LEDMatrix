@@ -220,6 +220,50 @@ def _build_odds_result(
     }
 
 
+def match_fight(
+    plugin_manager: Any,
+    fighter_a_name: str,
+    fighter_b_name: str,
+) -> Optional[Dict[str, Any]]:
+    """Find a Kalshi market matching a specific UFC fight.
+
+    Thin wrapper around the Kalshi plugin's fetch_fight_odds() so the UFC
+    plugin doesn't need to import Kalshi directly (mirrors match_game /
+    match_tournament_winners).
+
+    Args:
+        plugin_manager: The plugin manager instance to access Kalshi plugin.
+        fighter_a_name: ESPN displayName, e.g. "Gilbert Burns".
+        fighter_b_name: ESPN displayName, e.g. "Mike Malott".
+
+    Returns:
+        Dict with keys fav_name, fav_pct, dog_name, dog_pct, fav_payout,
+        dog_payout, market_ticker — or None if no match.
+    """
+    if not plugin_manager or not fighter_a_name or not fighter_b_name:
+        return None
+
+    kalshi_plugin = None
+    try:
+        if hasattr(plugin_manager, "get_plugin"):
+            kalshi_plugin = plugin_manager.get_plugin("kalshi-markets")
+        elif hasattr(plugin_manager, "plugins"):
+            kalshi_plugin = plugin_manager.plugins.get("kalshi-markets")
+    except Exception:
+        logger.debug("Could not access Kalshi plugin for fight match")
+        return None
+
+    if not kalshi_plugin or not hasattr(kalshi_plugin, "fetch_fight_odds"):
+        logger.debug("Kalshi plugin or fetch_fight_odds not available")
+        return None
+
+    try:
+        return kalshi_plugin.fetch_fight_odds(fighter_a_name, fighter_b_name)
+    except Exception:
+        logger.exception("fetch_fight_odds failed")
+        return None
+
+
 def match_tournament_winners(
     plugin_manager: Any,
     tournament_name: str,

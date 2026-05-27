@@ -1,0 +1,30 @@
+{
+  "id": "stock-ticker",
+  "name": "Stock Ticker",
+  "version": "1.0.0",
+  "description": "Scrolling ticker for stocks, crypto, and forex with live prices, change percentages, and mini charts via Yahoo Finance",
+  "author": "ericvallejo97",
+  "category": "finance",
+  "tags": [
+    "stocks",
+    "crypto",
+    "forex",
+    "finance",
+    "ticker",
+    "market",
+    "prices"
+  ],
+  "display_modes": [
+    "stock_ticker"
+  ],
+  "entry_point": "manager.py",
+  "class_name": "StockTickerPlugin",
+  "dependencies": {},
+  "versions": [
+    {
+      "version": "1.0.0",
+      "ledmatrix_min": "2.0.0",
+      "released": "2026-04-14"
+    }
+  ]
+}

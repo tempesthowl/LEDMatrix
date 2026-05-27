@@ -732,9 +732,6 @@ class MarchMadnessPlugin(BasePlugin):
 
     def update(self) -> None:
         """Fetch and process tournament data."""
-        if not self.enabled:
-            return
-
         current_time = time.time()
         # Use shorter interval if live games detected
         interval = 60 if self._has_live_games else self.update_interval

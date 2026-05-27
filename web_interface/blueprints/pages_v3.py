@@ -1,6 +1,7 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, make_response
 import json
 import logging
+import os
 from pathlib import Path
 from src.web_interface.secret_helpers import mask_secret_fields
 
@@ -64,7 +65,18 @@ def index():
 @pages_v3.route('/remote')
 def remote():
     """Phone-first remote control page."""
-    return render_template('v3/partials/remote.html')
+    power_controls_enabled = os.getenv('LEDMATRIX_POWER_ACTIONS', 'false').lower() == 'true'
+    resp = make_response(render_template(
+        'v3/partials/remote.html',
+        power_controls_enabled=power_controls_enabled,
+    ))
+    # Disable browser caching of the HTML shell so iterative edits
+    # land on Eric's phone without needing a cache-buster query string.
+    # The JS/CSS are still fingerprinted with ?v=N and cached normally.
+    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    resp.headers['Pragma'] = 'no-cache'
+    resp.headers['Expires'] = '0'
+    return resp
 
 
 @pages_v3.route('/partials/<partial_name>')

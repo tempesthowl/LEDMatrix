@@ -1,0 +1,106 @@
+{
+  "version": 1,
+  "states": {
+    "football-scoreboard": {
+      "plugin_id": "football-scoreboard",
+      "status": "disabled",
+      "enabled": false,
+      "version": null,
+      "installed_at": null,
+      "last_updated": "2026-04-16T09:57:52.580297",
+      "config_version": 15,
+      "metadata": {}
+    },
+    "basketball-scoreboard": {
+      "plugin_id": "basketball-scoreboard",
+      "status": "disabled",
+      "enabled": false,
+      "version": null,
+      "installed_at": null,
+      "last_updated": "2026-04-16T09:59:34.673477",
+      "config_version": 19,
+      "metadata": {}
+    },
+    "baseball-scoreboard": {
+      "plugin_id": "baseball-scoreboard",
+      "status": "disabled",
+      "enabled": false,
+      "version": null,
+      "installed_at": null,
+      "last_updated": "2026-04-19T12:39:18.800245",
+      "config_version": 28,
+      "metadata": {}
+    },
+    "f1-scoreboard": {
+      "plugin_id": "f1-scoreboard",
+      "status": "enabled",
+      "enabled": true,
+      "version": null,
+      "installed_at": null,
+      "last_updated": "2026-05-24T01:28:49.842319",
+      "config_version": 24,
+      "metadata": {}
+    },
+    "kalshi-markets": {
+      "plugin_id": "kalshi-markets",
+      "status": "disabled",
+      "enabled": false,
+      "version": null,
+      "installed_at": null,
+      "last_updated": "2026-04-20T18:31:19.127462",
+      "config_version": 19,
+      "metadata": {}
+    },
+    "odds-ticker": {
+      "plugin_id": "odds-ticker",
+      "status": "disabled",
+      "enabled": false,
+      "version": null,
+      "installed_at": null,
+      "last_updated": "2026-04-15T17:06:40.267773",
+      "config_version": 14,
+      "metadata": {}
+    },
+    "pga-tour-leaderboard": {
+      "plugin_id": "pga-tour-leaderboard",
+      "status": "enabled",
+      "enabled": true,
+      "version": null,
+      "installed_at": null,
+      "last_updated": "2026-05-24T01:19:44.935782",
+      "config_version": 19,
+      "metadata": {}
+    },
+    "stock-ticker": {
+      "plugin_id": "stock-ticker",
+      "status": "disabled",
+      "enabled": false,
+      "version": null,
+      "installed_at": null,
+      "last_updated": "2026-04-20T23:50:24.282169",
+      "config_version": 19,
+      "metadata": {}
+    },
+    "march-madness": {
+      "plugin_id": "march-madness",
+      "status": "disabled",
+      "enabled": false,
+      "version": null,
+      "installed_at": null,
+      "last_updated": "2026-04-16T00:01:10.252971",
+      "config_version": 9,
+      "metadata": {}
+    },
+    "ufc-scoreboard": {
+      "plugin_id": "ufc-scoreboard",
+      "status": "disabled",
+      "enabled": false,
+      "version": null,
+      "installed_at": null,
+      "last_updated": "2026-04-19T12:39:18.806002",
+      "config_version": 2,
+      "metadata": {}
+    }
+  },
+  "last_updated": "2026-05-24T01:28:49.842447"
+}

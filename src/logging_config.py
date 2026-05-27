@@ -13,9 +13,22 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 
 
+def _current_trace_id_safe() -> Optional[str]:
+    """Pull the active trace_id without importing observability eagerly.
+
+    Imported lazily so logging_config has no hard dep on observability.trace
+    (some early-boot logs fire before observability is importable).
+    """
+    try:
+        from src.observability.trace import current_trace_id
+        return current_trace_id()
+    except Exception:
+        return None
+
+
 class StructuredFormatter(logging.Formatter):
     """JSON formatter for structured logging in production."""
-    
+
     def format(self, record: logging.LogRecord) -> str:
         """Format log record as JSON."""
         log_data = {
@@ -27,21 +40,28 @@ class StructuredFormatter(logging.Formatter):
             'function': record.funcName,
             'line': record.lineno,
         }
-        
+
+        # Phase B: pull the active trace_id from the ContextVar so every
+        # logger.info(...) call automatically inherits correlation with the
+        # API request / config reload / on-demand request that triggered it.
+        trace_id = _current_trace_id_safe()
+        if trace_id is not None:
+            log_data['trace_id'] = trace_id
+
         # Add exception info if present
         if record.exc_info:
             log_data['exception'] = self.formatException(record.exc_info)
-        
+
         # Add extra context if present
         if hasattr(record, 'context'):
             log_data['context'] = record.context
-        
+
         if hasattr(record, 'plugin_id'):
             log_data['plugin_id'] = record.plugin_id
-        
+
         if hasattr(record, 'operation_id'):
             log_data['operation_id'] = record.operation_id
-        
+
         return json.dumps(log_data)
 
 
@@ -69,20 +89,28 @@ class ContextualFormatter(logging.Formatter):
         # Add context to message if present
         if self.include_context:
             context_parts = []
-            
+
+            # Phase B: prefix every log line with the active trace_id (when
+            # set) so journalctl shows correlation between a /v3/remote tap
+            # and the resulting Vegas decisions.  Short prefix to keep lines
+            # readable: [trace=abc12345].
+            trace_id = _current_trace_id_safe()
+            if trace_id:
+                context_parts.append(f"[trace={trace_id}]")
+
             if hasattr(record, 'plugin_id'):
                 context_parts.append(f"[Plugin: {record.plugin_id}]")
-            
+
             if hasattr(record, 'operation_id'):
                 context_parts.append(f"[Op: {record.operation_id}]")
-            
+
             if hasattr(record, 'context') and isinstance(record.context, dict):
                 for key, value in record.context.items():
                     context_parts.append(f"[{key}: {value}]")
-            
+
             if context_parts:
                 record.msg = ' '.join(context_parts) + ' ' + str(record.msg)
-        
+
         return super().format(record)
 
 

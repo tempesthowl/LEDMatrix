@@ -16,6 +16,7 @@ import numpy as np
 from src.common.scroll_helper import ScrollHelper
 from src.vegas_mode.config import VegasModeConfig
 from src.vegas_mode.stream_manager import StreamManager, ContentSegment
+from src.observability.trace import trace_event
 
 if TYPE_CHECKING:
     pass
@@ -138,7 +139,37 @@ class RenderPipeline:
             images = self.stream_manager.get_all_content_for_composition()
 
             if not images:
-                logger.warning("No content available for composition")
+                # Pull per-plugin (status, reason) from the last fetch attempt
+                # so the WARNING names which layer returned nothing for each
+                # plugin, instead of just "no content".
+                fetch_results = self.stream_manager.get_last_fetch_results()
+                contributors = ", ".join(
+                    f"{pid}: {status}/{reason}"
+                    for pid, (status, reason) in sorted(fetch_results.items())
+                ) or "<no fetches recorded>"
+                logger.warning(
+                    "compose empty — 0 of %d plugins contributed images. "
+                    "results={%s}. Clearing stale cached scroll image so the "
+                    "panels don't keep rendering the previous cycle's content.",
+                    len(fetch_results), contributors
+                )
+                # Drop the previously-composed image. Without this, render_frame
+                # keeps painting the last cached scroll (the plugin Eric just
+                # toggled OFF) until a future compose succeeds — which can be
+                # minutes if the newly-toggled-ON plugin has no in-memory data
+                # yet.
+                self.scroll_helper.clear_cache()
+                with self._buffer_lock:
+                    self._active_scroll_image = None
+                self._segments_in_scroll = []
+                trace_event(
+                    "compose", "empty",
+                    contributors={
+                        pid: f"{status}/{reason}"
+                        for pid, (status, reason) in fetch_results.items()
+                    },
+                    cached_image_kept=False,
+                )
                 return False
 
             # Add separator gaps between images
@@ -176,6 +207,12 @@ class RenderPipeline:
                 len(self._segments_in_scroll),
                 len(images)
             )
+            trace_event(
+                "compose", "ok",
+                plugins=self._segments_in_scroll,
+                items=len(images),
+                width=self.scroll_helper.cached_image.width if self.scroll_helper.cached_image else 0,
+            )
 
             return True
 
@@ -207,9 +244,16 @@ class RenderPipeline:
                 if not self._cycle_complete:
                     self._cycle_complete = True
                     self.stats['scroll_cycles'] += 1
+                    cycle_seconds = time.time() - self._cycle_start_time
                     logger.info(
                         "Scroll cycle complete after %.1fs",
-                        time.time() - self._cycle_start_time
+                        cycle_seconds
+                    )
+                    # Once-per-cycle event (NOT per-frame — that would be 125fps).
+                    trace_event(
+                        "render", "cycle_complete",
+                        cycle_seconds=cycle_seconds,
+                        plugins=self._segments_in_scroll,
                     )
 
             # Get visible portion

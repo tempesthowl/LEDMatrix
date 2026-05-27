@@ -1,0 +1,121 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Enable or disable the plugin"
+    },
+    "display_duration": {
+      "type": "number",
+      "minimum": 5,
+      "default": 15,
+      "description": "Seconds to display before rotating to next plugin (overridden by dynamic duration)"
+    },
+    "update_interval": {
+      "type": "integer",
+      "minimum": 60,
+      "default": 300,
+      "description": "How often to refresh market data from Kalshi API (seconds)"
+    },
+    "markets": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "Specific Kalshi market tickers to display (e.g. FEDFUNDS-26APR30-T5.00). Ignored when series_tickers or event_tickers is set."
+    },
+    "series_tickers": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "Kalshi series tickers to pull all open events from (e.g. KXNFLDRAFTPICK). Takes precedence over markets/categories."
+    },
+    "event_tickers": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "Specific Kalshi event tickers to display (e.g. KXNFLDRAFT1ST-26-1). Used with or in place of series_tickers."
+    },
+    "categories": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["Economics", "Politics", "Sports", "Climate", "Finance", "Tech", "Entertainment"]
+      },
+      "default": ["Economics", "Politics"],
+      "description": "Market categories to fetch when no specific tickers/series/events are configured"
+    },
+    "max_markets": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100,
+      "default": 20,
+      "description": "Maximum number of EVENTS to fetch (each event can render N tiles via outcomes_per_event)"
+    },
+    "outcomes_per_event": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10,
+      "default": 1,
+      "description": "For multi-outcome events, render this many tiles per event (top N by probability). 1 = favorite only."
+    },
+    "min_outcome_pct": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "default": 2,
+      "description": "When expanding to top-N outcomes, skip any outcome below this probability to avoid 0% filler tiles"
+    },
+    "min_volume": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 100,
+      "description": "Only show events with at least this many contracts traded total"
+    },
+    "scroll_speed": {
+      "type": "number",
+      "minimum": 0.1,
+      "maximum": 5.0,
+      "default": 0.45,
+      "description": "Scroll speed multiplier"
+    },
+    "show_volume": {
+      "type": "boolean",
+      "default": false,
+      "description": "Show contract volume alongside probability"
+    },
+    "api_key": {
+      "type": "string",
+      "default": "",
+      "description": "Kalshi API key (optional — public market data works without auth)"
+    },
+    "dynamic_duration": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "min_duration": { "type": "number", "default": 20 },
+        "max_duration": { "type": "number", "default": 180 }
+      }
+    },
+    "active_collection": {
+      "type": "string",
+      "default": "top_sports",
+      "description": "ID of the collection under 'collections' to use as the ticker feed. Empty = fall back to top-level series_tickers/categories/markets."
+    },
+    "collections": {
+      "type": "object",
+      "description": "Named bundles of filters. Each value may contain display_name, series_tickers, event_tickers, categories, markets. Selected via /v3/remote dropdown.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "display_name": { "type": "string" },
+          "series_tickers": { "type": "array", "items": { "type": "string" } },
+          "event_tickers": { "type": "array", "items": { "type": "string" } },
+          "categories": { "type": "array", "items": { "type": "string" } },
+          "markets": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}

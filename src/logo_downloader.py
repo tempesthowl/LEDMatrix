@@ -55,9 +55,13 @@ class LogoDownloader:
         'soccer_por.1': 'https://site.api.espn.com/apis/site/v2/sports/soccer/por.1/teams',
         'soccer_uefa.champions': 'https://site.api.espn.com/apis/site/v2/sports/soccer/uefa.champions/teams',
         'soccer_uefa.europa': 'https://site.api.espn.com/apis/site/v2/sports/soccer/uefa.europa/teams',
-        'soccer_usa.1': 'https://site.api.espn.com/apis/site/v2/sports/soccer/usa.1/teams'
+        'soccer_usa.1': 'https://site.api.espn.com/apis/site/v2/sports/soccer/usa.1/teams',
+        # MMA/UFC uses per-athlete headshots (not team logos). The scoreboard
+        # response already includes each fighter's headshot URL, so this
+        # endpoint is listed for consistency but rarely called directly.
+        'mma': 'https://site.api.espn.com/apis/site/v2/sports/mma/ufc/athletes'
     }
-    
+
     # Directory mappings for different leagues
     LOGO_DIRECTORIES = {
         'nfl': 'assets/sports/nfl_logos',
@@ -87,7 +91,9 @@ class LogoDownloader:
         'soccer_por.1': 'assets/sports/soccer_logos',
         'soccer_uefa.champions': 'assets/sports/soccer_logos',
         'soccer_uefa.europa': 'assets/sports/soccer_logos',
-        'soccer_usa.1': 'assets/sports/soccer_logos'
+        'soccer_usa.1': 'assets/sports/soccer_logos',
+        # UFC headshots (per-fighter images, not team logos)
+        'mma': 'assets/sports/ufc_headshots'
     }
     
     def __init__(self, request_timeout: int = 30, retry_attempts: int = 3):

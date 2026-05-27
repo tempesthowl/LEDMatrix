@@ -103,7 +103,7 @@ class ConfigService:
         
         # File watching
         self._watch_thread: Optional[threading.Thread] = None
-        self._watch_interval: float = 2.0  # Check every 2 seconds
+        self._watch_interval: float = 0.1  # Check every 100ms. /v3/remote plugin-toggle Apply latency is gated by this poll; 100ms keeps it perceptually snappy. stat() on the config file is a single tmpfs read — ~10 stat/sec is noise on Pi 4.
         self._stop_watching: bool = False
         
         # Load initial configuration
@@ -260,11 +260,11 @@ class ConfigService:
                     self.logger.info("Configuration files changed, reloading...")
                     self._load_config()
                 
-                # Sleep with periodic checks for stop signal
-                for _ in range(int(self._watch_interval)):
-                    if self._stop_watching:
-                        break
-                    time.sleep(1)
+                # Sleep for the watch interval. This is a daemon thread — it
+                # only stops on process exit, so we don't need sub-second
+                # stop-signal granularity. Previous 1-second chunked loop broke
+                # when _watch_interval dropped below 1s (int() rounded to 0).
+                time.sleep(self._watch_interval)
                     
             except Exception as e:
                 self.logger.error("Error in file watcher loop: %s", e, exc_info=True)

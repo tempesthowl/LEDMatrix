@@ -81,7 +81,7 @@ class PluginStateManager:
             self._error_info.pop(plugin_id, None)
         
         self.logger.debug(
-            "Plugin %s state transition: %s → %s",
+            "Plugin %s state transition: %s -> %s",
             plugin_id,
             old_state.value,
             state.value
@@ -120,9 +120,17 @@ class PluginStateManager:
         return state == PluginState.ERROR
     
     def can_execute(self, plugin_id: str) -> bool:
-        """Check if plugin can execute (update/display)."""
+        """Check if plugin can execute (update/display).
+
+        Allow ENABLED (normal) and ERROR (transient — retry on next tick).
+        Without the ERROR branch, a single transient failure (e.g. ESPN
+        timeout) would permanently trap the plugin: state stays ERROR,
+        can_execute returns False, update() never runs, state never
+        recovers. The only exit was a process restart. The update
+        interval provides natural backoff; retrying on each tick is safe.
+        """
         state = self.get_state(plugin_id)
-        return state == PluginState.ENABLED
+        return state in (PluginState.ENABLED, PluginState.ERROR)
     
     def get_state_history(self, plugin_id: str) -> list:
         """

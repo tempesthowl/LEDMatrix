@@ -171,35 +171,36 @@ class WebUIInfoPlugin(BasePlugin):
                         return ip
 
             # Fallback: Use 'ip addr show' to get interface IPs
-            result = subprocess.run(
-                ["ip", "-4", "addr", "show"],
-                capture_output=True,
-                text=True,
-                timeout=3
-            )
-            if result.returncode == 0:
-                current_interface = None
-                for line in result.stdout.split('\n'):
-                    line = line.strip()
-                    if ':' in line and not line.startswith('inet'):
-                        parts = line.split(':')
-                        if len(parts) >= 2:
-                            current_interface = parts[1].strip().split('@')[0]
-                    elif line.startswith('inet '):
-                        parts = line.split()
-                        if len(parts) >= 2:
-                            ip_with_cidr = parts[1]
-                            ip = ip_with_cidr.split('/')[0]
-                            if not ip.startswith("127.") and ip != "192.168.4.1":
-                                if current_interface and (
-                                    current_interface.startswith("eth") or
-                                    current_interface.startswith("enp")
-                                ):
-                                    self.logger.debug(f"Found Ethernet IP: {ip} on {current_interface}")
-                                    return ip
-                                elif current_interface == "wlan0":
-                                    self.logger.debug(f"Found WiFi IP: {ip} on {current_interface}")
-                                    return ip
+            try:
+                result = subprocess.run(
+                    ["ip", "-4", "addr", "show"],
+                    capture_output=True,
+                    text=True,
+                    timeout=3
+                )
+                if result.returncode == 0:
+                    current_interface = None
+                    for line in result.stdout.split('\n'):
+                        line = line.strip()
+                        if ':' in line and not line.startswith('inet'):
+                            parts = line.split(':')
+                            if len(parts) >= 2:
+                                current_interface = parts[1].strip().split('@')[0]
+                        elif line.startswith('inet '):
+                            parts = line.split()
+                            if len(parts) >= 2:
+                                ip_with_cidr = parts[1]
+                                ip = ip_with_cidr.split('/')[0]
+                                if not ip.startswith("127.") and ip != "192.168.4.1":
+                                    if current_interface and (
+                                        current_interface.startswith("eth") or
+                                        current_interface.startswith("enp")
+                                    ):
+                                        self.logger.debug(f"Found Ethernet IP: {ip} on {current_interface}")
+                                        return ip
+                                    elif current_interface == "wlan0":
+                                        self.logger.debug(f"Found WiFi IP: {ip} on {current_interface}")
+                                        return ip
             except Exception:
                 pass
             

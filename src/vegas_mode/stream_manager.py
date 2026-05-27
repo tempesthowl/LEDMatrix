@@ -22,6 +22,7 @@ from PIL import Image
 from src.vegas_mode.config import VegasModeConfig
 from src.vegas_mode.plugin_adapter import PluginAdapter
 from src.plugin_system.base_plugin import VegasDisplayMode
+from src.observability.trace import trace_event
 
 if TYPE_CHECKING:
     from src.plugin_system.base_plugin import BasePlugin
@@ -93,6 +94,14 @@ class StreamManager:
         self._pending_updates: Dict[str, bool] = {}
         self._last_refresh: float = 0.0
         self._refresh_interval: float = 30.0  # Refresh plugin list every 30s
+
+        # Per-plugin fetch outcome — read by render_pipeline.compose_scroll_content
+        # when the active buffer is empty, so the empty-compose WARNING names the
+        # plugin AND the layer that returned nothing. (status, reason) where:
+        #   status: ok | empty | error | static | missing
+        #   reason: segment_created | adapter_exhausted | exception:<type> |
+        #           plugin_not_in_manager | pause_placeholder
+        self._last_fetch_results: Dict[str, Tuple[str, str]] = {}
 
         # Statistics
         self.stats = {
@@ -183,6 +192,20 @@ class StreamManager:
         """
         with self._buffer_lock:
             return [seg.plugin_id for seg in self._active_buffer]
+
+    def get_last_fetch_results(self) -> Dict[str, Tuple[str, str]]:
+        """
+        Get the most recent (status, reason) per plugin from _fetch_plugin_content.
+
+        Used by render_pipeline.compose_scroll_content() when the active buffer
+        is empty so the empty-compose WARNING can name the layer that returned
+        nothing for each attempted plugin instead of just "no content".
+
+        Returns:
+            Copy of {plugin_id: (status, reason)} where status is one of
+            ok | empty | error | static | missing.
+        """
+        return dict(self._last_fetch_results)
 
     def mark_plugin_updated(self, plugin_id: str) -> None:
         """
@@ -314,13 +337,16 @@ class StreamManager:
                 len(self.plugin_manager.plugins)
             )
             for plugin_id, plugin in self.plugin_manager.plugins.items():
-                has_enabled = hasattr(plugin, 'enabled')
-                is_enabled = getattr(plugin, 'enabled', False)
+                # Read ticker visibility from plugin_manager.ticker_enabled
+                # (the real UI toggle state). plugin.enabled is always True
+                # (force-enabled so update/get_live_games always work).
+                is_enabled = self.plugin_manager.ticker_enabled.get(
+                    plugin_id, getattr(plugin, 'enabled', False))
                 logger.info(
-                    "[%s] class=%s, has_enabled=%s, enabled=%s",
-                    plugin_id, plugin.__class__.__name__, has_enabled, is_enabled
+                    "[%s] class=%s, ticker_enabled=%s",
+                    plugin_id, plugin.__class__.__name__, is_enabled
                 )
-                if has_enabled and is_enabled:
+                if is_enabled:
                     # Check vegas content type - skip 'none' unless in STATIC mode
                     content_type = self.plugin_adapter.get_content_type(plugin, plugin_id)
 
@@ -437,6 +463,11 @@ class StreamManager:
             plugin = self.plugin_manager.plugins.get(plugin_id)
             if not plugin:
                 logger.warning("[%s] Plugin not found in plugin_manager.plugins", plugin_id)
+                self._last_fetch_results[plugin_id] = ("missing", "plugin_not_in_manager")
+                trace_event(
+                    "fetch", "missing",
+                    plugin_id=plugin_id, reason="plugin_not_in_manager",
+                )
                 return None
 
             logger.info(
@@ -470,13 +501,26 @@ class StreamManager:
                     "[%s] Created STATIC placeholder (pause trigger)",
                     plugin_id
                 )
+                self._last_fetch_results[plugin_id] = ("static", "pause_placeholder")
+                trace_event(
+                    "fetch", "static",
+                    plugin_id=plugin_id, reason="pause_placeholder",
+                )
                 return segment
 
             # Get content via adapter for SCROLL/FIXED_SEGMENT modes
             logger.info("[%s] Calling plugin_adapter.get_content()...", plugin_id)
             images = self.plugin_adapter.get_content(plugin, plugin_id)
             if not images:
-                logger.warning("[%s] NO CONTENT RETURNED from plugin_adapter", plugin_id)
+                logger.warning(
+                    "[%s] NO CONTENT RETURNED status=empty reason=adapter_exhausted",
+                    plugin_id
+                )
+                self._last_fetch_results[plugin_id] = ("empty", "adapter_exhausted")
+                trace_event(
+                    "fetch", "empty",
+                    plugin_id=plugin_id, reason="adapter_exhausted",
+                )
                 return None
 
             # Calculate total width
@@ -496,11 +540,23 @@ class StreamManager:
             )
             logger.info("=" * 60)
 
+            self._last_fetch_results[plugin_id] = ("ok", "segment_created")
+            trace_event(
+                "fetch", "ok",
+                plugin_id=plugin_id,
+                images=len(images), total_width=total_width,
+                display_mode=display_mode.value,
+            )
             return segment
 
-        except Exception:
+        except Exception as e:
             logger.exception("[%s] ERROR fetching content", plugin_id)
             self.stats['fetch_errors'] += 1
+            self._last_fetch_results[plugin_id] = ("error", f"exception:{type(e).__name__}")
+            trace_event(
+                "fetch", "error",
+                plugin_id=plugin_id, reason=f"exception:{type(e).__name__}",
+            )
             return None
 
     def _refresh_plugin_content(self, plugin_id: str) -> None:

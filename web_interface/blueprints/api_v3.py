@@ -32,6 +32,7 @@ from src.web_interface.secret_helpers import (
     remove_empty_secrets,
     separate_secrets,
 )
+from src.observability.trace import new_trace, current_trace_id, trace_event
 
 _SECRET_KEY_PATTERN = re.compile(
     r'(api_key|api_secret|password|secret|token|auth_key|credential)',
@@ -665,6 +666,7 @@ def save_dim_schedule_config():
 @api_v3.route('/config/main', methods=['POST'])
 def save_main_config():
     """Save main configuration"""
+    trace_id = new_trace("api", "save_main_config")
     try:
         if not api_v3.config_manager:
             return jsonify({'status': 'error', 'message': 'Config manager not initialized'}), 500
@@ -1012,6 +1014,36 @@ def save_main_config():
             else:
                 current_config[key] = data[key]
 
+        # Phase B: write the trace_id to the shared cache BEFORE the atomic
+        # config-json save lands.  The display controller's config watcher
+        # will pop this trace_id into its ContextVar inside _on_config_reload
+        # so every downstream log (vegas hot-reload, plugin re-push) shares
+        # the same trace_id as the API request.
+        reload_id = str(uuid.uuid4())
+        try:
+            cache = _ensure_cache_manager()
+            cache.set('config_trace', {
+                'trace_id': trace_id,
+                'source': 'api',
+                'action': 'save_main_config',
+                'ts': time.time(),
+            })
+            # Workstream A fast-path: in addition to writing the trace
+            # sidecar, publish a config-reload IPC ping so the display
+            # controller wakes up on its next ~50ms poll tick instead of
+            # waiting up to 100ms for the file-watcher to stat config.json.
+            # config_service._load_config() is checksum-guarded — double-fire
+            # from this ping + the file watcher is harmless.
+            cache.set('display_config_reload', {
+                'request_id': reload_id,
+                'trace_id': trace_id,
+                'action': 'reload-config',
+                'source': 'save_main_config',
+                'ts': time.time(),
+            })
+        except Exception:
+            logger.exception("[Config] Failed to publish config_trace sidecar")
+
         # Save the merged config using atomic save
         success, error_msg = _save_config_atomic(api_v3.config_manager, current_config, create_backup=True)
         if not success:
@@ -1028,7 +1060,10 @@ def save_main_config():
         except ImportError:
             pass
 
-        return success_response(message='Configuration saved successfully')
+        return success_response(
+            message='Configuration saved successfully',
+            data={'trace_id': trace_id},
+        )
     except Exception as e:
         logger.exception("[Config] Failed to save configuration")
         return error_response(
@@ -1407,11 +1442,17 @@ def execute_system_action():
             result = subprocess.run(['sudo', 'systemctl', 'disable', 'ledmatrix'],
                                  capture_output=True, text=True)
         elif action == 'reboot_system':
-            result = subprocess.run(['sudo', 'reboot'],
-                                 capture_output=True, text=True)
+            if os.getenv('LEDMATRIX_POWER_ACTIONS', 'false').lower() != 'true':
+                return jsonify({'status': 'error', 'message': 'Power actions disabled on this host'}), 403
+            subprocess.Popen(['sudo', '-n', 'reboot'], start_new_session=True,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return jsonify({'status': 'success', 'message': 'Reboot initiated'}), 202
         elif action == 'shutdown_system':
-            result = subprocess.run(['sudo', 'poweroff'],
-                                 capture_output=True, text=True)
+            if os.getenv('LEDMATRIX_POWER_ACTIONS', 'false').lower() != 'true':
+                return jsonify({'status': 'error', 'message': 'Power actions disabled on this host'}), 403
+            subprocess.Popen(['sudo', '-n', 'poweroff'], start_new_session=True,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return jsonify({'status': 'success', 'message': 'Shutdown initiated'}), 202
         elif action == 'git_pull':
             # Use PROJECT_ROOT instead of hardcoded path
             project_dir = str(PROJECT_ROOT)
@@ -1550,16 +1591,181 @@ def get_display_current():
                 # File might be being written or corrupted, return None
                 pass
 
+        # Phase C: read the metadata sidecar (.meta.json) the display
+        # controller writes alongside the PNG.  This is the cross-process
+        # bridge — the web UI runs in a separate process from the controller
+        # but they share the snapshot dir.
+        mode_val: Optional[str] = None
+        plugin_id_val: Optional[str] = None
+        trace_id_val: Optional[str] = None
+        meta_ts: Optional[float] = None
+        meta_path = snapshot_path + ".meta.json"
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    meta = json.load(f)
+                mode_val = meta.get("mode")
+                plugin_id_val = meta.get("plugin_id")
+                trace_id_val = meta.get("trace_id")
+                meta_ts = meta.get("ts")
+            except Exception:
+                # Sidecar corrupted or being rewritten — surface None and
+                # move on; never fail the snapshot fetch for this.
+                pass
+
+        # on_demand_active comes from the existing display state cache, not
+        # the sidecar.  Read fresh (memory_ttl=2) so a just-fired on-demand
+        # request lands in /display/current within ~2s.
+        on_demand_active_val: Optional[bool] = None
+        try:
+            cache = _ensure_cache_manager()
+            od_rec = cache.get_cached_data(
+                'display_on_demand_state', max_age=120, memory_ttl=2
+            )
+            od_state = od_rec.get('data') if isinstance(od_rec, dict) and 'data' in od_rec else od_rec
+            if isinstance(od_state, dict):
+                on_demand_active_val = bool(od_state.get('active'))
+        except Exception:
+            pass
+
         display_data = {
             'timestamp': time.time(),
             'width': width,
             'height': height,
-            'image': image_data  # Base64 encoded image data or None if unavailable
+            'image': image_data,  # Base64 encoded image data or None if unavailable
+            # Phase C: surfaced from {snapshot_path}.meta.json sidecar.
+            'mode': mode_val,
+            'plugin_id': plugin_id_val,
+            'trace_id': trace_id_val,
+            'meta_ts': meta_ts,
+            'on_demand_active': on_demand_active_val,
         }
         return jsonify({'status': 'success', 'data': display_data})
     except Exception as e:
         logger.exception("[Display] get_current_display failed")
         return jsonify({'status': 'error', 'message': 'Failed to get current display'}), 500
+
+
+@api_v3.route('/diagnostics/trace', methods=['GET'])
+def get_diagnostics_trace():
+    """Phase D: return recent trace events grouped by trace_id.
+
+    Reads from the in-memory deque in src.observability.trace so the response
+    is O(events) without disk I/O.  Groups events into "traces" (one per
+    unique trace_id), sorts most-recent-first, and optionally attaches the
+    snapshot PNG when its meta sidecar trace_id matches the trace's most
+    recent frame_commit.
+
+    Query params:
+        trace_id:   filter to a specific trace
+        plugin_id:  filter to traces that touched this plugin
+        since:      epoch float — drop events older than this
+        limit:      max traces to return (default 10)
+        include_frame: 1 to attach base64 PNG when trace_id matches snapshot
+                       sidecar (default 1)
+    """
+    try:
+        from src.observability.trace import get_recent_events
+
+        try:
+            limit = int(request.args.get('limit', 10))
+        except (TypeError, ValueError):
+            limit = 10
+        try:
+            since = float(request.args.get('since', 0)) if request.args.get('since') else 0.0
+        except (TypeError, ValueError):
+            since = 0.0
+        filter_trace_id = request.args.get('trace_id')
+        filter_plugin_id = request.args.get('plugin_id')
+        include_frame = request.args.get('include_frame', '1') != '0'
+
+        # Pull a generous chunk so we have enough to group into "limit" traces.
+        # Each trace usually has 4-10 events, so 200 events ~= 20-50 traces.
+        # If the user explicitly asked for one trace_id, narrow the read.
+        events = get_recent_events(trace_id=filter_trace_id, limit=2000)
+
+        # Group events by trace_id (None bucket reserved for untraced events).
+        groups: Dict[Optional[str], list] = {}
+        for ev in events:
+            ts = ev.get('ts', 0.0)
+            if since and ts < since:
+                continue
+            if filter_plugin_id and ev.get('plugin_id') != filter_plugin_id:
+                # Per-event filter — but we still want plugin-touched traces
+                # to surface even if the request_start event has no plugin_id.
+                # Defer per-trace filter to the next pass.
+                pass
+            groups.setdefault(ev.get('trace_id'), []).append(ev)
+
+        # Build trace summaries.  Each trace = first event's source/action,
+        # bounds (started_at, last_event_ts), event count, status (red if any
+        # WARN-ish event present), and the list of events themselves.
+        traces = []
+        for tid, evs in groups.items():
+            if tid is None:
+                continue  # skip untraced background events for the UI
+            evs_sorted = sorted(evs, key=lambda e: e.get('ts', 0.0))
+            if filter_plugin_id and not any(e.get('plugin_id') == filter_plugin_id for e in evs_sorted):
+                continue
+            first = evs_sorted[0]
+            last = evs_sorted[-1]
+            started_at = first.get('ts', 0.0)
+            last_ts = last.get('ts', started_at)
+            error_events = [
+                e for e in evs_sorted
+                if e.get('event') in ('error', 'empty', 'missing', 'step_error')
+            ]
+            traces.append({
+                'trace_id': tid,
+                'source': first.get('source'),
+                'action': first.get('action'),
+                'started_at': started_at,
+                'last_event_ts': last_ts,
+                'duration_ms': max(0, int((last_ts - started_at) * 1000)),
+                'event_count': len(evs_sorted),
+                'has_failures': bool(error_events),
+                'events': evs_sorted,
+            })
+
+        # Most-recent-first
+        traces.sort(key=lambda t: t['started_at'], reverse=True)
+        traces = traces[:limit]
+
+        # Attach snapshot frame_at_end when the snapshot sidecar's trace_id
+        # matches the trace's most recent frame_commit.
+        if include_frame and traces:
+            import base64
+            import io
+            snapshot_path = "/tmp/led_matrix_preview.png"
+            meta_path = snapshot_path + ".meta.json"
+            snapshot_meta = None
+            snapshot_b64 = None
+            if os.path.exists(meta_path):
+                try:
+                    with open(meta_path, 'r', encoding='utf-8') as f:
+                        snapshot_meta = json.load(f)
+                except Exception:
+                    snapshot_meta = None
+            if snapshot_meta and snapshot_meta.get('trace_id'):
+                # Only encode the PNG once even if multiple traces match.
+                if os.path.exists(snapshot_path):
+                    try:
+                        with open(snapshot_path, 'rb') as f:
+                            snapshot_b64 = base64.b64encode(f.read()).decode('utf-8')
+                    except Exception:
+                        snapshot_b64 = None
+                for trace in traces:
+                    if trace['trace_id'] == snapshot_meta.get('trace_id'):
+                        trace['frame_at_end'] = {
+                            'meta': snapshot_meta,
+                            'image_b64': snapshot_b64,
+                        }
+
+        return jsonify({'status': 'success', 'data': {'traces': traces}})
+    except Exception as exc:
+        logger.exception("[Diagnostics] get_diagnostics_trace failed")
+        return jsonify({'status': 'error', 'message': 'Failed to read diagnostics'}), 500
+
 
 @api_v3.route('/games/live', methods=['GET'])
 def get_live_games():
@@ -1595,16 +1801,71 @@ def get_live_games():
                 mode = on_demand_state.get('mode', '')
                 game_mode_active = 'game_focus' in str(mode)
 
+        # Read current selection state from cache
+        selected_ids = []
+        auto_cycle = True
+        try:
+            sel_rec = cache.get_cached_data('game_mode_selection', max_age=3600, memory_ttl=2)
+            sel_data = sel_rec.get('data') if isinstance(sel_rec, dict) and 'data' in sel_rec else sel_rec
+            if sel_data and isinstance(sel_data, dict):
+                selected_ids = sel_data.get('selected_game_ids', [])
+                auto_cycle = sel_data.get('auto_cycle', True)
+        except Exception:
+            pass
+
         return jsonify({
             'status': 'success',
             'data': {
                 'games': unique,
                 'game_mode_active': game_mode_active,
+                'selected_game_ids': selected_ids,
+                'auto_cycle': auto_cycle,
             }
         })
     except Exception as exc:
         logger.exception("[Games] get_live_games failed")
         return jsonify({'status': 'error', 'message': 'Failed to get live games'}), 500
+
+
+@api_v3.route('/games/select', methods=['POST'])
+def set_game_selection():
+    """Update game selection state (which games to include in rotation).
+
+    Body: { selected_game_ids: string[], auto_cycle: bool }
+    Both fields are optional — omit to keep the current value.
+    """
+    try:
+        data = request.get_json() or {}
+        cache = _ensure_cache_manager()
+
+        # Read current state
+        current = {}
+        try:
+            rec = cache.get_cached_data('game_mode_selection', max_age=3600, memory_ttl=2)
+            d = rec.get('data') if isinstance(rec, dict) and 'data' in rec else rec
+            if d and isinstance(d, dict):
+                current = d
+        except Exception:
+            pass
+
+        # Merge updates
+        if 'selected_game_ids' in data:
+            ids = data['selected_game_ids']
+            if not isinstance(ids, list):
+                return jsonify({'status': 'error', 'message': 'selected_game_ids must be a list'}), 400
+            current['selected_game_ids'] = [str(gid) for gid in ids]
+        if 'auto_cycle' in data:
+            current['auto_cycle'] = bool(data['auto_cycle'])
+
+        cache.set('game_mode_selection', current)
+
+        return jsonify({
+            'status': 'success',
+            'data': current,
+        })
+    except Exception as exc:
+        logger.exception("[Games] set_game_selection failed")
+        return jsonify({'status': 'error', 'message': 'Failed to update selection'}), 500
 
 
 @api_v3.route('/display/on-demand/status', methods=['GET'])
@@ -1638,6 +1899,7 @@ def get_on_demand_status():
 @api_v3.route('/display/on-demand/start', methods=['POST'])
 def start_on_demand_display():
     """Request the display controller to run a specific plugin on-demand."""
+    trace_id = new_trace("api", "start_on_demand_display")
     try:
         data = request.get_json() or {}
         plugin_id = data.get('plugin_id')
@@ -1652,7 +1914,18 @@ def start_on_demand_display():
         resolved_plugin = plugin_id
         resolved_mode = mode
 
-        if api_v3.plugin_manager:
+        # Bare game_focus request (from remote's GAME MODE button): no
+        # plugin_id, no game_id. Let the display controller decide whether to
+        # auto-pick a live favorite or render the SELECT A GAME placeholder.
+        # Without this carve-out, find_plugin_for_mode picks a random sport
+        # and the placeholder logic never runs.
+        is_bare_game_focus = (
+            resolved_mode == 'game_focus'
+            and not resolved_plugin
+            and not data.get('game_id')
+        )
+
+        if api_v3.plugin_manager and not is_bare_game_focus:
             if resolved_plugin and resolved_plugin not in api_v3.plugin_manager.plugin_manifests:
                 return jsonify({'status': 'error', 'message': f'Plugin {resolved_plugin} not found'}), 404
 
@@ -1685,9 +1958,14 @@ def start_on_demand_display():
             'action': 'start',
             'plugin_id': resolved_plugin,
             'mode': resolved_mode,
+            'game_id': data.get('game_id'),
             'duration': duration,
             'pinned': pinned,
-            'timestamp': time.time()
+            'timestamp': time.time(),
+            # Phase B: cross-process trace propagation — display controller
+            # pops this into its ContextVar on poll so every log line
+            # downstream of the on-demand request shares this trace_id.
+            'trace_id': trace_id,
         }
         cache.set('display_on_demand_request', request_payload)
 
@@ -1738,7 +2016,8 @@ def start_on_demand_display():
             'mode': resolved_mode,
             'duration': duration,
             'pinned': pinned,
-            'service': service_result
+            'service': service_result,
+            'trace_id': trace_id,
         }
         return jsonify({'status': 'success', 'data': response_data})
     except Exception as exc:
@@ -1780,6 +2059,30 @@ def stop_on_demand_display():
     except Exception as exc:
         logger.exception("[Display] stop_on_demand_display failed")
         return jsonify({'status': 'error', 'message': 'Failed to stop on-demand display'}), 500
+
+@api_v3.route('/display/restart', methods=['POST'])
+def restart_display():
+    """Force the display controller to re-apply config and rebuild its rotation.
+
+    This is the 'Apply & Restart' belt-and-suspenders path used by the remote
+    after batching toggle changes. It does NOT kill the process — it writes an
+    on-demand cache request with action='restart' that the controller picks up
+    in its normal poll loop and uses to re-push plugin configs and tell the
+    Vegas coordinator to rebuild.
+    """
+    try:
+        cache = _ensure_cache_manager()
+        request_id = str(uuid.uuid4())
+        cache.set('display_on_demand_request', {
+            'request_id': request_id,
+            'action': 'restart',
+            'timestamp': time.time(),
+        })
+        return jsonify({'status': 'success', 'data': {'request_id': request_id}}), 202
+    except Exception:
+        logger.exception("[Display] restart_display failed")
+        return jsonify({'status': 'error', 'message': 'Failed to queue restart'}), 500
+
 
 @api_v3.route('/plugins/installed', methods=['GET'])
 def get_installed_plugins():
@@ -2181,6 +2484,160 @@ def manage_plugin_limits(plugin_id):
     except Exception as e:
         logger.exception("[PluginLimits] manage_plugin_limits failed")
         return jsonify({'status': 'error', 'message': 'Failed to manage plugin limits'}), 500
+
+@api_v3.route('/plugins/toggle/batch', methods=['POST'])
+def toggle_plugins_batch():
+    """Apply multiple plugin enable/disable changes in a single atomic save.
+
+    Body: { "changes": [ { "plugin_id": "...", "enabled": true/false }, ... ] }
+
+    Writes the config once (one atomic save -> one hot-reload trigger) and
+    invokes on_enable/on_disable lifecycle hooks on already-loaded plugins.
+    Starlark sub-apps and unknown plugins are rejected with a per-item error
+    but do not abort the rest of the batch.
+    """
+    trace_id = new_trace("api", "toggle_plugins_batch")
+    try:
+        if not api_v3.plugin_manager or not api_v3.config_manager:
+            return jsonify({'status': 'error', 'message': 'Plugin or config manager not initialized'}), 500
+
+        data = request.get_json(silent=True) or {}
+        changes = data.get('changes')
+        if not isinstance(changes, list) or not changes:
+            return jsonify({'status': 'error', 'message': 'changes (non-empty list) required'}), 400
+
+        config = api_v3.config_manager.load_config()
+        applied = []
+        errors = []
+        # Workstream A3: track which toggles actually flipped from their
+        # baseline so we can tell the front-end to skip the /display/restart
+        # round-trip on a no-op (e.g. user flipped a toggle then flipped it
+        # back before Apply landed).
+        any_flipped = False
+
+        for change in changes:
+            if not isinstance(change, dict):
+                errors.append({'change': change, 'error': 'not an object'})
+                continue
+            plugin_id = change.get('plugin_id')
+            enabled = change.get('enabled')
+            if not plugin_id or not isinstance(enabled, bool):
+                errors.append({'plugin_id': plugin_id, 'error': 'plugin_id and enabled(bool) required'})
+                continue
+
+            # Starlark sub-apps are a different beast — punt to single toggle.
+            if plugin_id.startswith('starlark:'):
+                errors.append({'plugin_id': plugin_id, 'error': 'use /plugins/toggle for starlark apps'})
+                continue
+
+            if plugin_id not in api_v3.plugin_manager.plugin_manifests:
+                errors.append({'plugin_id': plugin_id, 'error': 'plugin not found'})
+                continue
+
+            if plugin_id not in config:
+                config[plugin_id] = {}
+            prev_enabled = bool(config[plugin_id].get('enabled', False))
+            if prev_enabled != enabled:
+                any_flipped = True
+            config[plugin_id]['enabled'] = enabled
+            applied.append({'plugin_id': plugin_id, 'enabled': enabled})
+
+        if not applied:
+            return jsonify({'status': 'error', 'message': 'no valid changes', 'errors': errors}), 400
+
+        # Phase B: publish trace_id in the shared cache before the config save
+        # so the display controller's hot-reload picks up the same trace_id
+        # (cross-process propagation — see save_main_config for context).
+        reload_id = str(uuid.uuid4())
+        try:
+            cache = _ensure_cache_manager()
+            cache.set('config_trace', {
+                'trace_id': trace_id,
+                'source': 'api',
+                'action': 'toggle_plugins_batch',
+                'ts': time.time(),
+            })
+            # Workstream A fast-path: cache-IPC ping that races the file
+            # watcher.  Display controller picks this up on its next ~50ms
+            # poll, calls config_service._load_config(), and fires the
+            # reload subscribers ~100ms before the file watcher would have.
+            cache.set('display_config_reload', {
+                'request_id': reload_id,
+                'trace_id': trace_id,
+                'action': 'reload-config',
+                'source': 'toggle_plugins_batch',
+                'plugins': [item['plugin_id'] for item in applied],
+                'ts': time.time(),
+            })
+        except Exception:
+            logger.exception("[PluginToggleBatch] Failed to publish config_trace sidecar")
+
+        # One atomic save -> one file-watcher trigger -> one hot-reload.
+        if hasattr(api_v3.config_manager, 'save_config_atomic'):
+            result = api_v3.config_manager.save_config_atomic(config, create_backup=True)
+            if result.status.value != 'success':
+                return error_response(
+                    ErrorCode.CONFIG_SAVE_FAILED,
+                    f"Failed to save configuration: {result.message}",
+                    status_code=500,
+                )
+        else:
+            api_v3.config_manager.save_config(config)
+
+        # Reflect changes in loaded plugin state and fire lifecycle hooks where
+        # the plugin is currently loaded in-process. The display controller's
+        # restart handler will also re-push config to loaded plugins when the
+        # remote follows up with POST /display/restart.
+        for item in applied:
+            pid = item['plugin_id']
+            en = item['enabled']
+            if api_v3.plugin_state_manager:
+                try:
+                    api_v3.plugin_state_manager.set_plugin_enabled(pid, en)
+                except Exception:
+                    logger.exception("plugin_state_manager.set_plugin_enabled failed for %s", pid)
+            plugin = api_v3.plugin_manager.get_plugin(pid)
+            if plugin:
+                try:
+                    if en and hasattr(plugin, 'on_enable'):
+                        plugin.on_enable()
+                    elif not en and hasattr(plugin, 'on_disable'):
+                        plugin.on_disable()
+                except Exception as lifecycle_error:
+                    logger.warning("Lifecycle method error for %s: %s", pid, lifecycle_error, exc_info=True)
+            if api_v3.operation_history:
+                try:
+                    api_v3.operation_history.record_operation(
+                        'enable' if en else 'disable',
+                        plugin_id=pid,
+                        status='success',
+                    )
+                except Exception:
+                    pass
+
+        return jsonify({
+            'status': 'success',
+            'data': {
+                'applied': applied,
+                'errors': errors,
+                'trace_id': trace_id,
+                # Workstream A3: front-end skips POST /display/restart when
+                # nothing actually flipped from baseline (saves ~50-100ms).
+                'requires_restart': any_flipped,
+            },
+        })
+    except Exception as e:
+        logger.exception('[PluginToggleBatch] Unhandled exception')
+        from src.web_interface.errors import WebInterfaceError
+        error = WebInterfaceError.from_exception(e, ErrorCode.PLUGIN_OPERATION_CONFLICT)
+        return error_response(
+            error.error_code,
+            error.message,
+            details=error.details,
+            context=error.context,
+            status_code=500,
+        )
+
 
 @api_v3.route('/plugins/toggle', methods=['POST'])
 def toggle_plugin():

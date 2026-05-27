@@ -47,11 +47,12 @@ except ImportError:
 try:
     from src.game_mode.renderer import GameModeRenderer
     from src.game_mode.kalshi_matcher import match_game as kalshi_match_game
-    from src.game_mode.team_colors import get_team_color
+    from src.game_mode.team_colors import get_team_color, get_contrasting_pair
 except ImportError:
     GameModeRenderer = None
     kalshi_match_game = None
     get_team_color = None
+    get_contrasting_pair = None
 
 # Import the copied manager classes
 from nfl_managers import NFLLiveManager, NFLRecentManager, NFLUpcomingManager
@@ -873,9 +874,6 @@ class FootballScoreboardPlugin(BasePlugin if BasePlugin else object):
 
     def update(self) -> None:
         """Update football game data."""
-        if not self.is_enabled:
-            return
-
         try:
             # Update NFL managers if enabled
             if self.nfl_enabled:
@@ -3567,13 +3565,43 @@ class FootballScoreboardPlugin(BasePlugin if BasePlugin else object):
 
         return games
 
+    def _find_live_manager_for_game(self, game_id: str):
+        """Return the live manager holding a game, or None.
+
+        Used by get_game_focus_data() to target refresh_focused_game()
+        at the one manager that owns the game's live state.
+        """
+        for league_id, registry in self._league_registry.items():
+            if not registry.get("enabled", False):
+                continue
+            mgr = registry.get("managers", {}).get("live")
+            if not mgr:
+                continue
+            for g in getattr(mgr, "live_games", []) or []:
+                if str(g.get("id", "")) == str(game_id):
+                    return mgr
+        return None
+
     def get_game_focus_data(self, game_id: str) -> Optional[Dict[str, Any]]:
         """Build a GameFocusData dict for a specific game ID.
 
         Searches all live managers for the game, then enriches with
         Kalshi odds and ESPN betting lines.
+
+        For live games, triggers a targeted ESPN refresh (max_age=10s)
+        so the scorebug stays in sync with Kalshi odds (which fetch
+        inline). Falls back to the cached game dict if no refresh is
+        available.
         """
-        game = self._find_game_by_id(game_id)
+        fresh: Optional[Dict] = None
+        live_mgr = self._find_live_manager_for_game(game_id)
+        if live_mgr is not None and hasattr(live_mgr, "refresh_focused_game"):
+            try:
+                fresh = live_mgr.refresh_focused_game(game_id)
+            except Exception as e:  # pylint: disable=broad-except
+                self.logger.debug("refresh_focused_game failed: %s", e)
+
+        game = fresh if fresh else self._find_game_by_id(game_id)
         if not game:
             return None
 
@@ -3583,23 +3611,42 @@ class FootballScoreboardPlugin(BasePlugin if BasePlugin else object):
         away_logo = self._load_game_logo(game, "away")
         home_logo = self._load_game_logo(game, "home")
 
-        # Determine status_state
-        if game.get("is_live"):
+        # Determine status_state — prefer the fresh-fetch signal over the
+        # cached dict so a just-gone-final game renders "FINAL" on the
+        # next frame instead of lingering with stale "live" state.
+        if fresh is not None and fresh.get("is_final"):
+            status_state = "post"
+        elif fresh is not None and fresh.get("is_live"):
+            status_state = "in"
+        elif game.get("is_live"):
             status_state = "in"
         elif game.get("is_final"):
             status_state = "post"
         else:
             status_state = "pre"
 
+        # Resolve colors with collision detection (navy-vs-navy etc.)
+        _league_key = league or "nfl"
+        _away_abbr = game.get("away_abbr", "")
+        _home_abbr = game.get("home_abbr", "")
+        if get_contrasting_pair is not None:
+            _home_color, _away_color = get_contrasting_pair(_home_abbr, _away_abbr, _league_key)
+        elif get_team_color is not None:
+            _home_color = get_team_color(_home_abbr, _league_key)
+            _away_color = get_team_color(_away_abbr, _league_key)
+        else:
+            _home_color = COLOR_WHITE
+            _away_color = COLOR_WHITE
+
         # Build focus data
         focus_data: Dict[str, Any] = {
             "sport": "football",
-            "league": league or "nfl",
+            "league": _league_key,
             "game_id": game_id,
-            "away_team": game.get("away_abbr", ""),
-            "home_team": game.get("home_abbr", ""),
-            "away_color": get_team_color(game.get("away_abbr", ""), league or "nfl") if get_team_color else COLOR_WHITE,
-            "home_color": get_team_color(game.get("home_abbr", ""), league or "nfl") if get_team_color else COLOR_WHITE,
+            "away_team": _away_abbr,
+            "home_team": _home_abbr,
+            "away_color": _away_color,
+            "home_color": _home_color,
             "away_score": int(game.get("away_score", 0)),
             "home_score": int(game.get("home_score", 0)),
             "status_state": status_state,

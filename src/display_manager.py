@@ -32,6 +32,18 @@ class DisplayManager:
         self._snapshot_path = "/tmp/led_matrix_preview.png"
         self._snapshot_min_interval_sec = 0.2  # max ~5 fps
         self._last_snapshot_ts = 0.0
+
+        # Phase C: current-context tagging.  Set by display_controller every
+        # time it mutates current_display_mode.  Surfaces in the snapshot
+        # sidecar (.meta.json) so /api/v3/display/current can correlate the
+        # PNG with the plugin actually rendering AND the user action that
+        # triggered it via trace_id.
+        self._current_mode: 'str | None' = None
+        self._current_plugin_id: 'str | None' = None
+        # Rate-limit frame_commit trace events to once/sec — the snapshot
+        # path itself is 5fps but we don't want 5 events/sec polluting the
+        # trace log; one per second is plenty for Phase D correlation.
+        self._last_frame_trace_ts = 0.0
         
         # Scrolling state tracking for graceful updates
         self._scrolling_state = {
@@ -853,8 +865,32 @@ class DisplayManager:
             'deferred_update_ttl': self._scrolling_state['deferred_update_ttl']
         }
 
+    def set_current_context(self, mode: 'str | None', plugin_id: 'str | None') -> None:
+        """Phase C: tag the display with the mode + plugin currently rendering.
+
+        Called by display_controller every time current_display_mode mutates,
+        so subsequent snapshots can be correlated with the plugin that
+        produced them and (via the trace_id contextvar) the user action that
+        triggered the switch.
+        """
+        self._current_mode = mode
+        self._current_plugin_id = plugin_id
+
+    def get_current_context(self) -> Dict[str, Any]:
+        """Return the current display context.  Used by /api/v3/display/current."""
+        return {
+            'mode': self._current_mode,
+            'plugin_id': self._current_plugin_id,
+        }
+
     def _write_snapshot_if_due(self) -> None:
-        """Write the current image to a PNG snapshot file at a limited frequency."""
+        """Write the current image to a PNG snapshot file at a limited frequency.
+
+        Phase C: also writes a sibling {snapshot_path}.meta.json sidecar with
+        ts/frame_count/mode/plugin_id/trace_id so /api/v3/display/current can
+        correlate the PNG with the plugin actually rendering AND the user
+        action that triggered it.
+        """
         try:
             now = time.time()
             if (now - self._last_snapshot_ts) < self._snapshot_min_interval_sec:
@@ -888,6 +924,55 @@ class DisplayManager:
             except Exception:
                 pass
             self._last_snapshot_ts = now
+
+            # Phase C: write metadata sidecar atomically (same pattern: tmp + replace)
+            self._write_snapshot_meta(snapshot_path_obj, now)
+
         except Exception as e:
             # Snapshot failures should never break display; log at debug to avoid noise
             logger.debug(f"Snapshot write skipped: {e}")
+
+    def _write_snapshot_meta(self, snapshot_path_obj, now: float) -> None:
+        """Write the .meta.json sidecar + emit once-per-sec frame_commit trace.
+
+        Separate method so failure here doesn't shadow the PNG write above.
+        """
+        import json
+        try:
+            # Lazy import to avoid hard dep on observability at boot time
+            try:
+                from src.observability.trace import current_trace_id, trace_event
+                trace_id = current_trace_id()
+            except Exception:
+                trace_id = None
+                trace_event = None
+
+            meta_path = str(snapshot_path_obj) + ".meta.json"
+            meta_tmp = meta_path + ".tmp"
+            payload = {
+                'ts': now,
+                'mode': self._current_mode,
+                'plugin_id': self._current_plugin_id,
+                'trace_id': trace_id,
+            }
+            with open(meta_tmp, 'w', encoding='utf-8') as f:
+                json.dump(payload, f)
+            try:
+                os.replace(meta_tmp, meta_path)
+            except Exception:
+                # Fallback (Windows-style rename of existing file)
+                if os.path.exists(meta_path):
+                    os.remove(meta_path)
+                os.rename(meta_tmp, meta_path)
+
+            # Once-per-second frame_commit event (NOT every snapshot — 5fps
+            # would be 5 events/sec, too noisy for the trace log).
+            if trace_event is not None and (now - self._last_frame_trace_ts) >= 1.0:
+                self._last_frame_trace_ts = now
+                trace_event(
+                    "frame_commit", "snapshot",
+                    mode=self._current_mode,
+                    plugin_id=self._current_plugin_id,
+                )
+        except Exception as e:
+            logger.debug(f"Snapshot meta sidecar skipped: {e}")

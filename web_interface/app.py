@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import sys
+import platform
 import subprocess
 import time
 from pathlib import Path
@@ -237,7 +238,13 @@ def is_ap_mode_active():
     """
     Check if access point mode is currently active (cached, 5s TTL).
     Uses a direct systemctl check instead of instantiating WiFiManager.
+
+    On non-Linux hosts (e.g. Windows dev), systemctl/hostapd don't exist;
+    short-circuit to False so we don't spam `AP mode check failed` on every
+    request. The real Pi deploy path is unaffected.
     """
+    if platform.system() != 'Linux':
+        return False
     now = time.time()
     if (now - _ap_mode_cache['timestamp']) < _AP_MODE_CACHE_TTL:
         return _ap_mode_cache['value']
@@ -251,7 +258,8 @@ def is_ap_mode_active():
         _ap_mode_cache['timestamp'] = now
         return active
     except (subprocess.SubprocessError, OSError) as e:
-        logging.getLogger('web_interface').error(f"AP mode check failed: {e}")
+        # FileNotFoundError on hosts without systemctl — log once, cache miss
+        logging.getLogger('web_interface').debug(f"AP mode check failed: {e}")
         return _ap_mode_cache['value']
 
 # Captive portal detection endpoints

@@ -1,0 +1,111 @@
+<div class="bg-white rounded-lg shadow p-6">
+    <div class="border-b border-gray-200 pb-4 mb-6">
+        <div class="flex items-center justify-between">
+            <div>
+                <h2 class="text-lg font-semibold text-gray-900">Live Games</h2>
+                <p class="mt-1 text-sm text-gray-600">Tap "Focus" to switch the ticker to Game Mode for a specific game.</p>
+            </div>
+            <div id="game-mode-status" class="hidden">
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800">
+                    <span class="w-2 h-2 bg-red-500 rounded-full mr-2 animate-pulse"></span>
+                    Game Mode Active
+                </span>
+                <button onclick="exitGameMode()" class="ml-2 px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded text-sm font-medium text-gray-700">
+                    Exit
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="live-games-list" class="space-y-3">
+        <p class="text-gray-500 text-sm">Loading live games...</p>
+    </div>
+</div>
+
+<script>
+function loadLiveGames() {
+    fetch('/api/v3/games/live')
+        .then(r => r.json())
+        .then(data => {
+            if (data.status !== 'success') return;
+            const games = data.data.games || [];
+            const gameModeActive = data.data.game_mode_active;
+            const container = document.getElementById('live-games-list');
+            const statusEl = document.getElementById('game-mode-status');
+
+            if (gameModeActive) {
+                statusEl.classList.remove('hidden');
+            } else {
+                statusEl.classList.add('hidden');
+            }
+
+            if (games.length === 0) {
+                container.innerHTML = '<p class="text-gray-500 text-sm">No live games right now.</p>';
+                return;
+            }
+
+            container.innerHTML = games.map(g => `
+                <div class="flex items-center justify-between bg-gray-50 rounded-lg p-4">
+                    <div class="flex-1">
+                        <div class="flex items-center space-x-3">
+                            <span class="font-semibold text-gray-900">${g.away_team}</span>
+                            <span class="text-lg font-bold text-gray-900">${g.away_score}</span>
+                            <span class="text-gray-400 text-sm">vs</span>
+                            <span class="text-lg font-bold text-gray-900">${g.home_score}</span>
+                            <span class="font-semibold text-gray-900">${g.home_team}</span>
+                        </div>
+                        <div class="mt-1 text-sm text-gray-500">
+                            ${g.period_label || ''} &middot; ${g.league || ''}
+                        </div>
+                    </div>
+                    <button onclick="focusGame('${g.plugin_id}', '${g.game_id}')"
+                            class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors">
+                        Focus
+                    </button>
+                </div>
+            `).join('');
+        })
+        .catch(err => {
+            console.error('Failed to load live games:', err);
+        });
+}
+
+function focusGame(pluginId, gameId) {
+    fetch('/api/v3/display/on-demand/start', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            plugin_id: pluginId,
+            mode: 'game_focus',
+            pinned: true,
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'success') {
+            // Set game_focus_game_id via plugin config update
+            fetch(`/api/v3/plugins/${pluginId}/config`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({game_focus_game_id: gameId})
+            });
+            loadLiveGames(); // Refresh to show active status
+        }
+    })
+    .catch(err => console.error('Focus failed:', err));
+}
+
+function exitGameMode() {
+    fetch('/api/v3/display/on-demand/stop', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({})
+    })
+    .then(() => loadLiveGames())
+    .catch(err => console.error('Exit failed:', err));
+}
+
+// Load on page init and refresh every 30s
+loadLiveGames();
+setInterval(loadLiveGames, 30000);
+</script>

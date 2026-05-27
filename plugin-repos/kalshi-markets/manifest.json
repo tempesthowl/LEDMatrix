@@ -1,0 +1,36 @@
+{
+  "id": "kalshi-markets",
+  "name": "Kalshi Prediction Markets",
+  "version": "1.0.3",
+  "description": "Scrolling ticker of Kalshi prediction market probabilities — politics, economics, Fed/rates, sports props. Also hosts the NFL Draft Focused View (on-demand).",
+  "author": "ericvallejo97",
+  "category": "finance",
+  "tags": [
+    "kalshi",
+    "prediction",
+    "markets",
+    "odds",
+    "politics",
+    "economics",
+    "finance"
+  ],
+  "display_modes": [
+    "kalshi_markets",
+    "kalshi_draft_focus"
+  ],
+  "entry_point": "manager.py",
+  "class_name": "KalshiMarketsPlugin",
+  "dependencies": {},
+  "versions": [
+    {
+      "version": "1.0.2",
+      "ledmatrix_min": "2.0.0",
+      "released": "2026-04-19"
+    },
+    {
+      "version": "1.0.3",
+      "ledmatrix_min": "2.0.0",
+      "released": "2026-04-23"
+    }
+  ]
+}

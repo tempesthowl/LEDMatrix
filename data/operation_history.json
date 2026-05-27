@@ -1,0 +1,1582 @@
+[
+  {
+    "operation_id": "e9aa1ee8-7eeb-4086-af38-aa976a5e2c6f",
+    "operation_type": "disable",
+    "plugin_id": "football-scoreboard",
+    "timestamp": "2026-04-14T22:49:52.419527",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "708df151-a6a1-48e9-af58-4dcbbe9114e3",
+    "operation_type": "enable",
+    "plugin_id": "football-scoreboard",
+    "timestamp": "2026-04-14T22:49:53.846001",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "d23e8059-fd0f-431b-bf8d-ff79ee9ce97e",
+    "operation_type": "disable",
+    "plugin_id": "basketball-scoreboard",
+    "timestamp": "2026-04-14T22:49:59.160063",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "7e81e68d-80f0-447e-8b83-9863348b15be",
+    "operation_type": "disable",
+    "plugin_id": "baseball-scoreboard",
+    "timestamp": "2026-04-14T23:00:57.433394",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "d52aff7b-c5c0-4f39-9b6e-4538340c4637",
+    "operation_type": "disable",
+    "plugin_id": "f1-scoreboard",
+    "timestamp": "2026-04-14T23:00:58.067970",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "457f438e-0c1c-4f14-ab61-27e0baf2a3a8",
+    "operation_type": "disable",
+    "plugin_id": "football-scoreboard",
+    "timestamp": "2026-04-14T23:00:58.436743",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "8cb22e8e-1d19-45ee-9a03-18d22a86e4bb",
+    "operation_type": "disable",
+    "plugin_id": "football-scoreboard",
+    "timestamp": "2026-04-14T23:01:01.914838",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "dffa812b-228a-42db-88e2-8412636cadf8",
+    "operation_type": "disable",
+    "plugin_id": "kalshi-markets",
+    "timestamp": "2026-04-14T23:01:02.433851",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "fd5bf21e-58db-4a7e-ad63-63e74465dbd6",
+    "operation_type": "disable",
+    "plugin_id": "odds-ticker",
+    "timestamp": "2026-04-14T23:01:03.236013",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "62722752-8cf5-4048-8d6a-db1757de5156",
+    "operation_type": "disable",
+    "plugin_id": "pga-tour-leaderboard",
+    "timestamp": "2026-04-14T23:01:03.877724",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "943cb08d-d4fe-4d82-a093-e0bb5eef7a32",
+    "operation_type": "disable",
+    "plugin_id": "stock-ticker",
+    "timestamp": "2026-04-14T23:20:12.491701",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "4b239605-e8e0-40c9-add3-ff4b0425b4b4",
+    "operation_type": "enable",
+    "plugin_id": "baseball-scoreboard",
+    "timestamp": "2026-04-14T23:21:34.460793",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "62a29c08-a347-4042-b19c-793cb0030408",
+    "operation_type": "enable",
+    "plugin_id": "basketball-scoreboard",
+    "timestamp": "2026-04-14T23:21:34.743501",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "8774e518-be21-46f8-86be-1d8bb1b32ac3",
+    "operation_type": "enable",
+    "plugin_id": "football-scoreboard",
+    "timestamp": "2026-04-14T23:21:35.038439",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "6d7088a5-fdea-4982-811f-9e572a2e6c12",
+    "operation_type": "enable",
+    "plugin_id": "odds-ticker",
+    "timestamp": "2026-04-14T23:21:35.329447",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "8fdb2622-958c-41f4-8899-39caca92e145",
+    "operation_type": "enable",
+    "plugin_id": "kalshi-markets",
+    "timestamp": "2026-04-14T23:21:35.613682",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "d683aae5-8248-462e-9c25-b75d65ff9ba6",
+    "operation_type": "enable",
+    "plugin_id": "stock-ticker",
+    "timestamp": "2026-04-14T23:21:35.900748",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "9adcbe92-78d5-4fa8-8ee7-a38cb89cf1e2",
+    "operation_type": "enable",
+    "plugin_id": "f1-scoreboard",
+    "timestamp": "2026-04-14T23:21:36.191826",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "a7130d3a-dd23-414d-8740-298b270ee359",
+    "operation_type": "enable",
+    "plugin_id": "pga-tour-leaderboard",
+    "timestamp": "2026-04-14T23:21:36.478247",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "6ff86bb4-84f7-4c52-a35b-553d7321d159",
+    "operation_type": "disable",
+    "plugin_id": "baseball-scoreboard",
+    "timestamp": "2026-04-15T00:13:54.016460",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "49677599-7ca1-4c96-a78b-60acaf9605b5",
+    "operation_type": "disable",
+    "plugin_id": "basketball-scoreboard",
+    "timestamp": "2026-04-15T00:13:54.376958",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "7dea1633-df44-4e44-a6bd-bed371a176ce",
+    "operation_type": "disable",
+    "plugin_id": "f1-scoreboard",
+    "timestamp": "2026-04-15T00:13:54.902237",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "cec21c0b-32ee-45b6-8bf8-30b59630503c",
+    "operation_type": "disable",
+    "plugin_id": "football-scoreboard",
+    "timestamp": "2026-04-15T00:13:55.286177",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "9f7e282e-149b-4db0-8bf9-945338deb9f1",
+    "operation_type": "disable",
+    "plugin_id": "kalshi-markets",
+    "timestamp": "2026-04-15T00:13:57.535894",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "5dcf0ed4-3241-4daf-9f13-8b7be1f0ce4d",
+    "operation_type": "disable",
+    "plugin_id": "f1-scoreboard",
+    "timestamp": "2026-04-15T00:13:58.144099",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "ea91570d-e3f5-45bc-bb50-6ecbde8420a5",
+    "operation_type": "disable",
+    "plugin_id": "odds-ticker",
+    "timestamp": "2026-04-15T00:13:59.637327",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "404b60ad-6ab1-4ae1-b65a-6666fe6cec3c",
+    "operation_type": "disable",
+    "plugin_id": "pga-tour-leaderboard",
+    "timestamp": "2026-04-15T00:14:01.789317",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "1453d58d-9b72-4e95-8acd-08382243e699",
+    "operation_type": "disable",
+    "plugin_id": "stock-ticker",
+    "timestamp": "2026-04-15T00:18:17.380147",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "7eadeb38-aa45-4ac4-b732-fa054c0afe21",
+    "operation_type": "enable",
+    "plugin_id": "odds-ticker",
+    "timestamp": "2026-04-15T00:18:18.684869",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "d592e701-a0c5-49e3-b11f-b238f4254c9b",
+    "operation_type": "disable",
+    "plugin_id": "odds-ticker",
+    "timestamp": "2026-04-15T00:18:56.558227",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "8f9eaeac-9896-4cad-a7fb-48402a1095ef",
+    "operation_type": "enable",
+    "plugin_id": "f1-scoreboard",
+    "timestamp": "2026-04-15T00:18:57.977526",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "28ca2a66-3091-4bad-91fe-9470211f69cc",
+    "operation_type": "disable",
+    "plugin_id": "f1-scoreboard",
+    "timestamp": "2026-04-15T09:34:11.506338",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "7021fa0a-389d-4213-9a57-2303b1c39fec",
+    "operation_type": "enable",
+    "plugin_id": "baseball-scoreboard",
+    "timestamp": "2026-04-15T09:34:34.666589",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "e5a88383-47e4-4821-a4d8-532dffde5993",
+    "operation_type": "disable",
+    "plugin_id": "baseball-scoreboard",
+    "timestamp": "2026-04-15T09:35:48.761437",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "69293ddd-c58f-4ac4-a70c-685e2fc6562d",
+    "operation_type": "enable",
+    "plugin_id": "f1-scoreboard",
+    "timestamp": "2026-04-15T09:35:49.528900",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "ee9f1d25-0270-4a18-98b1-172241058405",
+    "operation_type": "enable",
+    "plugin_id": "baseball-scoreboard",
+    "timestamp": "2026-04-15T09:36:11.753342",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "84cf0da2-2b9d-4683-8a58-b5740329a176",
+    "operation_type": "disable",
+    "plugin_id": "f1-scoreboard",
+    "timestamp": "2026-04-15T09:37:26.717360",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "7a0732e7-b55d-4b9c-ac13-904147ecfa0a",
+    "operation_type": "enable",
+    "plugin_id": "f1-scoreboard",
+    "timestamp": "2026-04-15T09:38:18.240169",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "c6aa333e-43ad-44da-9020-40560e439c9c",
+    "operation_type": "enable",
+    "plugin_id": "march-madness",
+    "timestamp": "2026-04-15T12:13:42.195590",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "d5c47636-a4da-4eea-a0da-0f68102a2a70",
+    "operation_type": "enable",
+    "plugin_id": "stock-ticker",
+    "timestamp": "2026-04-15T12:14:03.406586",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "1ec4261d-bdc4-4ce9-8437-8399e324c9d1",
+    "operation_type": "disable",
+    "plugin_id": "baseball-scoreboard",
+    "timestamp": "2026-04-15T13:01:59.954286",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "3c86b4dd-6c5f-40c0-b404-bfd32f29520f",
+    "operation_type": "disable",
+    "plugin_id": "basketball-scoreboard",
+    "timestamp": "2026-04-15T13:02:00.564905",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "88b66947-22cf-4761-b1fc-ecb9e18bf09b",
+    "operation_type": "disable",
+    "plugin_id": "f1-scoreboard",
+    "timestamp": "2026-04-15T13:02:00.850142",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "5ed52147-e924-43c5-b30d-861318a2bfce",
+    "operation_type": "disable",
+    "plugin_id": "football-scoreboard",
+    "timestamp": "2026-04-15T13:02:01.997388",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "bca8c496-50de-4bbf-856c-0b8a2ff87cc1",
+    "operation_type": "disable",
+    "plugin_id": "march-madness",
+    "timestamp": "2026-04-15T13:02:02.915394",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "917381ca-354a-4551-bfeb-38a52021e333",
+    "operation_type": "disable",
+    "plugin_id": "odds-ticker",
+    "timestamp": "2026-04-15T13:02:03.165545",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "5e796984-b830-43b8-89d5-adb9b4b88e64",
+    "operation_type": "disable",
+    "plugin_id": "pga-tour-leaderboard",
+    "timestamp": "2026-04-15T13:02:03.631521",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "f01b7951-dffe-466b-82dd-2711f0f37c36",
+    "operation_type": "disable",
+    "plugin_id": "stock-ticker",
+    "timestamp": "2026-04-15T13:02:04.451336",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "213b2843-1ff5-4d04-8448-eeab833d95b3",
+    "operation_type": "enable",
+    "plugin_id": "kalshi-markets",
+    "timestamp": "2026-04-15T13:28:29.379209",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "67ab78e3-3506-4125-ad23-d559f2b5a4e3",
+    "operation_type": "disable",
+    "plugin_id": "f1-scoreboard",
+    "timestamp": "2026-04-15T13:28:29.382356",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "e2b9e7fd-4466-43ca-8553-7c485eacb96d",
+    "operation_type": "disable",
+    "plugin_id": "kalshi-markets",
+    "timestamp": "2026-04-15T14:48:49.780157",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "4d448064-0ac4-4856-80b5-7d8b917cdadd",
+    "operation_type": "enable",
+    "plugin_id": "stock-ticker",
+    "timestamp": "2026-04-15T14:48:49.782582",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "5da385d1-40dc-4d06-a396-087bbfebba70",
+    "operation_type": "disable",
+    "plugin_id": "stock-ticker",
+    "timestamp": "2026-04-15T14:49:15.603775",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "6c94105c-6e00-4437-b9ee-337fbf2d1b52",
+    "operation_type": "enable",
+    "plugin_id": "pga-tour-leaderboard",
+    "timestamp": "2026-04-15T14:49:15.606230",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "22ab53dc-675e-46eb-a39b-643671986e66",
+    "operation_type": "disable",
+    "plugin_id": "pga-tour-leaderboard",
+    "timestamp": "2026-04-15T14:50:04.366106",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "fcae5b51-bf44-44f2-8c9b-97e2e0ed6d82",
+    "operation_type": "enable",
+    "plugin_id": "kalshi-markets",
+    "timestamp": "2026-04-15T14:51:04.809221",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "55c9a12a-c054-4634-976b-5c2006415b5f",
+    "operation_type": "enable",
+    "plugin_id": "odds-ticker",
+    "timestamp": "2026-04-15T14:51:04.811776",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "51bada54-86b8-47bc-a171-6e5f6580f198",
+    "operation_type": "disable",
+    "plugin_id": "odds-ticker",
+    "timestamp": "2026-04-15T15:03:07.953329",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "49bba2fb-09a5-4bd7-93b6-1d6e3eb74139",
+    "operation_type": "enable",
+    "plugin_id": "baseball-scoreboard",
+    "timestamp": "2026-04-15T15:14:25.307724",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "7425304e-d49f-4589-92c6-06ebff6fee1d",
+    "operation_type": "enable",
+    "plugin_id": "basketball-scoreboard",
+    "timestamp": "2026-04-15T15:14:25.310350",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "3c707e34-09e6-427b-bdb5-635e7b2bb271",
+    "operation_type": "enable",
+    "plugin_id": "f1-scoreboard",
+    "timestamp": "2026-04-15T15:14:25.313290",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "f86994a6-84f9-4a64-b2ad-34fff23f14d2",
+    "operation_type": "enable",
+    "plugin_id": "football-scoreboard",
+    "timestamp": "2026-04-15T15:14:25.316511",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "0b5747f5-2a8f-4978-8356-aa7e86f5f550",
+    "operation_type": "enable",
+    "plugin_id": "march-madness",
+    "timestamp": "2026-04-15T15:14:25.319120",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "0a17693b-ed0d-4831-9d4f-5b52ec93ded4",
+    "operation_type": "enable",
+    "plugin_id": "odds-ticker",
+    "timestamp": "2026-04-15T15:14:25.321770",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "16876948-1d50-4f88-974c-c1aa29583d4f",
+    "operation_type": "enable",
+    "plugin_id": "pga-tour-leaderboard",
+    "timestamp": "2026-04-15T15:14:25.324668",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "8d41539d-6445-4eac-b3ab-a100940158d5",
+    "operation_type": "enable",
+    "plugin_id": "stock-ticker",
+    "timestamp": "2026-04-15T15:14:25.327829",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "1b3e1e09-36fd-47c6-84e0-b1846df4d7b4",
+    "operation_type": "enable",
+    "plugin_id": "kalshi-markets",
+    "timestamp": "2026-04-15T15:50:28.423802",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "4606ccba-b974-47e3-bc21-ec03309453af",
+    "operation_type": "disable",
+    "plugin_id": "baseball-scoreboard",
+    "timestamp": "2026-04-15T16:01:45.630677",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "13175ece-c419-4cee-a829-3134d5ea5f21",
+    "operation_type": "disable",
+    "plugin_id": "basketball-scoreboard",
+    "timestamp": "2026-04-15T16:01:45.633862",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "3ca155cd-bb6a-4f83-926e-ee7fc0fd6ba3",
+    "operation_type": "disable",
+    "plugin_id": "football-scoreboard",
+    "timestamp": "2026-04-15T16:01:45.636570",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "22a753d8-ca3a-4d16-b47f-51e6fdf283f1",
+    "operation_type": "disable",
+    "plugin_id": "kalshi-markets",
+    "timestamp": "2026-04-15T16:01:45.639399",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "49898a57-60b2-4b90-8d85-d42818c548a4",
+    "operation_type": "disable",
+    "plugin_id": "march-madness",
+    "timestamp": "2026-04-15T16:01:45.643467",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "fc11d0bd-106b-4c39-990f-72f03d78f877",
+    "operation_type": "disable",
+    "plugin_id": "pga-tour-leaderboard",
+    "timestamp": "2026-04-15T16:01:45.646336",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "e8375a28-59fe-4b9b-928d-052dbd3b09e6",
+    "operation_type": "disable",
+    "plugin_id": "stock-ticker",
+    "timestamp": "2026-04-15T16:01:45.649233",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "a1b808d4-d04c-4517-9f2c-a3f92b00fe33",
+    "operation_type": "disable",
+    "plugin_id": "odds-ticker",
+    "timestamp": "2026-04-15T16:02:41.556255",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "1121d975-8e17-43b0-81cf-0fe2355f2483",
+    "operation_type": "disable",
+    "plugin_id": "f1-scoreboard",
+    "timestamp": "2026-04-15T16:03:30.698728",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "0929eb18-9054-42ca-be6c-09076f78d6fd",
+    "operation_type": "enable",
+    "plugin_id": "stock-ticker",
+    "timestamp": "2026-04-15T16:03:30.701695",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "2a3a20ae-f39a-48ee-89b3-e6ed4795339c",
+    "operation_type": "disable",
+    "plugin_id": "stock-ticker",
+    "timestamp": "2026-04-15T16:04:08.158077",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "591e22db-938a-4d87-a63b-31702db47da3",
+    "operation_type": "enable",
+    "plugin_id": "baseball-scoreboard",
+    "timestamp": "2026-04-15T16:04:08.161005",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "9df5b90f-dc89-4a8b-ae8b-6bfc7ba79121",
+    "operation_type": "enable",
+    "plugin_id": "basketball-scoreboard",
+    "timestamp": "2026-04-15T16:05:13.692731",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "da76f202-bbbb-47ae-ab3c-106001dd616c",
+    "operation_type": "enable",
+    "plugin_id": "football-scoreboard",
+    "timestamp": "2026-04-15T16:10:56.726382",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "9004b635-30a5-4f4d-8d35-8de6d14b1668",
+    "operation_type": "enable",
+    "plugin_id": "baseball-scoreboard",
+    "timestamp": "2026-04-15T16:10:56.729567",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "2e320172-202a-4592-89ef-e71078f20791",
+    "operation_type": "enable",
+    "plugin_id": "basketball-scoreboard",
+    "timestamp": "2026-04-15T16:10:56.732670",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "c344a2d9-ae08-44a2-931a-7ac5088c4e14",
+    "operation_type": "enable",
+    "plugin_id": "f1-scoreboard",
+    "timestamp": "2026-04-15T16:10:56.735903",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "e5b6ce7e-623d-44b3-a51c-6104638c2fd5",
+    "operation_type": "enable",
+    "plugin_id": "pga-tour-leaderboard",
+    "timestamp": "2026-04-15T16:10:56.739275",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "ca4dbfe0-5d6d-4ded-a5fc-819cb8f73653",
+    "operation_type": "enable",
+    "plugin_id": "kalshi-markets",
+    "timestamp": "2026-04-15T16:10:56.743070",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "bf9f247b-4e14-40a6-92c9-604e80f66446",
+    "operation_type": "enable",
+    "plugin_id": "odds-ticker",
+    "timestamp": "2026-04-15T16:10:56.746144",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "cba86c88-1df4-486b-8008-80996d63d3a2",
+    "operation_type": "enable",
+    "plugin_id": "stock-ticker",
+    "timestamp": "2026-04-15T16:10:56.749151",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "ec36a96e-8b7f-42ed-9149-598d0b925a5b",
+    "operation_type": "enable",
+    "plugin_id": "march-madness",
+    "timestamp": "2026-04-15T16:10:56.752234",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "95ee2fa7-dbb1-4710-afed-c9bb4dee3cc4",
+    "operation_type": "enable",
+    "plugin_id": "football-scoreboard",
+    "timestamp": "2026-04-15T16:12:31.691477",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "37ab73f6-b93c-4085-8f2d-47cbe04bc834",
+    "operation_type": "enable",
+    "plugin_id": "baseball-scoreboard",
+    "timestamp": "2026-04-15T16:12:31.694722",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "bb89dee1-f087-4299-b7c7-8ca54c41d4f0",
+    "operation_type": "enable",
+    "plugin_id": "basketball-scoreboard",
+    "timestamp": "2026-04-15T16:12:31.698330",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "fe21d894-b6cd-4c31-b273-db89d2581f0e",
+    "operation_type": "enable",
+    "plugin_id": "f1-scoreboard",
+    "timestamp": "2026-04-15T16:12:31.701785",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "e1936191-857d-40b3-bf6b-9fccdda20a49",
+    "operation_type": "enable",
+    "plugin_id": "pga-tour-leaderboard",
+    "timestamp": "2026-04-15T16:12:31.705116",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "9ab120ae-fbdb-4f12-847f-33938fd111d1",
+    "operation_type": "enable",
+    "plugin_id": "kalshi-markets",
+    "timestamp": "2026-04-15T16:12:31.708300",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "ef2aa96f-d968-45b0-ad67-049906b49265",
+    "operation_type": "enable",
+    "plugin_id": "odds-ticker",
+    "timestamp": "2026-04-15T16:12:31.711521",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "9b8f12c4-df01-4585-bd4a-818356d1f036",
+    "operation_type": "enable",
+    "plugin_id": "stock-ticker",
+    "timestamp": "2026-04-15T16:12:31.714839",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "3e45511c-2346-43c6-85d0-a498e307caec",
+    "operation_type": "disable",
+    "plugin_id": "baseball-scoreboard",
+    "timestamp": "2026-04-15T17:06:40.249181",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "18443509-6075-4746-b7aa-4a26debbe8d5",
+    "operation_type": "disable",
+    "plugin_id": "basketball-scoreboard",
+    "timestamp": "2026-04-15T17:06:40.253297",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "3b5df1c3-b031-4aba-9d4f-cac1d9cd1b8c",
+    "operation_type": "disable",
+    "plugin_id": "football-scoreboard",
+    "timestamp": "2026-04-15T17:06:40.256702",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "d3d270a0-fa2c-4930-a5fb-95370e7081d8",
+    "operation_type": "disable",
+    "plugin_id": "kalshi-markets",
+    "timestamp": "2026-04-15T17:06:40.261266",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "067ed301-77cd-4617-81c3-bca88ea26de0",
+    "operation_type": "disable",
+    "plugin_id": "march-madness",
+    "timestamp": "2026-04-15T17:06:40.264743",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "ea8d990c-d225-4587-baa6-d9ca4aad1bf3",
+    "operation_type": "disable",
+    "plugin_id": "odds-ticker",
+    "timestamp": "2026-04-15T17:06:40.269023",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "7c5aa621-f65a-4db8-baaa-ccbf631b9cf3",
+    "operation_type": "disable",
+    "plugin_id": "pga-tour-leaderboard",
+    "timestamp": "2026-04-15T17:06:40.273373",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "2d971d3c-a829-41a3-b9ff-6e2f8aa34a1b",
+    "operation_type": "disable",
+    "plugin_id": "stock-ticker",
+    "timestamp": "2026-04-15T17:06:40.276980",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "c287cbb3-3f8e-42ca-9b27-8be17b17b8ba",
+    "operation_type": "disable",
+    "plugin_id": "f1-scoreboard",
+    "timestamp": "2026-04-15T17:37:45.267273",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "17dceb77-e914-405d-a82e-16a8354b2d8c",
+    "operation_type": "enable",
+    "plugin_id": "stock-ticker",
+    "timestamp": "2026-04-15T17:37:45.273225",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "f0343354-a396-46ff-b762-83017d52eef6",
+    "operation_type": "enable",
+    "plugin_id": "f1-scoreboard",
+    "timestamp": "2026-04-15T17:39:35.168075",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "f437e792-5d5a-486a-ab68-1d208c37dab3",
+    "operation_type": "disable",
+    "plugin_id": "stock-ticker",
+    "timestamp": "2026-04-15T17:39:35.172815",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "488bdaea-41e3-411b-bcff-d09d83d3d5bc",
+    "operation_type": "disable",
+    "plugin_id": "f1-scoreboard",
+    "timestamp": "2026-04-15T17:47:32.113309",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "154161d1-1397-4d8a-9162-352a4bebdd9a",
+    "operation_type": "enable",
+    "plugin_id": "basketball-scoreboard",
+    "timestamp": "2026-04-15T17:47:32.116966",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "ae8f618c-e9b1-4f86-9c1e-c050b6b4b044",
+    "operation_type": "disable",
+    "plugin_id": "basketball-scoreboard",
+    "timestamp": "2026-04-15T17:48:07.530861",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "009e68a8-9eba-41b2-be42-006d2fa610cf",
+    "operation_type": "enable",
+    "plugin_id": "baseball-scoreboard",
+    "timestamp": "2026-04-15T17:48:07.535969",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "c2ef5fff-d77e-44d5-b9aa-49548a77edd2",
+    "operation_type": "enable",
+    "plugin_id": "baseball-scoreboard",
+    "timestamp": "2026-04-15T19:03:24.752471",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "9ae51a46-f757-48b7-99db-d287d1cbe65e",
+    "operation_type": "enable",
+    "plugin_id": "kalshi-markets",
+    "timestamp": "2026-04-15T19:04:55.740202",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "a856f901-5165-4df1-97b9-ff62ff314bd9",
+    "operation_type": "disable",
+    "plugin_id": "baseball-scoreboard",
+    "timestamp": "2026-04-15T19:20:22.612207",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "4c782a73-d764-459b-a019-1ac25a8b028e",
+    "operation_type": "enable",
+    "plugin_id": "baseball-scoreboard",
+    "timestamp": "2026-04-15T19:25:32.541581",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "cd788d13-c425-45cf-8c39-adf2c0d1684f",
+    "operation_type": "enable",
+    "plugin_id": "basketball-scoreboard",
+    "timestamp": "2026-04-15T21:14:22.110033",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "77d36c1c-a65a-4c67-bdd4-4953a57a2842",
+    "operation_type": "disable",
+    "plugin_id": "basketball-scoreboard",
+    "timestamp": "2026-04-15T21:19:27.144368",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "0025fca9-2eed-4dba-b8f6-f31f0500f74b",
+    "operation_type": "enable",
+    "plugin_id": "baseball-scoreboard",
+    "timestamp": "2026-04-15T22:14:28.599608",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "ccd09037-5f71-4b14-84f4-eeb8da2a346f",
+    "operation_type": "enable",
+    "plugin_id": "kalshi-markets",
+    "timestamp": "2026-04-15T22:14:28.603489",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "e132bb3f-780a-43c3-860a-2bae8d1be953",
+    "operation_type": "disable",
+    "plugin_id": "baseball-scoreboard",
+    "timestamp": "2026-04-15T22:45:26.091217",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "cd1239be-3e92-4bf8-9520-e8b0d7e41fd5",
+    "operation_type": "disable",
+    "plugin_id": "kalshi-markets",
+    "timestamp": "2026-04-15T22:45:26.096367",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "5a421331-edac-415c-a65d-505003a0d286",
+    "operation_type": "enable",
+    "plugin_id": "march-madness",
+    "timestamp": "2026-04-15T22:45:26.100442",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "04435e06-7d8b-47ef-84c6-72ec639dee98",
+    "operation_type": "enable",
+    "plugin_id": "basketball-scoreboard",
+    "timestamp": "2026-04-15T23:41:21.134029",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "0abdc275-70c2-4992-b1da-9662bf929d3f",
+    "operation_type": "enable",
+    "plugin_id": "baseball-scoreboard",
+    "timestamp": "2026-04-15T23:41:21.138397",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "589bdd5b-181f-482b-b3e8-1564c1ed3c45",
+    "operation_type": "enable",
+    "plugin_id": "kalshi-markets",
+    "timestamp": "2026-04-15T23:41:21.142518",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "9e0d557b-8b22-4b7c-86ab-e9bf203dc764",
+    "operation_type": "disable",
+    "plugin_id": "kalshi-markets",
+    "timestamp": "2026-04-16T00:01:10.248963",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "5d5393ba-226d-4051-9f12-c9c83ede50cd",
+    "operation_type": "disable",
+    "plugin_id": "march-madness",
+    "timestamp": "2026-04-16T00:01:10.253910",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "f8ff15b3-f123-4782-ac38-2720b8795761",
+    "operation_type": "disable",
+    "plugin_id": "basketball-scoreboard",
+    "timestamp": "2026-04-16T00:01:10.257888",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "57afd328-cb6e-4eda-9a79-2d4c387e5ccb",
+    "operation_type": "enable",
+    "plugin_id": "football-scoreboard",
+    "timestamp": "2026-04-16T00:01:10.263460",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "4d3d6b24-5c68-42a6-8452-a5c5f0a63ff4",
+    "operation_type": "disable",
+    "plugin_id": "baseball-scoreboard",
+    "timestamp": "2026-04-16T09:57:52.577018",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "78dc913b-cffb-4ea8-ac01-a087524d78b0",
+    "operation_type": "disable",
+    "plugin_id": "football-scoreboard",
+    "timestamp": "2026-04-16T09:57:52.581256",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "d1f18a14-e8c9-40da-a8c7-8349f5de1f4f",
+    "operation_type": "enable",
+    "plugin_id": "basketball-scoreboard",
+    "timestamp": "2026-04-16T09:57:52.585259",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "83b160bf-4d66-494a-895e-2f0a6145531e",
+    "operation_type": "disable",
+    "plugin_id": "basketball-scoreboard",
+    "timestamp": "2026-04-16T09:59:34.674443",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "5c5d8979-dd63-4f23-b825-1d046b25eb11",
+    "operation_type": "enable",
+    "plugin_id": "baseball-scoreboard",
+    "timestamp": "2026-04-16T09:59:34.678638",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "df8f6561-6b16-4e1e-9eac-c2ca7892fa03",
+    "operation_type": "disable",
+    "plugin_id": "baseball-scoreboard",
+    "timestamp": "2026-04-16T12:53:44.576585",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "1664038f-4264-4951-a7ff-5e08aa0c2146",
+    "operation_type": "enable",
+    "plugin_id": "pga-tour-leaderboard",
+    "timestamp": "2026-04-16T12:53:44.583314",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "81788c9c-0ea1-4512-89f5-3fb9364783a6",
+    "operation_type": "enable",
+    "plugin_id": "kalshi-markets",
+    "timestamp": "2026-04-16T14:50:43.310853",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "8146fd74-874c-4387-ade3-fc459968525a",
+    "operation_type": "enable",
+    "plugin_id": "baseball-scoreboard",
+    "timestamp": "2026-04-16T17:34:07.855886",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "496e1390-e834-487c-ab86-0330e1f7ef98",
+    "operation_type": "disable",
+    "plugin_id": "baseball-scoreboard",
+    "timestamp": "2026-04-17T09:40:00.162158",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "65b2bd96-f835-409c-b2a1-ba115a41e336",
+    "operation_type": "enable",
+    "plugin_id": "baseball-scoreboard",
+    "timestamp": "2026-04-17T17:51:57.256793",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "b53d7464-0768-4981-b561-c93e14a17197",
+    "operation_type": "disable",
+    "plugin_id": "baseball-scoreboard",
+    "timestamp": "2026-04-19T12:39:18.802604",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "7901c864-2b11-47ac-aadc-9b6f5e3b6b4e",
+    "operation_type": "disable",
+    "plugin_id": "ufc-scoreboard",
+    "timestamp": "2026-04-19T12:39:18.806944",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "36d53110-c315-4040-aad1-e3b4c74df375",
+    "operation_type": "enable",
+    "plugin_id": "f1-scoreboard",
+    "timestamp": "2026-04-19T12:39:18.811772",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "041dc826-3593-44ab-9e75-48579a63ec04",
+    "operation_type": "disable",
+    "plugin_id": "kalshi-markets",
+    "timestamp": "2026-04-20T18:31:19.135036",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "14bcb826-d2c1-4deb-b7bf-947e44b21411",
+    "operation_type": "disable",
+    "plugin_id": "pga-tour-leaderboard",
+    "timestamp": "2026-04-20T18:31:19.139297",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "f706f0df-3d1c-411e-82eb-46ae9753f39f",
+    "operation_type": "enable",
+    "plugin_id": "stock-ticker",
+    "timestamp": "2026-04-20T23:49:54.642141",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "fa62c22f-2761-454e-90b3-c387c81c29b8",
+    "operation_type": "disable",
+    "plugin_id": "f1-scoreboard",
+    "timestamp": "2026-04-20T23:49:54.649670",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "85ea58ae-4b31-4224-900b-c7ca3c46b93f",
+    "operation_type": "disable",
+    "plugin_id": "stock-ticker",
+    "timestamp": "2026-04-20T23:50:24.283318",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "cb71fc3e-0b1f-4e30-817c-652759e4124d",
+    "operation_type": "enable",
+    "plugin_id": "pga-tour-leaderboard",
+    "timestamp": "2026-04-20T23:50:24.288296",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "61256b16-6c84-453d-bd66-2b38810a0048",
+    "operation_type": "disable",
+    "plugin_id": "pga-tour-leaderboard",
+    "timestamp": "2026-05-24T01:13:17.436291",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "57f57894-9f06-4e37-9bf6-97aef50efb4a",
+    "operation_type": "enable",
+    "plugin_id": "f1-scoreboard",
+    "timestamp": "2026-05-24T01:15:05.590097",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "8ddb08d3-d44e-4534-83d9-eb6392db2fbf",
+    "operation_type": "enable",
+    "plugin_id": "pga-tour-leaderboard",
+    "timestamp": "2026-05-24T01:17:16.549304",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "ce4b5f80-c9ca-4eb0-9556-c3ec73fd6dda",
+    "operation_type": "disable",
+    "plugin_id": "pga-tour-leaderboard",
+    "timestamp": "2026-05-24T01:19:12.004115",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "cd757b22-d07a-441f-9464-8d459f44d4b5",
+    "operation_type": "disable",
+    "plugin_id": "f1-scoreboard",
+    "timestamp": "2026-05-24T01:19:12.008712",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "f7db3369-baf4-401f-8a2a-c941c915b6ae",
+    "operation_type": "enable",
+    "plugin_id": "pga-tour-leaderboard",
+    "timestamp": "2026-05-24T01:19:44.936877",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  },
+  {
+    "operation_id": "44f332b1-f759-466e-88f0-105962faf3ad",
+    "operation_type": "enable",
+    "plugin_id": "f1-scoreboard",
+    "timestamp": "2026-05-24T01:28:49.843548",
+    "status": "success",
+    "user": null,
+    "details": null,
+    "error": null
+  }
+]

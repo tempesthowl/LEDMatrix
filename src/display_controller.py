@@ -4,7 +4,7 @@ import sys
 import os
 import json
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Set
 from datetime import datetime
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed  # pylint: disable=no-name-in-module
@@ -17,6 +17,7 @@ from src.config_service import ConfigService
 from src.cache_manager import CacheManager
 from src.font_manager import FontManager
 from src.logging_config import get_logger
+from src.observability.trace import set_trace_id, clear_trace_id, trace_event
 
 # Get logger with consistent configuration
 logger = get_logger(__name__)
@@ -29,7 +30,79 @@ DEFAULT_DYNAMIC_DURATION_CAP = 180.0
 # WiFi status message file path (same as used in wifi_manager.py)
 WIFI_STATUS_FILE = None  # Will be initialized in __init__
 
+
+def _supplementary_focus_plugins(
+    discovered_plugins: List[str],
+    on_demand_plugin_id: str,
+    on_demand_mode: Optional[str],
+    plugin_manifests: Dict[str, Dict[str, Any]],
+) -> List[str]:
+    """Return supplementary plugin IDs to load with an on-demand focus plugin.
+
+    Pure function — no I/O, no config mutation. Called from __init__ when
+    the controller boots with persisted on-demand state pointing at a
+    focus-mode plugin (game_focus or kalshi_draft_focus).
+
+    Returns [] for non-focus modes (regular on-demand views don't need
+    supplements).
+
+    For focus modes, returns:
+      - 'kalshi-markets' (if discovered and not already the on-demand
+        plugin) — focused plugins call kalshi_matcher.py to look up
+        odds, which fetches via plugin_manager.plugins.get('kalshi-markets').
+        Loaded UNCONDITIONALLY regardless of `enabled` flag: kalshi-markets
+        is often configured enabled=False when used as a focus helper
+        rather than a standalone ticker entry.
+      - Every other plugin whose manifest category is 'sports' — so the
+        /v3/remote Live Games panel and the FOCUS buttons cover every
+        league while the user is focused on one game.
+    """
+    if on_demand_mode not in ("game_focus", "kalshi_draft_focus"):
+        return []
+
+    supplementary: List[str] = []
+
+    # kalshi-markets first (load order doesn't matter for correctness;
+    # listing it explicitly documents the dependency).
+    for supp_id in ("kalshi-markets",):
+        if supp_id != on_demand_plugin_id and supp_id in discovered_plugins:
+            supplementary.append(supp_id)
+
+    for other_id in discovered_plugins:
+        if other_id == on_demand_plugin_id or other_id in supplementary:
+            continue
+        manifest = plugin_manifests.get(other_id) or {}
+        category = (manifest.get("category") or "").lower() if isinstance(manifest, dict) else ""
+        if category == "sports":
+            supplementary.append(other_id)
+
+    return supplementary
+
+
 class DisplayController:
+    # Phase C: route every `self.current_display_mode = X` through this
+    # setter so the display_manager's current-context tag stays in sync
+    # without touching the 17+ existing mutation sites in this file.
+    # Storage lives in `self._current_display_mode`.
+    @property
+    def current_display_mode(self) -> Optional[str]:
+        return self._current_display_mode
+
+    @current_display_mode.setter
+    def current_display_mode(self, value: Optional[str]) -> None:
+        self._current_display_mode = value
+        dm = getattr(self, 'display_manager', None)
+        if dm is None or not hasattr(dm, 'set_current_context'):
+            return  # too early in __init__, before display_manager exists
+        try:
+            plugin_id = None
+            if value:
+                m2p = getattr(self, 'mode_to_plugin_id', None) or {}
+                plugin_id = m2p.get(value)
+            dm.set_current_context(value, plugin_id)
+        except Exception:
+            logger.exception("display_manager.set_current_context failed for mode=%s", value)
+
     def __init__(self):
         start_time = time.time()
         logger.info("Starting DisplayController initialization")
@@ -48,6 +121,94 @@ class DisplayController:
         self.config = self.config_service.get_config()
         self.cache_manager = CacheManager()
         logger.info("Config loaded in %.3f seconds (hot-reload: %s)", time.time() - start_time, enable_hot_reload)
+
+        # Track which plugin-scoped config subscribers we've wired so
+        # _register_loaded_plugin stays idempotent across hot-loads.
+        self._plugin_config_subscribers: Dict[str, Any] = {}
+
+        # Rebind self.config on every reload so controller-level reads
+        # (game_mode.*, schedule.*, dim_schedule.*) pick up remote-driven
+        # changes without an emulator restart. Also hot-load plugins that
+        # flipped from disabled to enabled. See RC#1/RC#2 in
+        # docs/superpowers/specs/2026-04-15-remote-system-assessment.md
+        def _on_config_reload(old_config: Dict[str, Any], new_config: Dict[str, Any]) -> None:
+            # Phase B: cross-process trace propagation.  The Flask process
+            # publishes config_trace into the shared cache immediately before
+            # the atomic config-json save.  The file watcher fires this
+            # subscriber in its own thread (no ContextVar inheritance from
+            # the Flask thread), so we explicitly pull the trace_id here and
+            # install it into this thread's context — every log line below
+            # then inherits the same trace_id as the API caller.
+            try:
+                rec = self.cache_manager.get_cached_data(
+                    'config_trace', max_age=10, memory_ttl=0.05
+                )
+                trace_data = rec.get('data') if isinstance(rec, dict) and 'data' in rec else rec
+                propagated = (trace_data or {}).get('trace_id') if isinstance(trace_data, dict) else None
+                if propagated:
+                    set_trace_id(propagated)
+                    trace_event(
+                        "config_reload",
+                        "start",
+                        source=(trace_data or {}).get('source'),
+                        action=(trace_data or {}).get('action'),
+                    )
+            except Exception:
+                logger.exception("trace propagation in _on_config_reload failed")
+
+            self.config = new_config
+            logger.debug("display_controller.self.config rebound after reload")
+            try:
+                self._hot_load_newly_enabled_plugins(old_config, new_config)
+            except Exception:
+                logger.exception("hot_load_newly_enabled_plugins raised")
+            # Push fresh config into already-loaded plugins so plugin.enabled
+            # actually updates when a remote toggle flips. Without this,
+            # stream_manager._refresh_plugin_list reads stale `plugin.enabled`
+            # and keeps disabled plugins in the Vegas rotation. Guarded
+            # because this runs early in __init__ before plugin_manager is
+            # set.
+            try:
+                pm = getattr(self, 'plugin_manager', None)
+                if pm is not None:
+                    for pid, plugin in (getattr(pm, 'plugins', {}) or {}).items():
+                        try:
+                            plugin_cfg = new_config.get(pid, {}) or {}
+                            if hasattr(plugin, 'update_config'):
+                                plugin.update_config(plugin_cfg)
+                            elif hasattr(plugin, 'enabled') and 'enabled' in plugin_cfg:
+                                plugin.enabled = bool(plugin_cfg.get('enabled'))
+                        except Exception:
+                            logger.exception("update_config failed for plugin %s on reload", pid)
+            except Exception:
+                logger.exception("plugin config propagation on reload failed")
+            # Tell Vegas to rebuild its scroll rotation.
+            try:
+                vc = getattr(self, 'vegas_coordinator', None)
+                if vc is not None:
+                    vc.update_config(new_config)
+            except Exception:
+                logger.exception("vegas_coordinator.update_config failed on reload")
+            # Refresh the broadcast-ticker rotation so toggled-off plugins
+            # disappear and toggled-on plugins enter the cycle immediately.
+            try:
+                self._rebuild_available_modes()
+            except Exception:
+                logger.exception("_rebuild_available_modes failed on reload")
+            # Signal the render loop to break out of its current high-FPS
+            # scroll so the new config takes effect within ~1s instead of
+            # waiting for the scroll-cycle natural-end (could be 30s+).
+            try:
+                self._config_reload_event.set()
+            except Exception:
+                logger.exception("config_reload_event.set failed")
+            # Phase B: emit close-out event for the trace chain.  The
+            # downstream vegas_swap events fire after this returns (the
+            # event-set wakes the render loop, which on next iteration
+            # calls _apply_pending_config).
+            trace_event("config_reload", "ok")
+        self.config_service.subscribe(_on_config_reload)  # plugin_id=None -> global
+        self._on_config_reload = _on_config_reload  # keep a ref so GC doesn't evict it
         
         # Validate startup configuration
         try:
@@ -90,6 +251,12 @@ class DisplayController:
         
         # List of available display modes - now handled entirely by plugins
         self.available_modes = []
+
+        # Hot-swap config reload signal. Set by _on_config_reload (runs in
+        # the config_service daemon thread); checked by the render loops to
+        # break out of the current scroll cycle and pick up new config
+        # immediately. Replaces the old "exit(42) and respawn" pattern.
+        self._config_reload_event = threading.Event()
         
         # Initialize Plugin System
         plugin_time = time.time()
@@ -107,6 +274,11 @@ class DisplayController:
         self.on_demand_expires_at: Optional[float] = None
         self.on_demand_pinned = False
         self.on_demand_request_id: Optional[str] = None
+        # Workstream A: dedupe id for the new display_config_reload cache-IPC
+        # ping the Flask process publishes immediately after an atomic
+        # config save.  Lets us pick up config changes ~100ms before the
+        # file watcher's stat-poll would have noticed them.
+        self._last_config_reload_id: Optional[str] = None
         self.on_demand_status: str = 'idle'
         self.on_demand_last_error: Optional[str] = None
         self.on_demand_last_event: Optional[str] = None
@@ -120,7 +292,37 @@ class DisplayController:
         self._game_mode_last_switch = 0.0
         self._game_mode_last_check = 0.0
         self._game_mode_finals: Dict[str, float] = {}  # game_id -> time went final
-        self._game_mode_update_interval = 20.0  # seconds between plugin updates in game mode (lockstep with Kalshi)
+        self._game_mode_update_interval = 15.0  # seconds between plugin updates in game mode (matches SportsLive.update_interval=15 default)
+        # Live-games cache publish throttle (used by _publish_live_games_cache).
+        # The web UI's /api/v3/games/live reads this cache; we publish after
+        # any plugin update (not only on the 30s auto-detect tick) so the
+        # remote UI stays in sync with the emulator's plugin state.
+        self._last_live_games_publish = 0.0
+        self._live_games_publish_min_interval = 5.0
+        # Placeholder: set True when the remote asked for game_focus with no
+        # specific game. The main loop renders a "SELECT A GAME" screen until
+        # the user taps FOCUS or auto-detect picks a favorite.
+        self._game_select_placeholder: bool = False
+        # Sticky focus: once the user explicitly focuses a game via the
+        # remote, auto-detect won't override them. Cleared on stop or when
+        # the focused game ends.
+        self._user_focused_game_id: Optional[str] = None
+        # Sticky multi-game rotation: true when the user tapped the GAME MODE
+        # button and we started rotating through ALL currently-live games.
+        # Blocks _check_auto_game_focus from yanking the rotation onto a
+        # favorites-only subset (different semantics: user-activated all-games
+        # rotation vs. favorite-triggered auto rotation).
+        self._game_mode_user_activated: bool = False
+        # Header text for _render_game_select_placeholder. Defaults to the
+        # original behavior; the bare GAME MODE handler overrides to
+        # 'NO LIVE GAMES' when zero live games exist.
+        self._placeholder_text: str = 'SELECT A GAME'
+
+        # Game selection: user picks which live games to include in rotation.
+        # Ephemeral — does not persist across restarts.
+        self._selected_game_ids: Set[str] = set()  # empty = "all games" (default)
+        self._auto_cycle: bool = False  # True = rotate, False = stay on one game
+        self._game_mode_rotation_paused: bool = False  # True when auto_cycle=False, game still displayed but not rotating
 
         # WiFi status message tracking
         global WIFI_STATUS_FILE
@@ -215,13 +417,22 @@ class DisplayController:
                             self.config[on_demand_plugin_id] = {}
                         self.config[on_demand_plugin_id]['enabled'] = True
                     enabled_plugins = [on_demand_plugin_id]
-                    # Also load supplementary data plugins for game_focus
-                    if on_demand_config.get('mode') == 'game_focus':
-                        for supp_id in ['kalshi-markets']:
-                            if supp_id != on_demand_plugin_id and supp_id in discovered_plugins:
-                                if self.config.get(supp_id, {}).get('enabled', False):
-                                    enabled_plugins.append(supp_id)
-                                    logger.info("Also loading supplementary plugin '%s' for game_focus", supp_id)
+                    # Load supplementary plugins for game_focus AND kalshi_draft_focus.
+                    # Both modes leave the user staring at one focused contract/game,
+                    # but the /v3/remote Live Games panel and the FOCUS buttons need
+                    # every sport plugin running so the user can switch focus on a
+                    # whim without first exiting the current focus mode. Also
+                    # always loads kalshi-markets so focused plugins' Kalshi-odds
+                    # lookups succeed (see _supplementary_focus_plugins docstring).
+                    supplementary = _supplementary_focus_plugins(
+                        discovered_plugins,
+                        on_demand_plugin_id,
+                        on_demand_config.get('mode'),
+                        getattr(self.plugin_manager, 'plugin_manifests', {}) or {},
+                    )
+                    for supp_id in supplementary:
+                        enabled_plugins.append(supp_id)
+                        logger.info("Also loading supplementary plugin '%s' for focus mode", supp_id)
                     # Set on-demand state from cached config
                     self.on_demand_active = True
                     self.on_demand_plugin_id = on_demand_plugin_id
@@ -240,11 +451,15 @@ class DisplayController:
                         logger.info("Restored game_mode_active from cached game_focus on-demand state")
                     logger.info("On-demand mode: loading only plugin '%s'", on_demand_plugin_id)
             else:
-                enabled_plugins = [p for p in discovered_plugins if self.config.get(p, {}).get('enabled', False)]
-            
-            # Count enabled plugins for progress tracking
+                # Load ALL discovered plugins regardless of `enabled` flag.
+                # The `enabled` toggle on /v3/remote controls ticker rotation
+                # visibility only — Game Mode needs get_live_games() from every
+                # sport plugin even if it's toggled off in Ticker Content.
+                enabled_plugins = list(discovered_plugins)
+
+            # Count plugins for progress tracking
             enabled_count = len(enabled_plugins)
-            logger.info("Loading %d enabled plugin(s) in parallel (max 4 concurrent)...", enabled_count)
+            logger.info("Loading %d plugin(s) in parallel (max 4 concurrent)...", enabled_count)
             
             # Helper function for parallel loading
             def load_single_plugin(plugin_id):
@@ -290,55 +505,30 @@ class DisplayController:
                     
                     if result['success']:
                         plugin_id = result['plugin_id']
-                        logger.info("✓ Loaded plugin %s in %.3f seconds (%d/%d)", 
+                        logger.info("Loaded plugin %s in %.3f seconds (%d/%d)",
                                   plugin_id, result['load_time'], loaded_count, enabled_count)
-                        
-                        # Get plugin instance and manifest
-                        plugin_instance = self.plugin_manager.get_plugin(plugin_id)
-                        manifest = self.plugin_manager.plugin_manifests.get(plugin_id, {})
-                        
-                        # Prefer plugin's modes attribute if available (dynamic based on enabled leagues)
-                        # Fall back to manifest display_modes if plugin doesn't provide modes
-                        if plugin_instance and hasattr(plugin_instance, 'modes') and plugin_instance.modes:
-                            display_modes = list(plugin_instance.modes)
-                            logger.debug("Using plugin.modes for %s: %s", plugin_id, display_modes)
-                        else:
-                            display_modes = manifest.get('display_modes', [plugin_id])
-                            logger.debug("Using manifest display_modes for %s: %s", plugin_id, display_modes)
-                        
-                        if isinstance(display_modes, list) and display_modes:
-                            self.plugin_display_modes[plugin_id] = list(display_modes)
-                        else:
-                            display_modes = [plugin_id]
-                            self.plugin_display_modes[plugin_id] = list(display_modes)
-                        
-                        # Subscribe plugin to config changes for hot-reload
-                        if hasattr(self, 'config_service') and hasattr(plugin_instance, 'on_config_change'):
-                            def config_change_callback(old_config: Dict[str, Any], new_config: Dict[str, Any]) -> None:
-                                """Callback for plugin config changes."""
-                                try:
-                                    plugin_instance.on_config_change(new_config)
-                                    logger.debug("Plugin %s notified of config change", plugin_id)
-                                except Exception as e:
-                                    logger.error("Error in plugin %s config change handler: %s", plugin_id, e, exc_info=True)
-                            
-                            self.config_service.subscribe(config_change_callback, plugin_id=plugin_id)
-                            logger.debug("Subscribed plugin %s to config changes", plugin_id)
-                        
-                        # Add plugin modes to available modes
-                        for mode in display_modes:
-                            self.available_modes.append(mode)
-                            self.plugin_modes[mode] = plugin_instance
-                            self.mode_to_plugin_id[mode] = plugin_id
-                            logger.debug("  Added mode: %s", mode)
-                        
+                        self._register_loaded_plugin(plugin_id)
+                        # Force the plugin to think it's enabled so update()
+                        # and get_live_games() always work. The "enabled"
+                        # toggle controls ticker visibility only (handled by
+                        # available_modes + Vegas filter + rotation guard).
+                        pi = self.plugin_manager.get_plugin(plugin_id)
+                        if pi is not None:
+                            # Track real toggle state for ticker filtering
+                            real_enabled = self.config.get(plugin_id, {}).get('enabled', False)
+                            self.plugin_manager.ticker_enabled[plugin_id] = real_enabled
+                            if hasattr(pi, 'enabled'):
+                                pi.enabled = True
+                            if hasattr(pi, 'is_enabled'):
+                                pi.is_enabled = True
+
                         # Show progress
                         progress_pct = int((loaded_count / enabled_count) * 100)
                         elapsed = time.time() - plugin_time
-                        logger.info("Progress: %d%% (%d/%d plugins, %.1fs elapsed)", 
+                        logger.info("Progress: %d%% (%d/%d plugins, %.1fs elapsed)",
                                   progress_pct, loaded_count, enabled_count, elapsed)
                     else:
-                        logger.warning("✗ Failed to load plugin %s: %s", 
+                        logger.warning("Failed to load plugin %s: %s",
                                      result['plugin_id'], result['error'])
             
             # Log disabled plugins
@@ -358,9 +548,13 @@ class DisplayController:
             logger.exception("Plugin system initialization failed")
             self.plugin_manager = None
 
-        # Display rotation state
+        # Display rotation state.  current_display_mode goes through the
+        # property setter below so every mutation auto-propagates to the
+        # display_manager's context (Phase C) without touching the 17+
+        # existing mutation sites in this file.
         self.current_mode_index = 0
-        self.current_display_mode = None
+        self._current_display_mode: Optional[str] = None  # backing storage
+        self.current_display_mode = None  # triggers the setter once for init
         self.last_mode_change = time.time()
         self.mode_duration = 30  # Default duration
         self.global_dynamic_config = (
@@ -428,6 +622,127 @@ class DisplayController:
         self._initialize_vegas_mode()
 
         logger.info("DisplayController initialization completed in %.3f seconds", time.time() - start_time)
+
+    def _register_loaded_plugin(self, plugin_id: str) -> bool:
+        """Wire a freshly loaded plugin into controller bookkeeping.
+
+        Idempotent: safe to call on an already-registered plugin (re-registers
+        modes but avoids duplicate list entries). Called both from startup
+        parallel load and from the hot-load path in _on_config_reload when
+        the remote toggles a plugin from disabled to enabled. See RC#1 in
+        docs/superpowers/specs/2026-04-15-remote-system-assessment.md
+        """
+        if self.plugin_manager is None:
+            return False
+        plugin_instance = self.plugin_manager.get_plugin(plugin_id)
+        if plugin_instance is None:
+            logger.warning("register_loaded_plugin: %s not found in plugin_manager", plugin_id)
+            return False
+        manifest = self.plugin_manager.plugin_manifests.get(plugin_id, {})
+
+        # Prefer plugin's modes attribute (dynamic based on enabled leagues);
+        # fall back to manifest display_modes.
+        if hasattr(plugin_instance, 'modes') and plugin_instance.modes:
+            display_modes = list(plugin_instance.modes)
+        else:
+            display_modes = manifest.get('display_modes', [plugin_id])
+        if not (isinstance(display_modes, list) and display_modes):
+            display_modes = [plugin_id]
+        self.plugin_display_modes[plugin_id] = list(display_modes)
+
+        # Subscribe plugin to config changes for hot-reload (only if not already).
+        if (hasattr(self, 'config_service')
+                and hasattr(plugin_instance, 'on_config_change')
+                and plugin_id not in self._plugin_config_subscribers):
+            def config_change_callback(old_config: Dict[str, Any], new_config: Dict[str, Any]) -> None:
+                try:
+                    plugin_instance.on_config_change(new_config)
+                    logger.debug("Plugin %s notified of config change", plugin_id)
+                except Exception as e:
+                    logger.error("Error in plugin %s config change handler: %s", plugin_id, e, exc_info=True)
+            self.config_service.subscribe(config_change_callback, plugin_id=plugin_id)
+            self._plugin_config_subscribers[plugin_id] = config_change_callback
+            logger.debug("Subscribed plugin %s to config changes", plugin_id)
+
+        # Register modes into plugin_modes (always — Game Mode needs every
+        # plugin's get_live_games) and available_modes (only if enabled — the
+        # broadcast ticker rotation should respect Ticker Content toggles).
+        # Read from controller config, NOT plugin instance (which is always
+        # True after the force-enable override at load time).
+        is_enabled = self.config.get(plugin_id, {}).get('enabled', False)
+        for mode in display_modes:
+            self.plugin_modes[mode] = plugin_instance
+            self.mode_to_plugin_id[mode] = plugin_id
+            if is_enabled and mode not in self.available_modes:
+                self.available_modes.append(mode)
+        return True
+
+    def _rebuild_available_modes(self) -> None:
+        """Recompute the broadcast-ticker rotation from current plugin state.
+
+        Called from _on_config_reload after a remote toggle lands so a
+        newly-disabled plugin drops out of the rotation immediately (and a
+        newly-enabled one gets added). Preserves plugin_modes / mode_to_plugin_id
+        so Game Mode's get_live_games iteration still sees every plugin.
+
+        Reads the `enabled` flag from self.config (which _on_config_reload has
+        already rebound to the new config) and also refreshes
+        plugin_manager.ticker_enabled so Vegas rotation filtering matches.
+        """
+        if self.plugin_manager is None:
+            self.available_modes = []
+            return
+        new_available: List[str] = []
+        plugins = getattr(self.plugin_manager, 'plugins', {}) or {}
+        for plugin_id in plugins.keys():
+            is_enabled = bool((self.config.get(plugin_id) or {}).get('enabled', False))
+            # Keep ticker_enabled in sync — Vegas/rotation filters read it.
+            self.plugin_manager.ticker_enabled[plugin_id] = is_enabled
+            if not is_enabled:
+                continue
+            for mode in self.plugin_display_modes.get(plugin_id, []):
+                if mode not in new_available:
+                    new_available.append(mode)
+        old_available = self.available_modes
+        # Atomic assignment so the render loop's read sees a consistent list.
+        self.available_modes = new_available
+        if old_available != new_available:
+            logger.info("available_modes rebuilt: %s -> %s", old_available, new_available)
+
+    def _hot_load_newly_enabled_plugins(self, old_config: Dict[str, Any], new_config: Dict[str, Any]) -> None:
+        """When a plugin flips enabled false->true at runtime, load + register it.
+
+        Without this, toggling a plugin ON from the remote persists to
+        config.json but the controller still only knows about the plugins
+        that were enabled at boot — so the Vegas ticker never picks them up
+        and game_focus can't delegate to them.
+        """
+        if self.plugin_manager is None:
+            return
+        try:
+            discovered = set(self.plugin_manager.plugin_manifests.keys()) \
+                if hasattr(self.plugin_manager, 'plugin_manifests') else set()
+        except Exception:
+            discovered = set()
+        for plugin_id in discovered:
+            was_enabled = bool((old_config.get(plugin_id) or {}).get('enabled', False))
+            now_enabled = bool((new_config.get(plugin_id) or {}).get('enabled', False))
+            if now_enabled and not was_enabled:
+                already_loaded = (hasattr(self.plugin_manager, 'plugins')
+                                  and plugin_id in self.plugin_manager.plugins)
+                if already_loaded:
+                    # Re-register in case modes changed, but don't re-import.
+                    self._register_loaded_plugin(plugin_id)
+                    continue
+                logger.info("Hot-loading newly enabled plugin: %s", plugin_id)
+                try:
+                    if self.plugin_manager.load_plugin(plugin_id):
+                        self._register_loaded_plugin(plugin_id)
+                        logger.info("Hot-load succeeded for %s", plugin_id)
+                    else:
+                        logger.warning("Hot-load returned False for %s", plugin_id)
+                except Exception:
+                    logger.exception("Hot-load failed for %s", plugin_id)
 
     def _initialize_vegas_mode(self):
         """Initialize Vegas mode coordinator if enabled."""
@@ -504,11 +819,50 @@ class DisplayController:
         if self.on_demand_active:
             return True
 
+        # Also yield when a NEW on-demand request is sitting in the cache
+        # but hasn't been processed yet. Without this, Vegas holds the main
+        # loop hostage for the full iteration duration and /remote button
+        # taps take 1-2+ minutes to take effect.
+        if self._has_pending_on_demand_request():
+            return True
+
         # Check for wifi status that needs display
         if self._check_wifi_status_message():
             return True
 
         return False
+
+    def _has_pending_on_demand_request(self) -> bool:
+        """Peek the cache for an unprocessed on-demand request.
+
+        Cheap — memory_ttl=0.5 caps disk re-reads to twice a second even
+        when called on every Vegas frame batch. Matched to the consume
+        path in _poll_on_demand_requests so the peek doesn't lag behind.
+        """
+        try:
+            request = self.cache_manager.get_cached_data(
+                'display_on_demand_request', max_age=3600, memory_ttl=0.5)
+        except (OSError, RuntimeError, ValueError, TypeError):
+            return False
+        if not request:
+            return False
+        if isinstance(request, dict) and 'data' in request:
+            request = request['data']
+        request_id = request.get('request_id') if isinstance(request, dict) else None
+        if not request_id:
+            return False
+        # Already processed in this process instance?
+        if request_id == self.on_demand_request_id:
+            return False
+        # Already processed across a restart?
+        try:
+            processed = self.cache_manager.get(
+                'display_on_demand_processed_id', max_age=3600)
+        except (OSError, RuntimeError, ValueError, TypeError):
+            processed = None
+        if request_id == processed:
+            return False
+        return True
 
     def _tick_plugin_updates_for_vegas(self):
         """
@@ -851,10 +1205,105 @@ class DisplayController:
                 self.plugin_manager.plugin_last_update[pid] = 0.0
 
         if hasattr(self.plugin_manager, "run_scheduled_updates"):
+            # Snapshot plugin last-update timestamps so we can detect whether
+            # any plugin actually ran update() this tick. If so, republish
+            # the live-games cache so the web UI (separate process) sees the
+            # new state without waiting for the 30s auto-detect cycle.
+            before = dict(getattr(self.plugin_manager, "plugin_last_update", {}) or {})
             try:
                 self.plugin_manager.run_scheduled_updates()
             except Exception:  # pylint: disable=broad-except
                 logger.exception("Error running scheduled plugin updates")
+                return
+
+            after = getattr(self.plugin_manager, "plugin_last_update", {}) or {}
+            any_updated = any(
+                after.get(pid, 0.0) != before.get(pid, 0.0)
+                for pid in after
+            )
+            # Publish when any plugin actually updated, OR whenever game mode
+            # is active. During game mode, refresh_focused_game() mutates the
+            # plugin's live_games in-place without bumping plugin_last_update,
+            # so the any_updated snapshot misses those fresh writes. Without
+            # the game_mode guard the remote's cache stays up to 15-30s
+            # behind the emulator's rendered state (B2 vs T1 drift bug).
+            # The existing 5s throttle in _publish_live_games_cache() keeps
+            # the tick-frequent calls safe.
+            if any_updated or self._game_mode_active:
+                self._publish_live_games_cache()
+
+    def _collect_live_games(self) -> List[Dict[str, Any]]:
+        """Collect unique live games across all loaded sport plugins."""
+        all_live: List[Dict[str, Any]] = []
+        checked_plugins = set()
+        for mode_name, plugin_instance in self.plugin_modes.items():
+            pid = id(plugin_instance)
+            if pid in checked_plugins:
+                continue
+            checked_plugins.add(pid)
+            if not hasattr(plugin_instance, "get_live_games"):
+                continue
+            try:
+                live_games = plugin_instance.get_live_games()
+                all_live.extend(live_games)
+            except Exception as e:  # pylint: disable=broad-except
+                logger.warning("get_live_games failed for %s: %s", mode_name, e)
+
+        seen_ids = set()
+        unique: List[Dict[str, Any]] = []
+        for g in all_live:
+            gid = g.get("game_id", "")
+            if gid and gid not in seen_ids:
+                seen_ids.add(gid)
+                unique.append(g)
+        return unique
+
+    def _publish_live_games_cache(
+        self,
+        games: Optional[List[Dict[str, Any]]] = None,
+        force: bool = False,
+    ) -> None:
+        """Publish live games + selection state to the shared cache.
+
+        The web UI runs in a separate process and polls /api/v3/games/live
+        every 5s. Its only source of live-game data is the cache written
+        here. We publish after every plugin update (throttled to 5s min
+        interval) so the remote UI stays within plugin cadence of the
+        emulator's rendered state.
+
+        Args:
+            games: Pre-collected live games. If None, we collect via
+                   _collect_live_games(). Callers that already have the
+                   list can pass it to avoid double work.
+            force: When True, bypass the min-interval throttle. Used by
+                   _check_auto_game_focus() so explicit auto-detect passes
+                   always publish immediately.
+        """
+        if not self.cache_manager:
+            return
+
+        now = time.monotonic()
+        if not force and (now - self._last_live_games_publish) < self._live_games_publish_min_interval:
+            return
+        self._last_live_games_publish = now
+
+        unique_live = games if games is not None else self._collect_live_games()
+
+        try:
+            self.cache_manager.set("game_mode_live_games", {
+                "games": unique_live,
+                "game_mode_active": self._game_mode_active,
+            })
+        except Exception as e:  # pylint: disable=broad-except
+            logger.debug("failed to cache live games: %s", e)
+
+        try:
+            self.cache_manager.set("game_mode_selection", {
+                "selected_game_ids": list(self._selected_game_ids),
+                "auto_cycle": self._auto_cycle,
+            })
+        except Exception as e:  # pylint: disable=broad-except
+            logger.debug("failed to publish selection cache: %s", e)
 
     def _tick_plugin_updates_throttled(self, min_interval: float = 0.0):
         """Throttled version of _tick_plugin_updates for high-FPS loops.
@@ -1047,17 +1496,72 @@ class DisplayController:
         self.on_demand_schedule_override = False
         self._publish_on_demand_state()
 
+    def _poll_config_reload_ping(self) -> None:
+        """Workstream A: pick up the display_config_reload cache-IPC ping
+        the Flask process publishes immediately after every atomic config
+        save.  Races the file watcher's 100ms stat-poll so /v3/remote
+        toggles feel sub-200ms instead of up-to-600ms.
+
+        config_service._load_config() is checksum-guarded so a double-fire
+        from this ping + the file watcher is a no-op on the second call.
+        """
+        try:
+            rec = self.cache_manager.get_cached_data(
+                'display_config_reload', max_age=30, memory_ttl=0.05)
+            payload = rec.get('data') if isinstance(rec, dict) and 'data' in rec else rec
+        except (OSError, RuntimeError, ValueError, TypeError) as err:
+            logger.error("Failed to read config_reload ping: %s", err, exc_info=True)
+            return
+
+        if not payload:
+            return
+
+        reload_id = payload.get('request_id')
+        if not reload_id or reload_id == self._last_config_reload_id:
+            return
+
+        self._last_config_reload_id = reload_id
+
+        # Inherit the trace_id minted by the Flask request handler so
+        # downstream logs (config_reload, vegas_swap, fetch) chain off the
+        # API request that triggered them.
+        propagated_trace = payload.get('trace_id')
+        if propagated_trace:
+            set_trace_id(propagated_trace)
+
+        logger.info(
+            "Config reload ping %s from %s (plugins=%s); forcing immediate reload",
+            reload_id, payload.get('source'), payload.get('plugins'),
+        )
+        try:
+            self.config_service._load_config()
+        except Exception:
+            logger.exception("Forced config reload via ping failed; file watcher will retry")
+        try:
+            self._config_reload_event.set()
+        except Exception:
+            logger.exception("_config_reload_event.set failed after ping")
+
     def _poll_on_demand_requests(self) -> None:
         """Poll cache for new on-demand requests from external controllers."""
+        # Pick up any selection changes from the web UI
+        self._read_game_selection_cache()
+
+        # Workstream A: piggyback the existing high-frequency poll cadence
+        # to also check for config-reload pings (separate cache key so on-
+        # demand state isn't disturbed).
+        self._poll_config_reload_ping()
+
         try:
             # max_age 3600: persisted requests stay valid for an hour so a
             # web-UI-requested mode survives a controller restart.
-            # memory_ttl 2: the memory cache re-reads disk every couple seconds
-            # so NEW requests written by Flask (in a different process) are
-            # actually seen. Without this, the in-memory layer would keep
+            # memory_ttl 0.05: re-read disk ~20x per second so Focus taps from
+            # /v3/remote land within 50ms instead of up to 500ms. The cache
+            # file is a tiny JSON blob in tmpfs (RAM) — the extra reads are
+            # noise. Without this re-read the in-memory layer would keep
             # returning the first request we ever read, forever.
             request = self.cache_manager.get_cached_data(
-                'display_on_demand_request', max_age=3600, memory_ttl=2)
+                'display_on_demand_request', max_age=3600, memory_ttl=0.05)
             if request is not None and 'data' in request:
                 request = request['data']
         except (OSError, RuntimeError, ValueError, TypeError) as err:
@@ -1071,14 +1575,53 @@ class DisplayController:
         if not request_id:
             return
 
+        # Phase B: inherit the trace_id minted by the Flask request handler
+        # so every log line emitted while processing this on-demand request
+        # shares the same trace_id as the /api/v3 response.  Cleared in the
+        # finally below.
+        propagated_trace = request.get('trace_id')
+        if propagated_trace:
+            set_trace_id(propagated_trace)
+            trace_event(
+                "config_reload",  # using "config_reload" layer family for cross-process pickups
+                "on_demand_pickup",
+                request_id=request_id,
+                action=request.get('action'),
+            )
+
         action = request.get('action')
         
         # For stop requests, always process them (don't check processed_id)
-        # This allows stopping even if the same stop request was sent before
+        # This allows stopping even if the same stop request was sent before —
+        # but only once per unique request_id. Without this dedupe, a stale
+        # stop-request cache entry gets re-processed on every poll (~100 Hz),
+        # starving the rest of the main loop (e.g. the placeholder render
+        # branch).
         if action == 'stop':
+            if request_id == self.on_demand_request_id:
+                return
             logger.info("Received on-demand stop request %s", request_id)
-            # Always process stop requests, even if same request_id (user might click multiple times)
-            if self.on_demand_active:
+            # Clear sticky focus and placeholder so the ticker can resume.
+            self._user_focused_game_id = None
+            self._game_mode_user_activated = False
+            self._placeholder_text = 'SELECT A GAME'
+            was_placeholder = self._game_select_placeholder
+            self._game_select_placeholder = False
+            if was_placeholder:
+                try:
+                    if getattr(self, 'vegas_coordinator', None):
+                        self.vegas_coordinator.resume()
+                except Exception:
+                    logger.exception('vegas_coordinator.resume() failed on stop')
+            # If the user was in multi-game rotation, exit game mode first so
+            # _rotate_game_mode stops re-arming on-demand on the next tick.
+            # _exit_game_mode calls _clear_on_demand internally, so the usual
+            # clear path below is skipped in that branch.
+            if self._game_mode_active:
+                self.on_demand_request_id = request_id
+                self._exit_game_mode('requested-stop')
+                logger.info("On-demand mode cleared (via game-mode exit), resuming normal rotation")
+            elif self.on_demand_active:
                 self.on_demand_request_id = request_id
                 self._clear_on_demand(reason='requested-stop')
                 logger.info("On-demand mode cleared, resuming normal rotation")
@@ -1086,6 +1629,49 @@ class DisplayController:
                 logger.debug("Stop request %s received but on-demand is not active", request_id)
                 # Still update request_id to acknowledge the request
                 self.on_demand_request_id = request_id
+            # Break the current plugin's scroll so the ticker returns to
+            # the resumed rotation on the next render tick.
+            self.force_change = True
+            return
+
+        # Restart requests: hot-reload config in place. The previous pattern
+        # was os._exit(42) + systemd respawn (guaranteed fresh state but ~5s
+        # of dark panels and ~30-60s of plugin re-init). Now we drive the
+        # same reload path a remote-driven config change uses:
+        # config_service._load_config detects the checksum change and fires
+        # _on_config_reload, which rebuilds available_modes and sets the
+        # reload event so the render loop breaks out of its current scroll.
+        # The dead-code os._exit(42) block below is kept as documented
+        # reference in case we need a hard-restart escape hatch later.
+        if action == 'restart':
+            # Instance-level dedupe (same process picked it up twice).
+            if request_id == self.on_demand_request_id:
+                return
+            # Cross-process dedupe: the cache entry persists, so if we ever
+            # fall back to a hard restart, the post-respawn boot can see
+            # this id as processed and skip re-handling.
+            processed_request_id = self.cache_manager.get('display_on_demand_processed_id', max_age=3600)
+            if request_id == processed_request_id:
+                logger.debug("Restart request %s already processed (persisted check) -- skipping", request_id)
+                self.on_demand_request_id = request_id
+                return
+            logger.info("Received on-demand restart request %s -- hot-reloading config", request_id)
+            self.on_demand_request_id = request_id
+            self.cache_manager.set('display_on_demand_processed_id', request_id, ttl=3600)
+            # Force an immediate config re-read. This bypasses the ~2s
+            # file-watch poll so /display/restart is instant even if the
+            # file watcher hasn't ticked yet. _load_config() will call
+            # _notify_subscribers if the checksum changed, which fires
+            # _on_config_reload -> rebuilds available_modes -> sets the
+            # reload event.
+            try:
+                self.config_service._load_config()
+            except Exception:
+                logger.exception("Forced config reload failed; falling back to file-watch tick")
+            # Belt-and-suspenders: ensure the render loop breaks even if
+            # the config didn't actually change (e.g. user tapped Restart
+            # with no pending edits, or the reload happened in-flight).
+            self._config_reload_event.set()
             return
         
         # For start requests, check if already processed
@@ -1108,9 +1694,148 @@ class DisplayController:
         
         if action == 'start':
             logger.info("Processing on-demand start request for plugin: %s", request.get('plugin_id'))
+            # Bare game_focus request (from remote's GAME MODE button) — no
+            # plugin_id, no game_id. Per user spec: cycle through ALL live
+            # games at rotation_interval. If zero live games, show the
+            # "NO LIVE GAMES" placeholder banner.
+            if (request.get('mode') == 'game_focus'
+                    and not request.get('plugin_id')
+                    and not request.get('game_id')):
+                all_live = self._resolve_bare_game_focus_request()
+                if not all_live:
+                    self._placeholder_text = 'NO LIVE GAMES'
+                    self._enter_game_select_placeholder()
+                    return
+                # Multi-game rotation. Mark user-activated so auto-detect
+                # doesn't yank us onto a favorites-only subset.
+                self._game_mode_user_activated = True
+                self._game_mode_rotation_list = all_live
+                # If we were previously showing the placeholder, resume vegas
+                # so _activate_on_demand's render loop isn't racing a paused
+                # compose path.
+                was_placeholder = self._game_select_placeholder
+                self._game_select_placeholder = False
+                if was_placeholder:
+                    try:
+                        if getattr(self, 'vegas_coordinator', None):
+                            self.vegas_coordinator.resume()
+                    except Exception:
+                        logger.exception('vegas_coordinator.resume() failed leaving placeholder')
+                self._activate_game_mode(all_live)
+                # If auto_cycle is off, pause rotation after activation
+                # so the display stays on the first game. Game mode is still
+                # active and displayed — just not rotating.
+                self._game_mode_rotation_paused = not self._auto_cycle
+                if self._game_mode_rotation_paused:
+                    logger.info("Game Mode: auto-cycle OFF — staying on first game, rotation paused")
+                # Break the current plugin's scroll so the focus view takes
+                # over on the next render tick, not after the current scroll
+                # finishes.
+                self.force_change = True
+                return
+            # If the request carries an explicit game_id from a FOCUS tap,
+            # record it so auto-detect doesn't yank the user off later, AND
+            # propagate game_focus_game_id to the target plugin's config so
+            # its render path knows which game to display. Mirrors the pattern
+            # used by _activate_game_mode (line ~1882) and _rotate_game_mode
+            # (line ~1989).
+            if request.get('mode') == 'game_focus' and request.get('game_id'):
+                self._user_focused_game_id = str(request.get('game_id'))
+                target_pid = request.get('plugin_id')
+                if target_pid:
+                    target_plugin = None
+                    for _mn, pi in self.plugin_modes.items():
+                        if getattr(pi, 'plugin_id', '') == target_pid:
+                            pi.config["game_focus_game_id"] = str(request.get('game_id'))
+                            target_plugin = pi
+                            break
+                    # Remap the shared 'game_focus' meta-mode to the correct
+                    # plugin instance so the render loop dispatches to it.
+                    if target_plugin and self.plugin_modes.get("game_focus") is not target_plugin:
+                        self.plugin_modes["game_focus"] = target_plugin
+                        self.mode_to_plugin_id["game_focus"] = target_pid
+            was_placeholder = self._game_select_placeholder
+            self._game_select_placeholder = False
+            if was_placeholder:
+                try:
+                    if getattr(self, 'vegas_coordinator', None):
+                        self.vegas_coordinator.resume()
+                except Exception:
+                    logger.exception('vegas_coordinator.resume() failed leaving placeholder')
             self._activate_on_demand(request)
+            # For explicit-FOCUS taps, pin to the game_focus mode only so the
+            # on-demand rotation doesn't drift into mlb_recent / mlb_upcoming.
+            # Mirrors _activate_game_mode (line ~1901) for the auto path.
+            req_mode = request.get('mode')
+            if (req_mode in ('game_focus', 'kalshi_draft_focus')
+                    and request.get('game_id')
+                    and req_mode in (self.on_demand_modes or [])):
+                self.on_demand_modes = [req_mode]
+                self.on_demand_mode_index = 0
+                self.current_display_mode = req_mode
+            # Break the current plugin's scroll so the focus view takes
+            # over on the next render tick. _activate_on_demand already
+            # sets this, but re-affirm here in case a pinning branch or
+            # future caller runs after activation.
+            self.force_change = True
         else:
             logger.warning("Unknown on-demand action: %s", action)
+
+    def _force_config_refresh(self) -> None:
+        """Re-read config and push it into all loaded plugins + Vegas.
+
+        Closes the gap in `_on_config_reload` which only rebinds controller-
+        level config and hot-loads newly enabled plugins, but does NOT call
+        `plugin.update_config()` on already-loaded plugins. That omission was
+        the root cause behind "I turned F1 off and it kept showing" — the
+        plugin's cached `self.enabled` stayed True even after the config file
+        changed. This routine fixes that, then tells Vegas to rebuild its
+        scroll rotation.
+        """
+        try:
+            new_config = self.config_service.get_config()
+        except Exception:
+            logger.exception("_force_config_refresh: config_service.get_config failed")
+            return
+
+        self.config = new_config
+
+        # Push fresh plugin-scoped config into every loaded plugin.
+        # Override enabled=True so the plugin always fetches data and serves
+        # get_live_games(). The "enabled" toggle on /v3/remote controls ticker
+        # rotation visibility (available_modes, Vegas filter, rotation guard)
+        # — NOT whether the plugin operates. The real toggle state is stored
+        # in plugin_manager.ticker_enabled for Vegas/rotation to read.
+        try:
+            plugins = getattr(self.plugin_manager, 'plugins', {}) or {}
+            for plugin_id, plugin in plugins.items():
+                plugin_cfg = new_config.get(plugin_id, {}) or {}
+                # Track the real toggle state for ticker filtering
+                self.plugin_manager.ticker_enabled[plugin_id] = bool(
+                    plugin_cfg.get('enabled', False))
+                plugin_cfg_override = dict(plugin_cfg)
+                plugin_cfg_override['enabled'] = True
+                try:
+                    if hasattr(plugin, 'update_config'):
+                        plugin.update_config(plugin_cfg_override)
+                    else:
+                        pass  # no update_config, nothing to push
+                except Exception:
+                    logger.exception("update_config failed for plugin %s", plugin_id)
+        except Exception:
+            logger.exception("_force_config_refresh: plugin iteration failed")
+
+        # Tell Vegas to rebuild. coordinator.update_config queues a pending
+        # update; stream_manager._refresh_plugin_list will re-read each
+        # plugin.enabled on the next tick.
+        try:
+            if getattr(self, 'vegas_coordinator', None):
+                self.vegas_coordinator.update_config(new_config)
+        except Exception:
+            logger.exception("_force_config_refresh: vegas update_config failed")
+
+        logger.info("_force_config_refresh: config pushed to %d loaded plugins, Vegas notified",
+                    len(getattr(self.plugin_manager, 'plugins', {}) or {}))
 
     def _resolve_mode_for_plugin(self, plugin_id: Optional[str], mode: Optional[str]) -> Optional[str]:
         """Resolve the display mode to use for on-demand activation."""
@@ -1224,7 +1949,18 @@ class DisplayController:
             self._set_on_demand_error("invalid-mode")
             return
 
-        resolved_plugin_id = self.mode_to_plugin_id.get(resolved_mode)
+        # Prefer the explicit plugin_id from the request when it's valid and
+        # declares this mode. Multiple plugins can share meta-modes like
+        # 'game_focus' (baseball/basketball/football all declare it); the
+        # flat mode_to_plugin_id map otherwise has "last-registered-wins"
+        # semantics, which silently re-routes Focus requests to the wrong
+        # sport. See docs/superpowers/specs/2026-04-15-remote-system-assessment.md
+        if (plugin_id
+                and plugin_id in self.plugin_display_modes
+                and resolved_mode in self.plugin_display_modes[plugin_id]):
+            resolved_plugin_id = plugin_id
+        else:
+            resolved_plugin_id = self.mode_to_plugin_id.get(resolved_mode)
         if not resolved_plugin_id:
             logger.error("Could not resolve plugin for mode '%s'", resolved_mode)
             self._set_on_demand_error("unknown-plugin")
@@ -1290,7 +2026,17 @@ class DisplayController:
         if not ordered_modes:
             # Only live modes available but no content - use them anyway
             ordered_modes = live_modes
-        
+
+        # PGA preference (user_sports_preferences memory, 2026-05-23): Eric
+        # only wants the Kalshi `game_focus` view for golf — never the
+        # `pga_leaderboard` scroll. Drop it from the on-demand rotation so
+        # tapping Focus on a PGA tournament keeps the Kalshi view sticky
+        # instead of cycling away to the unwanted leaderboard scroll.
+        if resolved_plugin_id == 'pga-tour-leaderboard':
+            filtered = [m for m in ordered_modes if m == 'game_focus']
+            if filtered:
+                ordered_modes = filtered
+
         self.on_demand_active = True
         self.on_demand_mode = resolved_mode  # Keep for backward compatibility
         self.on_demand_modes = ordered_modes
@@ -1364,23 +2110,46 @@ class DisplayController:
         self.on_demand_last_error = None
         self.on_demand_last_event = reason or 'cleared'
         self.on_demand_schedule_override = False
-        
+        # Break out of the current plugin's scroll cycle so the render loop
+        # transitions to the resumed rotation immediately.
+        self.force_change = True
+
         # Clear on-demand configuration from cache
         self.cache_manager.clear_cache('display_on_demand_config')
 
         if self.rotation_resume_index is not None and self.available_modes:
             self.current_mode_index = self.rotation_resume_index % len(self.available_modes)
             self.current_display_mode = self.available_modes[self.current_mode_index]
-            logger.info("Resuming rotation from saved index %d: mode '%s'", 
+            logger.info("Resuming rotation from saved index %d: mode '%s'",
                        self.rotation_resume_index, self.current_display_mode)
         elif self.available_modes:
             # Default to first mode if no resume index
             self.current_mode_index = self.current_mode_index % len(self.available_modes)
             self.current_display_mode = self.available_modes[self.current_mode_index]
-            logger.info("Resuming rotation to mode '%s' (index %d)", 
+            logger.info("Resuming rotation to mode '%s' (index %d)",
                        self.current_display_mode, self.current_mode_index)
         else:
             logger.warning("No available modes to resume rotation to")
+
+        # When the user taps Ticker to exit Game Mode, we must not resume INTO
+        # game_focus — that's the mode they just exited. This can happen if
+        # rotation_resume_index was clobbered by a prior auto-activation (e.g.
+        # _check_live_priority promoted the normal rotation to game_focus
+        # before the user tapped Game Mode). Advance past game_focus to the
+        # next non-focus mode so the Ticker button actually returns to the
+        # ticker rotation.
+        if (self.available_modes
+                and self.current_display_mode == 'game_focus'
+                and len(self.available_modes) > 1):
+            start = self.current_mode_index
+            while True:
+                self.current_mode_index = (self.current_mode_index + 1) % len(self.available_modes)
+                next_mode = self.available_modes[self.current_mode_index]
+                if next_mode != 'game_focus' or self.current_mode_index == start:
+                    self.current_display_mode = next_mode
+                    break
+            logger.info("Skipped game_focus on resume; now on mode '%s' (index %d)",
+                        self.current_display_mode, self.current_mode_index)
 
         self.rotation_resume_index = None
         self.force_change = True
@@ -1488,8 +2257,25 @@ class DisplayController:
 
         logger.info("Game Mode: running auto-detect check (active=%s)", self._game_mode_active)
 
-        # Already in on-demand mode that isn't game mode — don't interrupt
-        if self.on_demand_active and not self._game_mode_active:
+        # Sticky focus: don't override an explicit user FOCUS.
+        if self._user_focused_game_id:
+            logger.debug("Game Mode: skipping — user-focused game %s is sticky",
+                         self._user_focused_game_id)
+            return
+
+        # Sticky all-game rotation: user tapped GAME MODE button and we're
+        # already rotating through every live game. Auto-detect would narrow
+        # that to favorites only, which is not what the user asked for.
+        if self._game_mode_user_activated:
+            logger.debug("Game Mode: skipping — user-activated all-game rotation is sticky")
+            return
+
+        # Already in on-demand mode that isn't game mode or placeholder —
+        # don't interrupt. The placeholder path DOES allow auto-detect to
+        # promote a newly-live favorite into a real focus.
+        if (self.on_demand_active
+                and not self._game_mode_active
+                and not self._game_select_placeholder):
             logger.debug("Game Mode: skipping — on-demand active (not game mode)")
             return
 
@@ -1535,15 +2321,12 @@ class DisplayController:
 
         logger.info("Game Mode: %d unique live games found across all plugins", len(unique_live))
 
-        # Cache live games for web UI access (web UI runs in a separate process)
-        if self.cache_manager and unique_live:
-            try:
-                self.cache_manager.set("game_mode_live_games", {
-                    "games": unique_live,
-                    "game_mode_active": self._game_mode_active,
-                })
-            except Exception as e:
-                logger.debug("Game Mode: failed to cache live games: %s", e)
+        # Publish live games + selection state to the shared cache so the web
+        # UI (separate process) can pick up the auto-detect pass immediately.
+        # force=True bypasses the 5s throttle since this is the authoritative
+        # auto-detect cache write. The post-tick hook in _tick_plugin_updates
+        # handles ongoing refreshes between auto-detect cycles.
+        self._publish_live_games_cache(games=unique_live, force=True)
 
         # Filter for favorite teams — respects optional league qualifier
         favorite_games = []
@@ -1660,6 +2443,31 @@ class DisplayController:
         """Handle multi-game rotation (60s intervals) and final-score exits."""
         if not self._game_mode_active or not self._game_mode_rotation_list:
             return
+        if self._game_mode_rotation_paused:
+            return
+
+        # Re-read selection so changes take effect mid-rotation
+        self._read_game_selection_cache()
+        if self._selected_game_ids:
+            self._game_mode_rotation_list = [
+                g for g in self._game_mode_rotation_list
+                if str(g.get('game_id')) in self._selected_game_ids
+            ]
+            # Clamp index if filter shrunk the list past current position
+            if self._game_mode_current_index >= len(self._game_mode_rotation_list):
+                self._game_mode_current_index = 0
+            if not self._game_mode_rotation_list:
+                self._exit_game_mode('all-deselected')
+                return
+        # If auto_cycle was turned off mid-rotation, pause rotation
+        if not self._auto_cycle and not self._game_mode_rotation_paused:
+            self._game_mode_rotation_paused = True
+            logger.info("Game Mode: auto-cycle turned OFF mid-rotation, pausing rotation")
+            return
+        # If auto_cycle was turned back ON, resume rotation
+        if self._auto_cycle and self._game_mode_rotation_paused:
+            self._game_mode_rotation_paused = False
+            logger.info("Game Mode: auto-cycle turned ON — resuming rotation")
 
         gm_config = self._get_game_mode_config()
         rotation_interval = gm_config.get("rotation_interval", 60)
@@ -1739,9 +2547,155 @@ class DisplayController:
         self._game_mode_rotation_list = []
         self._game_mode_current_index = 0
         self._game_mode_finals = {}
+        self._user_focused_game_id = None
+        self._game_mode_user_activated = False
+        self._game_mode_rotation_paused = False
+        self._game_select_placeholder = False
+        self._placeholder_text = 'SELECT A GAME'
 
         if self.on_demand_active:
             self._clear_on_demand(reason=f"game-mode-{reason}")
+
+    def _read_game_selection_cache(self) -> None:
+        """Read game selection state written by the web UI via /api/v3/games/select."""
+        if not self.cache_manager:
+            return
+        try:
+            cached = self.cache_manager.get_cached_data(
+                'game_mode_selection', max_age=3600, memory_ttl=0.5
+            )
+            data = cached.get('data') if isinstance(cached, dict) and 'data' in cached else cached
+            if not data or not isinstance(data, dict):
+                return
+            ids = data.get('selected_game_ids')
+            if isinstance(ids, list):
+                self._selected_game_ids = set(str(gid) for gid in ids)
+            ac = data.get('auto_cycle')
+            if isinstance(ac, bool):
+                self._auto_cycle = ac
+        except Exception as e:
+            logger.debug("Game Mode: failed to read selection cache: %s", e)
+
+    def _resolve_bare_game_focus_request(self) -> Optional[List[Dict[str, Any]]]:
+        """Return live games filtered by user selection, or None.
+
+        When _selected_game_ids is empty (default), returns None so the
+        caller falls through to the SELECT A GAME placeholder. Only games
+        whose game_id is in the selection set are returned.
+        """
+        try:
+            if not self._selected_game_ids:
+                return None
+
+            seen_ids: set = set()
+            all_live: List[Dict[str, Any]] = []
+            for _mode_name, plugin_instance in self.plugin_modes.items():
+                if not hasattr(plugin_instance, 'get_live_games'):
+                    continue
+                try:
+                    live_games = plugin_instance.get_live_games() or []
+                except Exception:
+                    continue
+                for g in live_games:
+                    gid = g.get('game_id')
+                    if not gid or gid in seen_ids:
+                        continue
+                    seen_ids.add(gid)
+                    all_live.append(g)
+
+            if not all_live:
+                return None
+
+            filtered = [g for g in all_live if str(g.get('game_id')) in self._selected_game_ids]
+            return filtered or None
+        except Exception:
+            logger.exception('_resolve_bare_game_focus_request failed')
+            return None
+
+    def _enter_game_select_placeholder(self) -> None:
+        """Put the display into the 'SELECT A GAME' placeholder state."""
+        logger.info("Game Mode: entering SELECT A GAME placeholder")
+        self._game_select_placeholder = True
+        self._user_focused_game_id = None
+        # Flag on_demand_active so the status pill + remote reflect that
+        # we're in a pinned non-ticker state. No specific plugin/mode — the
+        # render loop branches on _game_select_placeholder before the normal
+        # mode dispatch runs.
+        self.on_demand_active = True
+        self.on_demand_mode = 'game_focus_placeholder'
+        self.on_demand_plugin_id = None
+        self.on_demand_status = 'awaiting_selection'
+        self.on_demand_requested_at = time.time()
+        self.on_demand_expires_at = None
+        self.on_demand_pinned = True
+        # Pause Vegas — otherwise its render thread draws ticker scroll over
+        # our placeholder text and the user sees Kalshi markets instead of
+        # "SELECT A GAME".
+        try:
+            if getattr(self, 'vegas_coordinator', None):
+                self.vegas_coordinator.pause()
+        except Exception:
+            logger.exception('vegas_coordinator.pause() failed for placeholder')
+        try:
+            self._publish_on_demand_state()
+        except Exception:
+            logger.exception('Failed to publish on-demand state for placeholder')
+
+    def _render_game_select_placeholder(self) -> None:
+        """Render 'SELECT A GAME' text + a short live-game summary."""
+        try:
+            self.display_manager.clear()
+            width = self.display_manager.width
+            height = self.display_manager.height
+
+            # Gather a compact summary of currently live games if any.
+            summary = ''
+            try:
+                seen_ids: set = set()
+                games_summary: List[str] = []
+                for _mode_name, plugin_instance in self.plugin_modes.items():
+                    if not hasattr(plugin_instance, 'get_live_games'):
+                        continue
+                    try:
+                        live_games = plugin_instance.get_live_games() or []
+                    except Exception:
+                        continue
+                    for g in live_games:
+                        gid = g.get('game_id')
+                        if not gid or gid in seen_ids:
+                            continue
+                        seen_ids.add(gid)
+                        away = g.get('away_team') or ''
+                        home = g.get('home_team') or ''
+                        if away and home:
+                            games_summary.append(f"{away}@{home}")
+                if games_summary:
+                    summary = ' • '.join(games_summary[:3])
+                else:
+                    summary = 'NO LIVE GAMES'
+            except Exception:
+                summary = ''
+
+            # Two-line layout tuned for a 32-row panel: header + summary.
+            font_height = self.display_manager.get_font_height(self.display_manager.small_font)
+            header = getattr(self, '_placeholder_text', 'SELECT A GAME')
+            total_h = 2 * font_height + 1
+            y0 = max(0, (height - total_h) // 2)
+            try:
+                self.display_manager.draw_text(header, y=y0, color=(255, 215, 0), small_font=True)
+            except Exception:
+                pass
+            if summary:
+                try:
+                    self.display_manager.draw_text(
+                        summary, y=y0 + font_height + 1,
+                        color=(200, 200, 200), small_font=True,
+                    )
+                except Exception:
+                    pass
+            self.display_manager.update_display()
+        except Exception:
+            logger.exception('_render_game_select_placeholder failed')
 
     def _clear_boot_screen(self):
         """Clear the boot animation / loading screen if it's still showing."""
@@ -1812,6 +2766,18 @@ class DisplayController:
                     continue
                 
                 logger.info(f"Display active, processing mode: {self.current_display_mode}")
+
+                # Game Mode placeholder: render "SELECT A GAME" and skip
+                # normal mode dispatch until the user picks a game (FOCUS
+                # button) or auto-detect promotes a favorite into a real
+                # focus (which flips _game_select_placeholder to False).
+                if self._game_select_placeholder:
+                    self._render_game_select_placeholder()
+                    # 200ms instead of 1s: when the user taps Focus while the
+                    # placeholder is on-screen, the on-demand request lands
+                    # within one tick instead of waiting up to a full second.
+                    self._sleep_with_plugin_updates(0.2)
+                    continue
 
                 # Plugins update on their own schedules - no forced sync updates needed
                 # Each plugin has its own update_interval and background services
@@ -1906,19 +2872,46 @@ class DisplayController:
                 
                 # Handle plugin-based display modes
                 if active_mode in self.plugin_modes:
+                    # Scope meta-modes (e.g. 'game_focus') to the plugin that
+                    # on-demand was activated for, otherwise the flat
+                    # mode->plugin map routes to whichever plugin registered
+                    # last instead of the one the user asked to focus.
                     plugin_instance = self.plugin_modes[active_mode]
+                    if (self.on_demand_active
+                            and self.on_demand_plugin_id
+                            and self.plugin_manager
+                            and active_mode in self.plugin_display_modes.get(self.on_demand_plugin_id, [])):
+                        pinned_instance = self.plugin_manager.get_plugin(self.on_demand_plugin_id)
+                        if pinned_instance is not None:
+                            plugin_instance = pinned_instance
                     if hasattr(plugin_instance, 'display'):
                         # Check plugin health before attempting to display
                         plugin_id = getattr(plugin_instance, 'plugin_id', active_mode)
                         should_skip = False
-                        if self.plugin_manager and hasattr(self.plugin_manager, 'health_tracker') and self.plugin_manager.health_tracker:
+
+                        # Rotation guard: skip disabled plugins in normal rotation.
+                        # On-demand bypasses this guard — the user explicitly picks
+                        # the on-demand plugin so we render it regardless. Belt and
+                        # suspenders for the restart-on-toggle path: if someone
+                        # changes config.enabled without triggering a full restart
+                        # (hot-reload, edge cases) the rotation still respects it.
+                        if not self.on_demand_active and not self.plugin_manager.ticker_enabled.get(plugin_id, True):
+                            logger.info("Rotation: skipping disabled plugin %s (mode %s)", plugin_id, active_mode)
+                            should_skip = True
+                            display_result = False
+                            manager_to_display = None
+
+                        if (not should_skip
+                                and self.plugin_manager
+                                and hasattr(self.plugin_manager, 'health_tracker')
+                                and self.plugin_manager.health_tracker):
                             should_skip = self.plugin_manager.health_tracker.should_skip_plugin(plugin_id)
                             if should_skip:
                                 logger.info(f"Skipping plugin {plugin_id} due to circuit breaker (mode: {active_mode})")
                                 display_result = False
                                 # Skip to next mode - let existing logic handle it
                                 manager_to_display = None
-                        
+
                         if not should_skip:
                             manager_to_display = plugin_instance
                             logger.debug(f"Found plugin manager for mode {active_mode}: {type(plugin_instance).__name__}")
@@ -2261,6 +3254,14 @@ class DisplayController:
                                 self._poll_on_demand_requests()
                                 self._check_on_demand_expiration()
 
+                                # Hot-swap config reload: break the scroll as
+                                # soon as a remote config change lands so the
+                                # new state takes effect within ~1s.
+                                if self._config_reload_event.is_set():
+                                    self._config_reload_event.clear()
+                                    logger.info("Config reload signaled during high-FPS loop, breaking early")
+                                    break
+
                                 # Check for live priority every ~30s so live
                                 # games can interrupt long display durations
                                 elapsed = time.monotonic() - start_time
@@ -2282,6 +3283,16 @@ class DisplayController:
 
                                 if self.current_display_mode != active_mode:
                                     logger.debug("Mode changed during high-FPS loop, breaking early")
+                                    break
+
+                                # Bare GAME MODE with 0 live games sets the
+                                # placeholder flag from _poll_on_demand_requests
+                                # above. The outer main loop checks this flag
+                                # before dispatching a mode, so we need to bail
+                                # out of the high-FPS sub-loop to let that branch
+                                # render the banner.
+                                if self._game_select_placeholder:
+                                    logger.debug("Game select placeholder entered during high-FPS loop, breaking early")
                                     break
 
                                 if elapsed >= target_duration:
@@ -2342,6 +3353,15 @@ class DisplayController:
 
                                 self._poll_on_demand_requests()
                                 self._check_on_demand_expiration()
+
+                                # Hot-swap config reload: break the display
+                                # cycle as soon as a remote config change
+                                # lands so the new state takes effect
+                                # within ~1s.
+                                if self._config_reload_event.is_set():
+                                    self._config_reload_event.clear()
+                                    logger.info("Config reload signaled during display loop, breaking early")
+                                    break
 
                                 # Check for live priority every ~30s so live
                                 # games can interrupt long display durations
@@ -2461,12 +3481,21 @@ class DisplayController:
                             logger.warning("Error checking live priority for %s: %s", active_mode, e)
                 
                 if should_rotate:
-                    self.current_mode_index = (self.current_mode_index + 1) % len(self.available_modes)
-                    self.current_display_mode = self.available_modes[self.current_mode_index]
-                    self.last_mode_change = time.time()
-                    self.force_change = True
-                    
-                    logger.info("Switching to mode: %s", self.current_display_mode)
+                    # Guard against empty available_modes to prevent ZeroDivisionError.
+                    # Toggling every Ticker Content plugin off via /v3/remote rebuilds
+                    # available_modes to []. Hold the last frame and stay alive so a
+                    # hot-reload recovers when a plugin is re-enabled. Sleep 1s so the
+                    # warning doesn't fire at loop rate while idle.
+                    if not self.available_modes:
+                        logger.warning("No display modes enabled - idling on last frame; waiting for hot-reload.")
+                        time.sleep(1)
+                    else:
+                        self.current_mode_index = (self.current_mode_index + 1) % len(self.available_modes)
+                        self.current_display_mode = self.available_modes[self.current_mode_index]
+                        self.last_mode_change = time.time()
+                        self.force_change = True
+
+                        logger.info("Switching to mode: %s", self.current_display_mode)
 
         except KeyboardInterrupt:
             logger.info("Received interrupt signal, shutting down...")

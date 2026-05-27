@@ -5,85 +5,39 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#111827">
     <title>Outdoor Ticker — Remote</title>
-    <link rel="stylesheet" href="/static/v3/app.css">
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-               background: #f9fafb; margin: 0; padding: 16px; max-width: 560px;
-               margin-left: auto; margin-right: auto; }
-        .remote-section { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 16px;
-                          box-shadow: 0 1px 3px rgba(0,0,0,.06); }
-        .remote-section h3 { margin: 0 0 12px; font-size: 13px; text-transform: uppercase;
-                             letter-spacing: .04em; color: #6b7280; font-weight: 600; }
-        .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px;
-                border-radius: 999px; font-size: 13px; font-weight: 600; }
-        .pill-live { background: #d1fae5; color: #065f46; }
-        .pill-off  { background: #fee2e2; color: #991b1b; }
-        .pill-dot  { width: 8px; height: 8px; border-radius: 50%; }
-        .pill-live .pill-dot { background: #10b981; }
-        .pill-off  .pill-dot { background: #ef4444; }
-        .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-        .btn-big  { display: flex; flex-direction: column; align-items: center; justify-content: center;
-                    min-height: 72px; border-radius: 12px; border: 2px solid #e5e7eb;
-                    background: #fff; color: #111827; font-size: 15px; font-weight: 600;
-                    cursor: pointer; transition: all .15s; }
-        .btn-big[aria-pressed="true"] { background: #2563eb; color: #fff; border-color: #2563eb; }
-        .btn-big:disabled { opacity: .4; cursor: not-allowed; }
-        .toggle-row { display: flex; align-items: center; justify-content: space-between;
-                      padding: 10px 0; border-bottom: 1px solid #f3f4f6; }
-        .toggle-row:last-child { border-bottom: none; }
-        .toggle-row label { font-size: 15px; font-weight: 500; }
-        .toggle { position: relative; width: 48px; height: 28px; background: #d1d5db;
-                  border-radius: 999px; cursor: pointer; transition: background .15s; border: none; }
-        .toggle[aria-checked="true"] { background: #10b981; }
-        .toggle::after { content: ''; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px;
-                         background: #fff; border-radius: 50%; transition: left .15s; }
-        .toggle[aria-checked="true"]::after { left: 23px; }
-        .game-card { display: flex; align-items: center; justify-content: space-between;
-                     padding: 12px; background: #f9fafb; border-radius: 8px; margin-bottom: 8px; }
-        .game-card[data-focused="true"] { background: #dbeafe; border: 1px solid #2563eb; }
-        .focus-btn { min-height: 44px; min-width: 72px; padding: 8px 16px;
-                     background: #2563eb; color: #fff; border: none; border-radius: 8px;
-                     font-weight: 600; cursor: pointer; }
-        .focus-btn:disabled { background: #9ca3af; cursor: not-allowed; }
-        input[type="range"] { width: 100%; height: 32px; }
-        .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-                 background: #111827; color: #fff; padding: 10px 16px; border-radius: 8px;
-                 font-size: 14px; z-index: 100; opacity: 0; transition: opacity .2s; }
-        .toast.show { opacity: 1; }
-        .empty { color: #9ca3af; font-size: 14px; font-style: italic; }
-        .toggle.pending { box-shadow: 0 0 0 2px #f59e0b; }
-        .toggle-row.pending label::after {
-            content: ' •'; color: #f59e0b; font-weight: 700;
-        }
-        .pending-bar {
-            position: fixed; bottom: 0; left: 0; right: 0;
-            background: #111827; color: #fff; padding: 12px 16px;
-            display: none; align-items: center; justify-content: space-between;
-            gap: 12px; box-shadow: 0 -2px 8px rgba(0,0,0,.2); z-index: 50;
-        }
-        .pending-bar.show { display: flex; }
-        .pending-count { font-size: 14px; font-weight: 600; }
-        .pending-discard, .pending-apply {
-            min-height: 40px; padding: 8px 14px; border-radius: 8px;
-            border: none; font-weight: 600; cursor: pointer; font-size: 14px;
-        }
-        .pending-discard { background: transparent; color: #e5e7eb; border: 1px solid #4b5563; }
-        .pending-apply { background: #10b981; color: #fff; }
-        .pending-apply:disabled { opacity: .6; cursor: wait; }
-        body.has-pending { padding-bottom: 80px; }
-        .select-toolbar { display: flex; justify-content: flex-end; gap: 12px; margin-bottom: 8px; }
-        .select-link { font-size: 13px; color: #2563eb; cursor: pointer; background: none;
-                       border: none; padding: 0; font-weight: 500; text-decoration: underline; }
-        .game-check { width: 20px; height: 20px; accent-color: #2563eb; cursor: pointer;
-                      flex-shrink: 0; margin-right: 10px; }
-        .game-card-inner { display: flex; align-items: center; flex: 1; min-width: 0; }
-    </style>
+    <link rel="stylesheet" href="/static/v3/app.css?v=24">
 </head>
-<body>
-    <header style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-        <h1 style="font-size:20px;margin:0;font-weight:700;">Outdoor Ticker</h1>
-        <div id="status-pill" class="pill pill-off"><span class="pill-dot"></span><span id="status-text">Loading…</span></div>
+<body class="remote-body">
+    <header class="remote-header" role="banner">
+        <h1 class="remote-title">Outdoor Ticker</h1>
+        <div id="status-pill" class="pill pill-off" role="status"
+             aria-label="Display controller status: loading">
+            <span class="pill-dot" aria-hidden="true"></span>
+            <span id="status-text">Loading…</span>
+        </div>
     </header>
+
+    <section class="remote-section diag-section" id="diag-section" hidden>
+        <h3>
+            <span class="diag-header-label">Diagnostics</span>
+            <span id="diag-status-dot" class="diag-status-dot" aria-hidden="true"></span>
+            <button type="button" id="diag-toggle" class="diag-toggle-btn"
+                    onclick="toggleDiagPanel()" aria-expanded="false"
+                    aria-controls="diag-content"
+                    aria-label="Show diagnostics trace details">
+                Show
+            </button>
+        </h3>
+        <div id="diag-content" hidden>
+            <div id="diag-traces" class="diag-traces" aria-live="polite">
+                <div class="diag-skeleton" aria-hidden="true">
+                    <div class="diag-skeleton-row"></div>
+                    <div class="diag-skeleton-row"></div>
+                    <div class="diag-skeleton-row"></div>
+                </div>
+            </div>
+        </div>
+    </section>
 
     <section class="remote-section" id="mode-controls">
         <h3>Mode</h3>
@@ -91,14 +45,16 @@
             <button class="btn-big" id="btn-ticker" aria-pressed="true"  onclick="setMode('ticker')">TICKER</button>
             <button class="btn-big" id="btn-game"   aria-pressed="false" onclick="setMode('game')">GAME MODE</button>
         </div>
-        <div class="toggle-row" style="margin-top:12px;">
+        <div class="toggle-row">
             <label for="auto-focus-toggle">Auto-focus live game</label>
             <button class="toggle" id="auto-focus-toggle" role="switch" aria-checked="false"
+                    aria-label="Auto-focus live game toggle"
                     onclick="toggleAutoFocus()"></button>
         </div>
-        <div class="toggle-row" style="margin-top:4px;">
+        <div class="toggle-row">
             <label for="auto-cycle-toggle">Auto-cycle games</label>
             <button class="toggle" id="auto-cycle-toggle" role="switch" aria-checked="true"
+                    aria-label="Auto-cycle games toggle"
                     onclick="toggleAutoCycle()"></button>
         </div>
     </section>
@@ -113,20 +69,90 @@
         <div id="plugin-toggles-content" class="empty">Loading…</div>
     </section>
 
+    <section class="remote-section" id="kalshi-collection">
+        <h3>Kalshi Feed</h3>
+        <div id="kalshi-collection-content" class="empty">Loading…</div>
+    </section>
+
+    <section class="remote-section" id="nfl-draft-focus">
+        <h3>NFL Draft Focus</h3>
+        <button class="btn-big btn-full-width" id="btn-draft-focus" onclick="openDraftFocusModal()">OPEN DRAFT PICKER</button>
+    </section>
+
+    <div id="draft-focus-modal" class="draft-modal" role="dialog" aria-modal="true"
+         aria-labelledby="draft-modal-title" aria-hidden="true">
+        <div class="draft-modal-content">
+            <h3 id="draft-modal-title" class="draft-modal-title">Select Draft Pick</h3>
+            <div class="draft-pick-grid">
+                <button class="draft-pick-btn" data-pick="1">1</button>
+                <button class="draft-pick-btn" data-pick="2">2</button>
+                <button class="draft-pick-btn" data-pick="3">3</button>
+                <button class="draft-pick-btn" data-pick="4">4</button>
+                <button class="draft-pick-btn" data-pick="5">5</button>
+                <button class="draft-pick-btn" data-pick="6">6</button>
+                <button class="draft-pick-btn" data-pick="7">7</button>
+                <button class="draft-pick-btn" data-pick="8">8</button>
+                <button class="draft-pick-btn" data-pick="9">9</button>
+                <button class="draft-pick-btn" data-pick="10">10</button>
+                <button class="draft-pick-btn" data-pick="11">11</button>
+                <button class="draft-pick-btn" data-pick="12">12</button>
+                <button class="draft-pick-btn" data-pick="13">13</button>
+                <button class="draft-pick-btn" data-pick="14">14</button>
+                <button class="draft-pick-btn" data-pick="15">15</button>
+            </div>
+            <button class="draft-modal-cancel" onclick="closeDraftFocusModal()">Cancel</button>
+        </div>
+    </div>
+
     <section class="remote-section" id="brightness-control">
-        <h3>Brightness <span id="brightness-value" style="font-weight:normal;color:#6b7280;">—</span></h3>
-        <input type="range" id="brightness-slider" min="10" max="100" step="5" value="65"
+        <div class="control-header">
+            <label for="brightness-slider" class="control-label">Brightness</label>
+            <span id="brightness-value" class="control-value-pill">—</span>
+        </div>
+        <input type="range" id="brightness-slider" class="remote-range"
+               min="10" max="100" step="5" value="65"
+               aria-labelledby="brightness-value"
                oninput="onBrightnessInput(this.value)" onchange="onBrightnessCommit(this.value)">
     </section>
 
-    <div id="toast" class="toast" aria-live="polite"></div>
+    <section class="remote-section" id="stock-speed-control">
+        <div class="control-header">
+            <label for="stock-speed-display" class="control-label">Stock Ticker Speed</label>
+            <span id="stock-speed-value" class="control-value-pill" aria-live="polite">—</span>
+        </div>
+        <div class="stock-speed-row">
+            <button class="btn-big stock-speed-step" id="stock-speed-down"
+                    onclick="onStockSpeedStep(-1)" aria-label="Decrease stock ticker speed">−</button>
+            <div class="stock-speed-unit" id="stock-speed-display" aria-hidden="true">px / frame</div>
+            <button class="btn-big stock-speed-step" id="stock-speed-up"
+                    onclick="onStockSpeedStep(1)" aria-label="Increase stock ticker speed">+</button>
+        </div>
+    </section>
 
-    <div id="pending-bar" class="pending-bar" aria-hidden="true">
-        <div class="pending-count"><span id="pending-count">0</span> changes pending</div>
-        <button type="button" class="pending-discard" onclick="discardPending()">Discard</button>
-        <button type="button" class="pending-apply" onclick="applyPending()">Apply &amp; Restart</button>
+    {% if power_controls_enabled %}
+    <section class="remote-section" id="power-controls">
+        <h3>Power</h3>
+        <div class="btn-grid">
+            <button class="btn-big btn-danger" id="btn-reboot"   onclick="requestPowerAction('reboot')">REBOOT</button>
+            <button class="btn-big btn-danger" id="btn-shutdown" onclick="requestPowerAction('shutdown')">SHUTDOWN</button>
+        </div>
+    </section>
+    {% endif %}
+
+    <div id="power-overlay" class="power-overlay" aria-hidden="true">
+        <div class="power-spinner"></div>
+        <h2 id="power-overlay-title">Shutting down…</h2>
+        <p id="power-overlay-msg">Safe to unplug in ~30 seconds.</p>
     </div>
 
-    <script src="/static/v3/remote.js?v=11" defer></script>
+    <div id="toast" class="toast" aria-live="polite"></div>
+
+    <div id="pending-bar" class="pending-bar" aria-live="polite">
+        <div class="pending-count"><span id="pending-count">0</span> changes pending</div>
+        <button type="button" class="pending-discard" onclick="discardPending()">Discard</button>
+        <button type="button" class="pending-apply" onclick="applyPending()">Apply</button>
+    </div>
+
+    <script src="/static/v3/remote.js?v=24" defer></script>
 </body>
 </html>

@@ -1,0 +1,73 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "title": "UFC Scoreboard Plugin Configuration",
+  "description": "Configuration for the UFC fight-night Game Mode plugin",
+  "properties": {
+    "enabled": {
+      "type": "boolean",
+      "description": "Enable or disable the plugin",
+      "default": true
+    },
+    "show_in_ticker": {
+      "type": "boolean",
+      "description": "Show UFC fights in the scrolling ticker (off by default — this plugin is Game-Mode-only)",
+      "default": false
+    },
+    "card_scope": {
+      "type": "string",
+      "description": "Which fights to track as the current active fight",
+      "enum": ["main", "main_and_prelims", "full"],
+      "default": "full"
+    },
+    "fight_window_hours": {
+      "type": "integer",
+      "description": "Show UFC Game Mode as available this many hours before the first fight of the card",
+      "default": 24,
+      "minimum": 1,
+      "maximum": 72
+    },
+    "update_interval": {
+      "type": "integer",
+      "description": "Idle ESPN refresh interval (seconds) when no fight is live",
+      "default": 60,
+      "minimum": 15,
+      "maximum": 600
+    },
+    "live_update_interval": {
+      "type": "integer",
+      "description": "Accelerated ESPN+Kalshi refresh interval (seconds) while a fight is live",
+      "default": 20,
+      "minimum": 10,
+      "maximum": 120
+    },
+    "post_fight_hold_seconds": {
+      "type": "integer",
+      "description": "Seconds to hold the just-ended fight on-screen before advancing to the next",
+      "default": 30,
+      "minimum": 0,
+      "maximum": 300
+    },
+    "pre_cycle_interval_seconds": {
+      "type": "integer",
+      "description": "Seconds each upcoming fight is shown before cycling to the next when no fight is live",
+      "default": 8,
+      "minimum": 3,
+      "maximum": 60
+    },
+    "display_timezone": {
+      "type": "string",
+      "description": "IANA timezone for formatting fight start times in the UP NEXT caption",
+      "default": "America/Chicago"
+    },
+    "favorite_fighters": {
+      "type": "array",
+      "description": "Optional list of fighter last names to favor (reserved for future auto-focus)",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    }
+  },
+  "additionalProperties": false
+}

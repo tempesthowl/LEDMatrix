@@ -1,0 +1,23 @@
+{
+  "id": "ufc-scoreboard",
+  "name": "UFC Scoreboard",
+  "version": "1.0.0",
+  "author": "Custom Plugin",
+  "description": "UFC fight-night Game Mode — tracks the current active fight on a UFC card (early prelims, prelims, main) and shows fighter headshots on each end of the display with live Kalshi win-probability odds in the middle. No ticker presence; Game-Mode-only.",
+  "entry_point": "manager.py",
+  "class_name": "UFCScoreboardPlugin",
+  "category": "sports",
+  "tags": [
+    "ufc",
+    "mma",
+    "sports",
+    "game-mode",
+    "kalshi",
+    "espn"
+  ],
+  "display_modes": [
+    "game_focus"
+  ],
+  "update_interval": 60,
+  "default_duration": 15
+}

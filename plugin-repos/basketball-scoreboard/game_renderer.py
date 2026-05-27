@@ -232,7 +232,8 @@ class GameRenderer:
                     bbox = img.getbbox()
                     if bbox:
                         img = img.crop(bbox)
-                    img.thumbnail((self.display_height, self.display_height), resample=RESAMPLE_FILTER)
+                    max_logo = int(self.display_height * 0.75)
+                    img.thumbnail((max_logo, max_logo), resample=RESAMPLE_FILTER)
 
                     # Copy before context manager closes file handle
                     logo = img.copy()
@@ -251,7 +252,8 @@ class GameRenderer:
                         bbox = img.getbbox()
                         if bbox:
                             img = img.crop(bbox)
-                        img.thumbnail((self.display_height, self.display_height), resample=RESAMPLE_FILTER)
+                        max_logo = int(self.display_height * 0.75)
+                        img.thumbnail((max_logo, max_logo), resample=RESAMPLE_FILTER)
 
                         # Copy before context manager closes file handle
                         logo = img.copy()
@@ -371,11 +373,12 @@ class GameRenderer:
         show_tourney_seeds = game.get("is_tournament", False) and self._get_mm_setting(game, 'show_seeds')
         if self.show_records or self.show_ranking or show_tourney_seeds:
             self._draw_records_or_rankings(draw_overlay, game)
-        self._draw_kalshi_probability(draw_overlay, game)
 
-        # Draw odds if available
-        if game.get('odds'):
-            self._draw_dynamic_odds(draw_overlay, game['odds'])
+        # Kalshi probability only for live/upcoming — not meaningful for Final games
+        if game_type != "recent":
+            self._draw_kalshi_probability(draw_overlay, game)
+
+        # ESPN odds (spread/O/U) omitted — they overlap logos on 128px scroll cards
 
         # Composite the overlay onto main image
         main_img = Image.alpha_composite(main_img, overlay)

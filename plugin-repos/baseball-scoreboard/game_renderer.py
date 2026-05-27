@@ -165,13 +165,14 @@ class GameRenderer:
                 if logo.mode != 'RGBA':
                     logo = logo.convert('RGBA')
 
-                # Crop transparent padding then scale so ink fills display_height.
-                # thumbnail into a display_height square box preserves aspect ratio
-                # and prevents wide logos from exceeding their half-card slot.
+                # Crop transparent padding then scale to fit.
+                # Use 75% of display_height for a cleaner, less cramped look
+                # in scroll mode (GameRenderer is only used for scroll cards).
                 bbox = logo.getbbox()
                 if bbox:
                     logo = logo.crop(bbox)
-                logo.thumbnail((self.display_height, self.display_height), RESAMPLE_FILTER)
+                max_logo = int(self.display_height * 0.75)
+                logo.thumbnail((max_logo, max_logo), RESAMPLE_FILTER)
 
                 # Copy before exiting context manager
                 cached_logo = logo.copy()
@@ -259,108 +260,17 @@ class GameRenderer:
             inning_y = 1
             self._draw_text_with_outline(draw, inning_text, (inning_x, inning_y), inning_font)
 
-            # Bases diamond + Outs circles
-            bases_occupied = game.get('bases_occupied', [False, False, False])
-            outs = game.get('outs', 0)
-
-            # Read configurable game display settings
-            customization = self.config.get('customization', {})
-            bases_cfg = customization.get('bases', {})
-            outs_cfg = customization.get('outs', {})
-            count_cfg = customization.get('count', {})
-
-            base_diamond_size = bases_cfg.get('diamond_size', 7)
-            out_circle_diameter = outs_cfg.get('circle_diameter', 3)
-            out_vertical_spacing = outs_cfg.get('spacing', 2)
-            spacing_between_bases_outs = outs_cfg.get('distance_from_bases', 3)
-            base_vert_spacing = 1
-            base_horiz_spacing = 1
-
-            base_cluster_height = base_diamond_size + base_vert_spacing + base_diamond_size
-            base_cluster_width = base_diamond_size + base_horiz_spacing + base_diamond_size
-
-            overall_start_y = inning_bbox[3] + 1 + bases_cfg.get('y_offset', 0)
-            bases_origin_x = (self.display_width - base_cluster_width) // 2 + bases_cfg.get('x_offset', 0)
-
-            # Outs column position (only needed when count data is available)
-            has_count_data = game.get('has_count_data', True)
-            out_cluster_height = 3 * out_circle_diameter + 2 * out_vertical_spacing
-            if has_count_data:
-                if inning_half == 'top':
-                    outs_column_x = bases_origin_x - spacing_between_bases_outs - out_circle_diameter
-                else:
-                    outs_column_x = bases_origin_x + base_cluster_width + spacing_between_bases_outs
-                outs_column_start_y = overall_start_y + (base_cluster_height // 2) - (out_cluster_height // 2)
-
-            # Draw bases as diamond polygons
-            h_d = base_diamond_size // 2
-            base_fill = tuple(bases_cfg.get('occupied_color', [255, 255, 255]))
-            base_outline = tuple(bases_cfg.get('empty_color', [255, 255, 255]))
-
-            # 2nd base (top center)
-            c2x = bases_origin_x + base_cluster_width // 2
-            c2y = overall_start_y + h_d
-            poly2 = [(c2x, overall_start_y), (c2x + h_d, c2y), (c2x, c2y + h_d), (c2x - h_d, c2y)]
-            draw.polygon(poly2, fill=base_fill if bases_occupied[1] else None, outline=base_outline)
-
-            base_bottom_y = c2y + h_d
-
-            # 3rd base (bottom left)
-            c3x = bases_origin_x + h_d
-            c3y = base_bottom_y + base_vert_spacing + h_d
-            poly3 = [(c3x, base_bottom_y + base_vert_spacing), (c3x + h_d, c3y), (c3x, c3y + h_d), (c3x - h_d, c3y)]
-            draw.polygon(poly3, fill=base_fill if bases_occupied[2] else None, outline=base_outline)
-
-            # 1st base (bottom right)
-            c1x = bases_origin_x + base_cluster_width - h_d
-            c1y = base_bottom_y + base_vert_spacing + h_d
-            poly1 = [(c1x, base_bottom_y + base_vert_spacing), (c1x + h_d, c1y), (c1x, c1y + h_d), (c1x - h_d, c1y)]
-            draw.polygon(poly1, fill=base_fill if bases_occupied[0] else None, outline=base_outline)
-
-            # Outs circles (only when count data is available)
-            if has_count_data:
-                outs_fill = tuple(outs_cfg.get('counted_color', [255, 255, 255]))
-                outs_empty = tuple(outs_cfg.get('empty_color', [100, 100, 100]))
-                for i in range(3):
-                    cx = outs_column_x
-                    cy = outs_column_start_y + i * (out_circle_diameter + out_vertical_spacing)
-                    coords = [cx, cy, cx + out_circle_diameter, cy + out_circle_diameter]
-                    if i < outs:
-                        draw.ellipse(coords, fill=outs_fill)
-                    else:
-                        draw.ellipse(coords, outline=outs_empty)
-
-            # Balls-strikes count (below bases, only when count data is available)
-            if has_count_data:
-                balls = game.get('balls', 0)
-                strikes = game.get('strikes', 0)
-                count_text = f"{balls}-{strikes}"
-                count_font = self.fonts['detail']
-                count_width = draw.textlength(count_text, font=count_font)
-                count_y = overall_start_y + base_cluster_height + count_cfg.get('y_offset', 2)
-                count_x = bases_origin_x + (base_cluster_width - count_width) // 2
-                count_text_color = tuple(count_cfg.get('text_color', [255, 255, 255]))
-                self._draw_text_with_outline(draw, count_text, (int(count_x), count_y), count_font, fill=count_text_color)
-
-            # Score (centered between logos, below bases/count cluster)
+            # Score (centered between logos, below inning)
             score_font = self.fonts['score']
             score_text = f"{game.get('away_score', '0')}-{game.get('home_score', '0')}"
             score_width = draw.textlength(score_text, font=score_font)
             score_x = (self.display_width - score_width) // 2
-            try:
-                font_height = score_font.getbbox("A")[3] - score_font.getbbox("A")[1]
-            except AttributeError:
-                font_height = 8
-            cluster_bottom = overall_start_y + base_cluster_height
-            if has_count_data:
-                cluster_bottom += 2 + 6  # count spacing + detail font height
-            bottom_limit = self.display_height - font_height - 2
-            score_y = max(0, min(cluster_bottom + 1, bottom_limit))
+            score_y = self.display_height - 14
             self._draw_text_with_outline(draw, score_text, (int(score_x), score_y), score_font)
 
-            # Odds
-            if game.get('odds'):
-                self._draw_dynamic_odds(draw, game['odds'])
+            # ESPN odds (spread/O/U) omitted — they overlap logos on
+            # 128px scroll cards. Kalshi probabilities still show via
+            # _draw_kalshi_probability when data is available.
 
             main_img = Image.alpha_composite(main_img, overlay)
             return main_img.convert("RGB")
@@ -406,11 +316,9 @@ class GameRenderer:
 
             # Records at bottom corners
             self._draw_records(draw, game)
-            self._draw_kalshi_probability(draw, game)
 
-            # Odds
-            if game.get('odds'):
-                self._draw_dynamic_odds(draw, game['odds'])
+            # No Kalshi/ESPN odds for completed games — odds are only
+            # meaningful for live or upcoming games.
 
             main_img = Image.alpha_composite(main_img, overlay)
             return main_img.convert("RGB")

@@ -1,0 +1,71 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Enable or disable the plugin"
+    },
+    "display_duration": {
+      "type": "number",
+      "minimum": 5,
+      "default": 15,
+      "description": "Seconds to display before rotating to next plugin (overridden by dynamic duration)"
+    },
+    "update_interval": {
+      "type": "integer",
+      "minimum": 60,
+      "default": 300,
+      "description": "How often to refresh price data from Yahoo Finance (seconds)"
+    },
+    "stocks": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "NVDA"],
+      "description": "Stock ticker symbols to display"
+    },
+    "crypto": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": ["BTC-USD", "ETH-USD"],
+      "description": "Cryptocurrency symbols in Yahoo Finance format (e.g. BTC-USD)"
+    },
+    "forex": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "Forex pairs in Yahoo Finance format (e.g. EURUSD=X)"
+    },
+    "watchlist_file": {
+      "type": "string",
+      "default": "",
+      "description": "Optional path to a TradingView-style watchlist file (comma-separated EXCH:SYMBOL tokens). When set and readable, it overrides the stocks/crypto/forex arrays. Re-read on every plugin init (so each process restart / Pi boot picks up changes)."
+    },
+    "show_chart": {
+      "type": "boolean",
+      "default": true,
+      "description": "Show mini price chart on each ticker tile"
+    },
+    "show_logo": {
+      "type": "boolean",
+      "default": true,
+      "description": "Show company/crypto logo icon on each tile"
+    },
+    "scroll_speed": {
+      "type": "number",
+      "minimum": 0.1,
+      "maximum": 5.0,
+      "default": 1.0,
+      "description": "Scroll speed multiplier"
+    },
+    "dynamic_duration": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "min_duration": { "type": "number", "default": 20 },
+        "max_duration": { "type": "number", "default": 180 }
+      }
+    }
+  }
+}

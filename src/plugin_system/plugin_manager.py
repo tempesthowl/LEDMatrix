@@ -84,6 +84,11 @@ class PluginManager:
         self.plugin_manifests: Dict[str, Dict[str, Any]] = {}
         self.plugin_modules: Dict[str, Any] = {}
         self.plugin_last_update: Dict[str, float] = {}
+        # Ticker visibility — tracks the real "enabled" toggle from /v3/remote.
+        # Plugin instances always have enabled=True (so update/get_live_games
+        # always work); this dict holds the UI toggle state for ticker
+        # rotation filtering (Vegas, rotation guard, available_modes).
+        self.ticker_enabled: Dict[str, bool] = {}
         
         # Health tracking (optional, set by display_controller if available)
         self.health_tracker = None
@@ -391,10 +396,14 @@ class PluginManager:
             self.plugins[plugin_id] = plugin_instance
             self.plugin_last_update[plugin_id] = 0.0
             
-            # Update state based on enabled status
-            if config.get('enabled', True):
+            # Update state based on enabled status.
+            # Sport plugins (have get_live_games) stay ENABLED even when
+            # ticker-disabled, so run_scheduled_updates keeps fetching
+            # their live data for Game Mode. Ticker visibility is gated
+            # separately by plugin_manager.ticker_enabled (Vegas + rotation).
+            is_sport_plugin = hasattr(plugin_instance, 'get_live_games')
+            if config.get('enabled', True) or is_sport_plugin:
                 self.state_manager.set_state(plugin_id, PluginState.ENABLED)
-                # Call on_enable if plugin is enabled
                 if hasattr(plugin_instance, 'on_enable'):
                     plugin_instance.on_enable()
             else:
@@ -687,8 +696,11 @@ class PluginManager:
             current_time = time.time()
 
         for plugin_id, plugin_instance in list(self.plugins.items()):
-            if not getattr(plugin_instance, "enabled", True):
-                continue
+            # All loaded plugins run update() regardless of the `enabled`
+            # flag.  The toggle on /v3/remote controls ticker rotation
+            # visibility only — Game Mode needs fresh data from every sport
+            # plugin's get_live_games() even when toggled off in Ticker
+            # Content.
 
             if not hasattr(plugin_instance, "update"):
                 continue

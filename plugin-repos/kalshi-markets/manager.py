@@ -29,12 +29,27 @@ try:
 except ImportError:
     ScrollHelper = None
 
+try:
+    from src.game_mode.kalshi_draft_renderer import KalshiDraftFocusRenderer
+except ImportError:
+    KalshiDraftFocusRenderer = None
+
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
 KALSHI_BASE_URL = "https://api.elections.kalshi.com/trade-api/v2"
+
+# NFL Draft pick → Kalshi series ticker. Pick #1 is the PLAYER exact-pick
+# market (KXNFLDRAFT1, event KXNFLDRAFT1-26); picks #2-#16 are children of
+# KXNFLDRAFTPICK. KXNFLDRAFT1ST is the team-making-the-pick market — NOT
+# what we want (it surfaces team names like "Las Vegas", not player names).
+NFL_DRAFT_PICK_1_SERIES = "KXNFLDRAFT1"
+NFL_DRAFT_PICKS_2_PLUS_SERIES = "KXNFLDRAFTPICK"
+# Cache TTL for draft focus data — 5s during active drafting so the bars
+# move visibly when a real trade clears on Kalshi.
+NFL_DRAFT_FOCUS_CACHE_TTL = 5
 
 # Category display icons (ASCII-safe single chars for LED font rendering)
 CATEGORY_ICONS: Dict[str, str] = {
@@ -87,11 +102,13 @@ class KalshiMarketsPlugin(BasePlugin):
     ):
         super().__init__(plugin_id, config, display_manager, cache_manager, plugin_manager)
 
-        # Config
-        self.pinned_tickers: List[str] = [t.upper() for t in config.get("markets", [])]
-        self.event_tickers: List[str] = [t.upper() for t in config.get("event_tickers", [])]
-        self.series_tickers: List[str] = [t.upper() for t in config.get("series_tickers", [])]
-        self.categories: List[str] = config.get("categories", ["Economics", "Politics"])
+        # Config — filter lists are populated by _apply_active_collection() so
+        # the "active_collection" dropdown in /v3/remote can swap them at runtime.
+        self.pinned_tickers: List[str] = []
+        self.event_tickers: List[str] = []
+        self.series_tickers: List[str] = []
+        self.categories: List[str] = []
+        self._apply_active_collection()
         self.max_markets: int = config.get("max_markets", 5)
         self.min_volume: int = config.get("min_volume", 100)
         self.outcomes_per_event: int = max(1, int(config.get("outcomes_per_event", 1)))
@@ -116,6 +133,7 @@ class KalshiMarketsPlugin(BasePlugin):
 
         # State
         self.markets_data: List[Dict] = []
+        self._pending_markets_data: Optional[List[Dict]] = None
         self.ticker_image: Optional[Image.Image] = None
         self.last_update: float = 0
         self.dynamic_duration: float = 60
@@ -184,11 +202,11 @@ class KalshiMarketsPlugin(BasePlugin):
         except IOError:
             fonts["label"] = ImageFont.load_default()
         try:
-            fonts["small"] = ImageFont.truetype("assets/fonts/4x6-font.ttf", 6)
+            fonts["small"] = ImageFont.truetype("assets/fonts/5by7.regular.ttf", 7)
         except IOError:
             fonts["small"] = ImageFont.load_default()
         try:
-            fonts["pct"] = ImageFont.truetype("assets/fonts/5by7.regular.ttf", 7)
+            fonts["pct"] = ImageFont.truetype("assets/fonts/5by7.regular.ttf", 9)
         except IOError:
             fonts["pct"] = ImageFont.load_default()
         try:
@@ -550,6 +568,11 @@ class KalshiMarketsPlugin(BasePlugin):
         "nhl": "KXNHLGAME",
         "ncaa_fb": "KXNCAAFBGAME",
         "ncaa_bb": "KXNCAABBGAME",
+        # UFC fight-winner markets. Verified 2026-04-17 against
+        # /events?series_ticker=KXUFCFIGHT — returns per-fight events with
+        # two markets each (one per fighter). Not to be confused with
+        # KXUFCMOF (method-of-finish).
+        "ufc": "KXUFCFIGHT",
     }
 
     # Kalshi uses non-standard abbreviations for some teams
@@ -736,6 +759,184 @@ class KalshiMarketsPlugin(BasePlugin):
         except Exception:
             self.logger.exception("Error fetching Kalshi game odds for %s vs %s", away_team, home_team)
             return None
+
+    # ------------------------------------------------------------------
+    # Fight-Specific Odds (for UFC Game Mode)
+    # ------------------------------------------------------------------
+
+    def fetch_fight_odds(
+        self, fighter_a_name: str, fighter_b_name: str
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch Kalshi win-probability markets for a single UFC fight.
+
+        Matches by fighter last name against the event title (e.g.
+        "UFC Fight Night: Burns vs Malott"). Each event has exactly two
+        markets — one per fighter — with the fighter's full name in the
+        market's yes_sub_title field.
+
+        Args:
+            fighter_a_name: ESPN displayName, e.g. "Gilbert Burns".
+            fighter_b_name: ESPN displayName, e.g. "Mike Malott".
+
+        Returns:
+            Dict with keys: fav_name, fav_pct, dog_name, dog_pct,
+            fav_payout, dog_payout, market_ticker — or None if no event
+            matches. fav_name / dog_name are the fighter last names in
+            upper-case (matching the ticker suffix style).
+        """
+        series_prefix = self.LEAGUE_SERIES_MAP.get("ufc")
+        if not series_prefix:
+            return None
+
+        a_last = self._fight_last_name(fighter_a_name)
+        b_last = self._fight_last_name(fighter_b_name)
+        if not a_last or not b_last:
+            return None
+
+        cache_key = f"kalshi_fight_{a_last.lower()}_{b_last.lower()}"
+        cached = self.cache_manager.get(cache_key, max_age=20)
+        if cached is not None:
+            return cached if cached else None
+
+        try:
+            resp = self.session.get(
+                f"{KALSHI_BASE_URL}/events",
+                headers=self.headers,
+                params={
+                    "series_ticker": series_prefix,
+                    "status": "open",
+                    "limit": 50,
+                },
+                timeout=15,
+            )
+            resp.raise_for_status()
+            events = resp.json().get("events", [])
+
+            if not events:
+                self.cache_manager.set(cache_key, {}, ttl=20)
+                return None
+
+            # Match event by both fighter last names appearing in title
+            a_needle = a_last.lower()
+            b_needle = b_last.lower()
+            matched_event = None
+            for event in events:
+                title = (event.get("title", "") or "").lower()
+                sub_title = (event.get("sub_title", "") or "").lower()
+                search = f"{title} {sub_title}"
+                if a_needle in search and b_needle in search:
+                    matched_event = event
+                    break
+
+            if not matched_event:
+                self.logger.debug(
+                    "No Kalshi event matched %s vs %s (checked %d events)",
+                    a_last, b_last, len(events),
+                )
+                self.cache_manager.set(cache_key, {}, ttl=20)
+                return None
+
+            event_ticker = matched_event["event_ticker"]
+            self.logger.info(
+                "Matched Kalshi fight event: %s (%s)",
+                event_ticker, matched_event.get("title"),
+            )
+
+            # Fetch both fighter markets for this event
+            resp = self.session.get(
+                f"{KALSHI_BASE_URL}/markets",
+                headers=self.headers,
+                params={"event_ticker": event_ticker},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            markets = resp.json().get("markets", [])
+
+            if not markets:
+                self.cache_manager.set(cache_key, {}, ttl=20)
+                return None
+
+            # Parse each market: yes_sub_title is the full fighter name
+            # ("Gilbert Burns"). We key by the last-name token so callers
+            # can line up with ESPN displayName.
+            fighter_odds: Dict[str, Dict[str, Any]] = {}
+            for m in markets:
+                full_name = (m.get("yes_sub_title", "") or "").strip()
+                if not full_name:
+                    continue
+                last = self._fight_last_name(full_name)
+                if not last:
+                    continue
+                yes_bid = float(m.get("yes_bid_dollars", 0) or 0)
+                yes_ask = float(m.get("yes_ask_dollars", 0) or 0)
+                last_price = float(m.get("last_price_dollars", 0) or 0)
+                price = yes_bid or last_price or yes_ask
+                pct = int(round(price * 100))
+                fighter_odds[last.upper()] = {
+                    "full_name": full_name,
+                    "pct": pct,
+                    "ticker": m.get("ticker", ""),
+                }
+
+            if len(fighter_odds) < 2:
+                self.cache_manager.set(cache_key, {}, ttl=20)
+                return None
+
+            # Rank by probability; first = favorite, second = underdog
+            ranked = sorted(
+                fighter_odds.items(), key=lambda kv: kv[1]["pct"], reverse=True
+            )
+            fav_key, fav_data = ranked[0]
+            dog_key, dog_data = ranked[1]
+
+            fav_pct = fav_data["pct"]
+            dog_pct = dog_data["pct"]
+            fav_payout = round(100 / max(fav_pct, 1), 2)
+            dog_payout = round(100 / max(dog_pct, 1), 2)
+
+            result = {
+                "fav_name": fav_key,
+                "fav_full_name": fav_data["full_name"],
+                "fav_pct": fav_pct,
+                "dog_name": dog_key,
+                "dog_full_name": dog_data["full_name"],
+                "dog_pct": dog_pct,
+                "fav_payout": fav_payout,
+                "dog_payout": dog_payout,
+                "market_ticker": event_ticker,
+            }
+            self.cache_manager.set(cache_key, result, ttl=20)
+            self.logger.info(
+                "Kalshi fight odds: %s %d%% vs %s %d%%",
+                fav_key, fav_pct, dog_key, dog_pct,
+            )
+            return result
+
+        except Exception:
+            self.logger.exception(
+                "Error fetching Kalshi fight odds for %s vs %s",
+                fighter_a_name, fighter_b_name,
+            )
+            return None
+
+    @staticmethod
+    def _fight_last_name(full_name: str) -> str:
+        """Extract a fighter's last-name token for Kalshi matching.
+
+        "Gilbert Burns" -> "Burns", "Khamzat Chimaev" -> "Chimaev".
+        Handles hyphens (keeps the full hyphenated token) and suffixes
+        like "Jr"/"Sr"/"III" (strips them).
+        """
+        if not full_name:
+            return ""
+        tokens = [t for t in full_name.strip().split() if t]
+        if not tokens:
+            return ""
+        # Strip common suffixes from the end
+        suffixes = {"jr", "jr.", "sr", "sr.", "ii", "iii", "iv"}
+        while len(tokens) > 1 and tokens[-1].lower().rstrip(".") in suffixes:
+            tokens.pop()
+        return tokens[-1]
 
     # ------------------------------------------------------------------
     # Tournament Winner Markets (for Golf Game Mode)
@@ -1146,7 +1347,7 @@ class KalshiMarketsPlugin(BasePlugin):
         icon_w = self._measure_text(icon, small_font)
         label_w = self._measure_text(top_label, small_font)
         pct_w = self._measure_text(pct_str, pct_font)
-        payout_w = self._measure_text(payout_str, small_font) if payout_str else 0
+        payout_w = self._measure_text(payout_str, pct_font) if payout_str else 0
         row2_w = pad + label_w + pad + pct_w + pad + payout_w + pad
 
         # --- Split title across 2 balanced lines, card sizes to fit ---
@@ -1184,7 +1385,7 @@ class KalshiMarketsPlugin(BasePlugin):
         x += pct_w + pad
 
         if payout_str:
-            self._draw_outlined(draw, payout_str, (x, row2_y), small_font, fill=COLOR_GRAY)
+            self._draw_outlined(draw, payout_str, (x, row2_y), pct_font, fill=(255, 255, 255))
 
         return img
 
@@ -1236,17 +1437,71 @@ class KalshiMarketsPlugin(BasePlugin):
     # Plugin lifecycle
     # ------------------------------------------------------------------
 
-    def update(self) -> None:
-        if not self.enabled:
-            return
+    def _apply_active_collection(self) -> None:
+        """Resolve the active collection's filters into instance attrs.
 
+        Two modes:
+        1. active_collection names a valid entry in collections → use EXACTLY
+           what that collection specifies. Missing keys = empty (no cross-level
+           inheritance, so "Top: Sports" with only `categories` doesn't pull in
+           top-level series_tickers).
+        2. active_collection is unset or names a missing key → fall back to
+           top-level series_tickers/event_tickers/categories/markets.
+           Preserves pre-collections behavior.
+        """
+        active = (self.config.get("active_collection") or "").strip()
+        colls = self.config.get("collections") or {}
+        coll = colls.get(active) if active else None
+
+        if coll is not None:
+            self.pinned_tickers = [str(t).upper() for t in (coll.get("markets") or [])]
+            self.event_tickers = [str(t).upper() for t in (coll.get("event_tickers") or [])]
+            self.series_tickers = [str(t).upper() for t in (coll.get("series_tickers") or [])]
+            self.categories = list(coll.get("categories") or [])
+        else:
+            self.pinned_tickers = [str(t).upper() for t in (self.config.get("markets") or [])]
+            self.event_tickers = [str(t).upper() for t in (self.config.get("event_tickers") or [])]
+            self.series_tickers = [str(t).upper() for t in (self.config.get("series_tickers") or [])]
+            self.categories = list(self.config.get("categories") or ["Economics", "Politics"])
+
+    def on_config_change(self, new_config: Dict[str, Any]) -> None:
+        """Hot-reload hook — picks up active_collection changes without restart."""
+        super().on_config_change(new_config)
+        self._apply_active_collection()
+        # Force the next update() tick to refetch under the new filters.
+        self.last_update = 0
+        # Drop any pending tiles that were built under the old filters.
+        self._pending_markets_data = None
+
+    def update(self) -> None:
         current_time = time.time()
         if current_time - self.last_update < self.update_interval:
             return
 
+        # Non-blocking: spawn a background worker. HTTP fetches + image rebuild
+        # take many seconds with 20+ markets, which stalls the render thread
+        # (and trips the plugin_executor 30s timeout). Return immediately;
+        # swap in new markets_data + ticker_image when the worker finishes.
+        if getattr(self, "_update_worker", None) and self._update_worker.is_alive():
+            return
+
+        self.last_update = current_time
+        self._update_worker = threading.Thread(
+            target=self._do_background_update, daemon=True
+        )
+        self._update_worker.start()
+
+    def _do_background_update(self) -> None:
+        """Off-thread fetch + image rebuild. Runs under _update_lock.
+
+        Cold start (markets_data empty): commit directly so the first display()
+        after boot has data to show. Hot update (markets_data populated): stash
+        into _pending_markets_data so the in-flight scroll doesn't reset.
+        The pending payload is committed on the next display(force_clear=True).
+        """
         with self._update_lock:
-            self.last_update = current_time
             try:
+                self._apply_active_collection()
                 if self.series_tickers or self.event_tickers:
                     events = self._fetch_targeted_markets()
                 elif self.pinned_tickers:
@@ -1268,26 +1523,47 @@ class KalshiMarketsPlugin(BasePlugin):
                 else:
                     events = self._fetch_category_markets()
 
-                # Cap event count, then expand each event into top-N outcome tiles
                 events = events[: self.max_markets]
                 tiles: List[Dict] = []
                 for ev in events:
                     tiles.extend(self._expand_event_to_tiles(ev))
 
-                self.markets_data = tiles
-                self._build_ticker_image()
-                self.logger.info(
-                    "Updated: %d events -> %d tiles (outcomes_per_event=%d)",
-                    len(events), len(tiles), self.outcomes_per_event,
-                )
+                if not self.markets_data:
+                    self.markets_data = tiles
+                    self._build_ticker_image()
+                    self.logger.info(
+                        "Updated: %d events -> %d tiles (outcomes_per_event=%d, initial)",
+                        len(events), len(tiles), self.outcomes_per_event,
+                    )
+                else:
+                    self._pending_markets_data = tiles
+                    self.logger.info(
+                        "Pending: %d events -> %d tiles (outcomes_per_event=%d, commit on next cycle)",
+                        len(events), len(tiles), self.outcomes_per_event,
+                    )
             except Exception as e:
                 self.logger.error("Update error: %s", e, exc_info=True)
 
-    def display(self, force_clear: bool = False) -> None:
+    def display(self, display_mode: str = None, force_clear: bool = False) -> None:
+        # On-demand NFL Draft focused view — dispatch before the enabled
+        # check so the focus renders even when the ticker plugin is off.
+        if display_mode == "kalshi_draft_focus":
+            return self._display_draft_focus(force_clear)
+
         if not self.enabled:
             return
 
         if force_clear or self._display_start_time is None:
+            # Commit any pending update at cycle boundary — safe here because
+            # we're about to reset the scroll anyway, so the rebuild's own
+            # scroll_position=0 reset is expected behavior, not a visible jump.
+            if self._pending_markets_data is not None:
+                committed = len(self._pending_markets_data)
+                self.markets_data = self._pending_markets_data
+                self._pending_markets_data = None
+                self._build_ticker_image()
+                self.logger.info("Committed pending update: %d tiles live", committed)
+
             self._display_start_time = time.time()
             if self.scroll_helper:
                 self.scroll_helper.reset_scroll()
@@ -1335,6 +1611,148 @@ class KalshiMarketsPlugin(BasePlugin):
 
         self.display_manager.image = img
         self.display_manager.update_display()
+
+    # ------------------------------------------------------------------
+    # NFL Draft Focused View (on-demand mode)
+    # ------------------------------------------------------------------
+
+    def _display_draft_focus(self, force_clear: bool = False) -> bool:
+        """Render the currently-selected NFL Draft pick contract.
+
+        Returns True if a frame was drawn, False otherwise.
+        """
+        if KalshiDraftFocusRenderer is None:
+            self.logger.warning("KalshiDraftFocusRenderer unavailable")
+            return False
+
+        pick_number = self._current_draft_pick_number()
+        if pick_number is None:
+            self.logger.info("Draft focus: no pick number in on-demand request")
+            return False
+
+        focus_data = self._build_draft_focus_data(pick_number)
+        if focus_data is None:
+            return False
+
+        renderer = KalshiDraftFocusRenderer(self.display_width, self.display_height)
+        frame = renderer.render(focus_data)
+
+        if hasattr(self.display_manager, "image"):
+            try:
+                self.display_manager.image.paste(frame)
+            except Exception:
+                self.display_manager.image = frame
+            if hasattr(self.display_manager, "update_display"):
+                self.display_manager.update_display()
+        return True
+
+    def _current_draft_pick_number(self) -> Optional[int]:
+        """Read the pick number from the on-demand request payload in cache.
+
+        The display controller only propagates `game_id` to plugin config
+        for mode=='game_focus' (display_controller.py:1571), so we read
+        the original on-demand request payload directly.
+        """
+        try:
+            payload = self.cache_manager.get(
+                "display_on_demand_request", max_age=3600
+            )
+        except Exception:
+            return None
+        if not payload:
+            return None
+        raw = payload.get("game_id")
+        try:
+            n = int(str(raw).strip())
+        except (TypeError, ValueError, AttributeError):
+            return None
+        if not 1 <= n <= 15:
+            return None
+        return n
+
+    def _build_draft_focus_data(self, pick_number: int) -> Optional[Dict[str, Any]]:
+        """Fetch the selected pick's candidates and shape for the renderer."""
+        cache_key = f"kalshi_draft_focus_pick_{pick_number}"
+        cached = self.cache_manager.get(cache_key, max_age=NFL_DRAFT_FOCUS_CACHE_TTL)
+        if cached:
+            return cached
+
+        empty_payload = {
+            "contract_title": f"NFL DRAFT PICK #{pick_number}",
+            "status_label": "",
+            "candidates": [],
+            "no_markets": True,
+        }
+
+        event = self._resolve_draft_pick_event(pick_number)
+        if not event:
+            return empty_payload
+
+        event_ticker = event.get("event_ticker") or event.get("ticker", "")
+        group = self._build_event_group(event_ticker, event)
+        if not group or not group.get("markets"):
+            self.cache_manager.set(cache_key, empty_payload)
+            return empty_payload
+
+        candidates = []
+        for m in group["markets"]:
+            name = (
+                m.get("yes_sub_title")
+                or m.get("subtitle")
+                or m.get("title")
+                or ""
+            ).strip()
+            try:
+                pct = int(m.get("yes_pct") or 0)
+            except (TypeError, ValueError):
+                pct = 0
+            if not name or pct <= 0:
+                continue
+            candidates.append({
+                "display_name": name.upper()[:20],
+                "kalshi_pct": pct,
+                "kalshi_ticker": m.get("ticker", ""),
+            })
+        candidates.sort(key=lambda c: c["kalshi_pct"], reverse=True)
+
+        data = {
+            "contract_title": f"NFL DRAFT PICK #{pick_number}",
+            "status_label": "LIVE" if candidates else "",
+            "candidates": candidates[:3],
+            "no_markets": not candidates,
+        }
+        self.cache_manager.set(cache_key, data)
+        return data
+
+    def _resolve_draft_pick_event(
+        self, pick_number: int
+    ) -> Optional[Dict[str, Any]]:
+        """Find the Kalshi event matching the requested draft pick.
+
+        Pick #1 lives in the KXNFLDRAFT1ST series; picks #2-#15 are
+        children of KXNFLDRAFTPICK. For picks 2+ we match the event by
+        looking for the pick number in the title or ticker.
+        """
+        if pick_number == 1:
+            events = self._resolve_series_to_events(NFL_DRAFT_PICK_1_SERIES)
+            return events[0] if events else None
+
+        events = self._resolve_series_to_events(NFL_DRAFT_PICKS_2_PLUS_SERIES)
+        pick_str = str(pick_number)
+        for ev in events:
+            title = (ev.get("title") or "").upper()
+            ticker = (
+                ev.get("event_ticker") or ev.get("ticker") or ""
+            ).upper()
+            if f"#{pick_str}" in title or f"PICK {pick_str}" in title:
+                return ev
+            if (
+                f"-26-{pick_str}" in ticker
+                or f"-P{pick_str}" in ticker
+                or ticker.endswith(f"-{pick_str}")
+            ):
+                return ev
+        return None
 
     # ------------------------------------------------------------------
     # Duration / cycle management
@@ -1394,6 +1812,7 @@ class KalshiMarketsPlugin(BasePlugin):
 
     def cleanup(self) -> None:
         self.markets_data = []
+        self._pending_markets_data = None
         self.ticker_image = None
         if self.scroll_helper:
             self.scroll_helper.clear_cache()

@@ -1,0 +1,67 @@
+{
+  "id": "f1-scoreboard",
+  "name": "F1 Scoreboard",
+  "version": "1.2.3",
+  "author": "ChuckBuilds",
+  "class_name": "F1ScoreboardPlugin",
+  "entry_point": "manager.py",
+  "repo": "https://github.com/ChuckBuilds/ledmatrix-plugins",
+  "branch": "main",
+  "plugin_path": "plugins/f1-scoreboard",
+  "description": "Formula 1 racing plugin showing driver/constructor standings, race results, qualifying breakdowns, practice standings, sprint results, upcoming races, and race calendar with team-colored displays and favorite driver/team support",
+  "category": "sports",
+  "tags": [
+    "f1",
+    "formula1",
+    "racing",
+    "motorsport",
+    "sports",
+    "scoreboard"
+  ],
+  "display_modes": [
+    "f1_driver_standings",
+    "f1_constructor_standings",
+    "f1_recent_races",
+    "f1_upcoming",
+    "f1_qualifying",
+    "f1_practice",
+    "f1_sprint",
+    "f1_calendar"
+  ],
+  "versions": [
+    {
+      "version": "1.2.3",
+      "released": "2026-03-08",
+      "ledmatrix_min_version": "2.0.0"
+    },
+    {
+      "version": "1.2.2",
+      "released": "2026-03-02",
+      "ledmatrix_min_version": "2.0.0"
+    },
+    {
+      "version": "1.2.1",
+      "released": "2026-02-24",
+      "ledmatrix_min_version": "2.0.0"
+    },
+    {
+      "version": "1.2.0",
+      "released": "2026-02-24",
+      "ledmatrix_min_version": "2.0.0"
+    },
+    {
+      "version": "1.1.0",
+      "released": "2026-02-17",
+      "ledmatrix_min_version": "2.0.0"
+    }
+  ],
+  "last_updated": "2026-03-08",
+  "stars": 0,
+  "downloads": 0,
+  "verified": true,
+  "screenshot": "",
+  "config_schema": "config_schema.json",
+  "compatible_versions": [
+    ">=2.0.0"
+  ]
+}

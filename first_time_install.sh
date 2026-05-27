@@ -1046,6 +1046,96 @@ else
 fi
 echo ""
 
+# -----------------------------------------------------------------------------
+# Steps 8.6 / 8.7 / 8.8 — "Never Again" infrastructure (UPS + backup + heartbeat)
+# Added 2026-05-26 after the second SD card failure. See:
+#   docs/RUNBOOK_PI_RECOVERY.md
+#   docs/OPERATIONAL_DISCIPLINE.md
+# -----------------------------------------------------------------------------
+
+CURRENT_STEP="Install UPS monitor service (opt-in)"
+echo "Step 8.6: UPS monitor service (NUT) — opt-in only"
+echo "--------------------------------------------------"
+
+# UPS install is OPT-IN. Only runs if /etc/ledmatrix/ups.enable exists.
+# Reason: Eric's current setup is indoor with stable house power — no UPS hardware.
+# If a UPS is ever added, create the opt-in flag and re-run first_time_install.sh
+# or run the installer directly:
+#   sudo touch /etc/ledmatrix/ups.enable
+#   sudo bash scripts/install/install_ups_monitor.sh
+if [ -f /etc/ledmatrix/ups.enable ]; then
+    if [ -f "$PROJECT_ROOT_DIR/scripts/install/install_ups_monitor.sh" ]; then
+        echo "Opt-in flag /etc/ledmatrix/ups.enable found — installing NUT/UPS support..."
+        if bash "$PROJECT_ROOT_DIR/scripts/install/install_ups_monitor.sh"; then
+            echo "✓ UPS monitor service installation completed"
+        else
+            INSTALL_EXIT_CODE=$?
+            echo "⚠ UPS monitor service installation returned exit code $INSTALL_EXIT_CODE"
+        fi
+        systemctl daemon-reload || true
+    else
+        echo "⚠ /etc/ledmatrix/ups.enable exists but install_ups_monitor.sh not found"
+    fi
+else
+    echo "✓ Skipping UPS install (no /etc/ledmatrix/ups.enable opt-in flag)"
+    echo "  If you add a CyberPower UPS later: sudo touch /etc/ledmatrix/ups.enable && sudo bash scripts/install/install_ups_monitor.sh"
+fi
+echo ""
+
+CURRENT_STEP="Install backup service"
+echo "Step 8.7: Installing nightly backup service (Pi → desktop)..."
+echo "-------------------------------------------------------------"
+
+if [ -f "$PROJECT_ROOT_DIR/scripts/install/install_backup.sh" ]; then
+    echo "Installing/updating backup service..."
+    if bash "$PROJECT_ROOT_DIR/scripts/install/install_backup.sh"; then
+        echo "✓ Backup service installation completed"
+    else
+        INSTALL_EXIT_CODE=$?
+        echo "⚠ Backup service installation returned exit code $INSTALL_EXIT_CODE"
+        echo "  Continuing — backup is optional; edit /etc/ledmatrix/backup.env to enable"
+    fi
+
+    if [ -f "/etc/systemd/system/ledmatrix-backup.timer" ]; then
+        chown root:root "/etc/systemd/system/ledmatrix-backup.timer" || true
+        chmod 644 "/etc/systemd/system/ledmatrix-backup.timer" || true
+        chown root:root "/etc/systemd/system/ledmatrix-backup.service" || true
+        chmod 644 "/etc/systemd/system/ledmatrix-backup.service" || true
+        systemctl daemon-reload || true
+    fi
+else
+    echo "⚠ install_backup.sh not found; skipping backup installation"
+    echo "  You can install it later by running: sudo ./scripts/install/install_backup.sh"
+fi
+echo ""
+
+CURRENT_STEP="Install heartbeat service"
+echo "Step 8.8: Installing Telegram heartbeat service..."
+echo "--------------------------------------------------"
+
+if [ -f "$PROJECT_ROOT_DIR/scripts/install/install_heartbeat.sh" ]; then
+    echo "Installing/updating heartbeat service..."
+    if bash "$PROJECT_ROOT_DIR/scripts/install/install_heartbeat.sh"; then
+        echo "✓ Heartbeat service installation completed"
+    else
+        INSTALL_EXIT_CODE=$?
+        echo "⚠ Heartbeat service installation returned exit code $INSTALL_EXIT_CODE"
+        echo "  Continuing — heartbeat is optional; edit /etc/ledmatrix/telegram.env to enable"
+    fi
+
+    if [ -f "/etc/systemd/system/ledmatrix-heartbeat.timer" ]; then
+        chown root:root "/etc/systemd/system/ledmatrix-heartbeat.timer" || true
+        chmod 644 "/etc/systemd/system/ledmatrix-heartbeat.timer" || true
+        chown root:root "/etc/systemd/system/ledmatrix-heartbeat.service" || true
+        chmod 644 "/etc/systemd/system/ledmatrix-heartbeat.service" || true
+        systemctl daemon-reload || true
+    fi
+else
+    echo "⚠ install_heartbeat.sh not found; skipping heartbeat installation"
+    echo "  You can install it later by running: sudo ./scripts/install/install_heartbeat.sh"
+fi
+echo ""
+
 CURRENT_STEP="Configure web interface permissions"
 echo "Step 9: Configuring web interface permissions..."
 echo "------------------------------------------------"

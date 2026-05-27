@@ -86,7 +86,7 @@ class PluginAdapter:
         has_native = hasattr(plugin, 'get_vegas_content')
         logger.info("[%s] Has get_vegas_content: %s", plugin_id, has_native)
         if has_native:
-            content = self._get_native_content(plugin, plugin_id)
+            content, native_reason = self._get_native_content(plugin, plugin_id)
             if content:
                 total_width = sum(img.width for img in content)
                 logger.info(
@@ -95,12 +95,14 @@ class PluginAdapter:
                 )
                 self._cache_content(plugin_id, content)
                 return content
-            logger.info("[%s] Native content returned None", plugin_id)
+            logger.info("[%s] Native content returned None (%s)", plugin_id, native_reason)
+        else:
+            native_reason = "no_native_method"
 
         # Try to get scroll_helper's cached image (for scrolling plugins like stocks/odds)
         has_scroll_helper = hasattr(plugin, 'scroll_helper')
         logger.info("[%s] Has scroll_helper: %s", plugin_id, has_scroll_helper)
-        content = self._get_scroll_helper_content(plugin, plugin_id)
+        content, scroll_reason = self._get_scroll_helper_content(plugin, plugin_id)
         if content:
             total_width = sum(img.width for img in content)
             logger.info(
@@ -110,11 +112,11 @@ class PluginAdapter:
             self._cache_content(plugin_id, content)
             return content
         if has_scroll_helper:
-            logger.info("[%s] ScrollHelper content returned None", plugin_id)
+            logger.info("[%s] ScrollHelper content returned None (%s)", plugin_id, scroll_reason)
 
         # Fall back to display capture
         logger.info("[%s] Trying fallback display capture...", plugin_id)
-        content = self._capture_display_content(plugin, plugin_id)
+        content, capture_reason = self._capture_display_content(plugin, plugin_id)
         if content:
             total_width = sum(img.width for img in content)
             logger.info(
@@ -124,15 +126,17 @@ class PluginAdapter:
             self._cache_content(plugin_id, content)
             return content
 
+        # All three layers returned nothing — name each layer's reason so the
+        # log line is self-diagnosing instead of just "no content".
         logger.warning(
-            "[%s] NO CONTENT from any method (native=%s, scroll_helper=%s, fallback=tried)",
-            plugin_id, has_native, has_scroll_helper
+            "[%s] NO CONTENT — native: %s, scroll_helper: %s, capture: %s",
+            plugin_id, native_reason, scroll_reason, capture_reason
         )
         return None
 
     def _get_native_content(
         self, plugin: 'BasePlugin', plugin_id: str
-    ) -> Optional[List[Image.Image]]:
+    ) -> Tuple[Optional[List[Image.Image]], str]:
         """
         Get content via plugin's native get_vegas_content() method.
 
@@ -141,7 +145,9 @@ class PluginAdapter:
             plugin_id: Plugin identifier
 
         Returns:
-            List of images or None
+            (images, reason) tuple. images is non-None on success; reason is one
+            of: ok | native_returned_none | native_invalid_type |
+            native_no_valid_images | exception:<type>
         """
         try:
             logger.info("[%s] Native: calling get_vegas_content()", plugin_id)
@@ -149,7 +155,7 @@ class PluginAdapter:
 
             if result is None:
                 logger.info("[%s] Native: get_vegas_content() returned None", plugin_id)
-                return None
+                return None, "native_returned_none"
 
             # Normalize to list
             if isinstance(result, Image.Image):
@@ -169,7 +175,7 @@ class PluginAdapter:
                     "[%s] Native: unexpected return type: %s",
                     plugin_id, type(result).__name__
                 )
-                return None
+                return None, "native_invalid_type"
 
             # Validate images
             valid_images = []
@@ -210,21 +216,21 @@ class PluginAdapter:
                     "[%s] Native: SUCCESS - %d images, %dpx total width",
                     plugin_id, len(valid_images), total_width
                 )
-                return valid_images
+                return valid_images, "ok"
 
             logger.info("[%s] Native: no valid images after validation", plugin_id)
-            return None
+            return None, "native_no_valid_images"
 
         except (AttributeError, TypeError, ValueError, OSError) as e:
             logger.exception(
                 "[%s] Native: ERROR calling get_vegas_content(): %s",
                 plugin_id, e
             )
-            return None
+            return None, f"exception:{type(e).__name__}"
 
     def _get_scroll_helper_content(
         self, plugin: 'BasePlugin', plugin_id: str
-    ) -> Optional[List[Image.Image]]:
+    ) -> Tuple[Optional[List[Image.Image]], str]:
         """
         Get content from plugin's scroll_helper if available.
 
@@ -237,14 +243,16 @@ class PluginAdapter:
             plugin_id: Plugin identifier
 
         Returns:
-            List with the cached scroll image, or None if not available
+            (images, reason) tuple. images is non-None on success; reason is one
+            of: ok | no_scroll_helper | cached_image_none | invalid_cached_image |
+            exception:<type>
         """
         try:
             # Check for scroll_helper with cached_image
             scroll_helper = getattr(plugin, 'scroll_helper', None)
             if scroll_helper is None:
                 logger.debug("[%s] No scroll_helper attribute", plugin_id)
-                return None
+                return None, "no_scroll_helper"
 
             logger.info(
                 "[%s] Found scroll_helper: %s",
@@ -262,14 +270,14 @@ class PluginAdapter:
                     plugin, plugin_id, scroll_helper
                 )
                 if cached_image is None:
-                    return None
+                    return None, "cached_image_none"
 
             if not isinstance(cached_image, Image.Image):
                 logger.info(
                     "[%s] scroll_helper.cached_image is not an Image: %s",
                     plugin_id, type(cached_image).__name__
                 )
-                return None
+                return None, "invalid_cached_image"
 
             logger.info(
                 "[%s] scroll_helper.cached_image found: %dx%d, mode=%s",
@@ -300,11 +308,11 @@ class PluginAdapter:
                 plugin_id, img.width, img.height
             )
 
-            return [img]
+            return [img], "ok"
 
-        except (AttributeError, TypeError, ValueError, OSError):
+        except (AttributeError, TypeError, ValueError, OSError) as e:
             logger.exception("[%s] Error getting scroll_helper content", plugin_id)
-            return None
+            return None, f"exception:{type(e).__name__}"
 
     def _trigger_scroll_content_generation(
         self, plugin: 'BasePlugin', plugin_id: str, scroll_helper: Any
@@ -391,7 +399,7 @@ class PluginAdapter:
 
     def _capture_display_content(
         self, plugin: 'BasePlugin', plugin_id: str
-    ) -> Optional[List[Image.Image]]:
+    ) -> Tuple[Optional[List[Image.Image]], str]:
         """
         Capture content by calling plugin.display() and grabbing the frame.
 
@@ -400,7 +408,8 @@ class PluginAdapter:
             plugin_id: Plugin identifier
 
         Returns:
-            List with single captured image, or None
+            (images, reason) tuple. images is non-None on success; reason is one
+            of: ok | display_blank | exception:<type>
         """
         original_image = None
         try:
@@ -470,7 +479,7 @@ class PluginAdapter:
                         plugin_id, bright_ratio * 100,
                         captured.width, captured.height
                     )
-                    return None
+                    return None, "display_blank"
 
             # Convert to RGB if needed
             if captured.mode != 'RGB':
@@ -481,14 +490,14 @@ class PluginAdapter:
                 plugin_id, captured.width, captured.height
             )
 
-            return [captured]
+            return [captured], "ok"
 
         except (AttributeError, TypeError, ValueError, OSError, RuntimeError) as e:
             logger.exception(
                 "[%s] Fallback: ERROR capturing display: %s",
                 plugin_id, e
             )
-            return None
+            return None, f"exception:{type(e).__name__}"
 
         finally:
             # Always restore original image to prevent display corruption

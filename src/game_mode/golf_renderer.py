@@ -5,8 +5,8 @@ Owns the full LED display canvas (unlike the 3-section GameModeRenderer).
 Layout (320×32):
     Row 1 (y 0-7):    Tournament name (gold) ... Round label (gold if in/post=gray)
     Rows 2-4 (y 8-31): Up to 3 player rows, each:
-        [rank]  [name]          [score]  [thru]   [pct]%   [prob bar]
-        col:   2-9   11-95       105-135  140-155  165-185   195-315
+        [rank]  [name]          [score]  [thru]   [pct]%   [prob bar]       [payout]
+        col:   2-9   11-95       105-135  140-155  165-185   195-265         ~-313
 
 Fonts: reuses assets/fonts/PressStart2P-Regular.ttf (8pt) and 4x6-font.ttf (6pt).
 """
@@ -67,7 +67,8 @@ class GolfLeaderboardRenderer:
     COL_THRU_X   = 140    # "F" or "14"
     COL_PCT_X    = 165    # "32%"
     COL_BAR_X    = 195    # probability bar start
-    COL_BAR_END  = 315    # probability bar end (2px right margin)
+    COL_BAR_END  = 265    # probability bar end (shrunk from 315 to leave room for payout)
+    COL_PAYOUT_END = 313  # payout text right edge (2px right margin)
 
     def __init__(self, display_width: int, display_height: int) -> None:
         self.width = display_width
@@ -106,12 +107,18 @@ class GolfLeaderboardRenderer:
 
         self._render_header(draw, data)
 
+        # Favorites view carries double-digit Kalshi ranks (10+), which
+        # collide with the name column that's sized for 1-char ranks.
+        # Hide ranks there — the FAVORITES header tag already signals
+        # these are the next-tier Kalshi plays.
+        show_rank = data.get("header_mode") != "favorites"
+
         # Render up to MAX_ROWS players; remaining rows stay blank.
         for idx in range(self.MAX_ROWS):
             if idx >= len(players):
                 break
             y = self.HEADER_H + idx * self.ROW_H
-            self._render_player_row(draw, y, players[idx])
+            self._render_player_row(draw, y, players[idx], show_rank=show_rank)
 
         return img
 
@@ -124,8 +131,14 @@ class GolfLeaderboardRenderer:
         round_label = (data.get("round_label") or "").upper()
         status_state = data.get("status_state", "in")
 
-        # Separator: "NAME   ROUND · BY ODDS"
-        suffix = f"{round_label} \u00b7 BY ODDS" if round_label else "BY ODDS"
+        # The favorites view (ranks 10-12 sorted by tournament score)
+        # shouldn't read "BY ODDS" — the sort key is score, not odds.
+        header_mode = data.get("header_mode", "odds")
+        suffix_tag = "FAVORITES" if header_mode == "favorites" else "BY ODDS"
+
+        # Separator: double-space between round label and the suffix tag
+        # (4x6-font lacks a glyph for U+00B7 — renders as a tofu box)
+        suffix = f"{round_label}  {suffix_tag}" if round_label else suffix_tag
 
         # Clamp tournament name so "suffix" fits on the right.
         suffix_w = self._text_width(suffix, self._fonts["header"])
@@ -147,7 +160,8 @@ class GolfLeaderboardRenderer:
     # ------------------------------------------------------------------
 
     def _render_player_row(
-        self, draw: ImageDraw.Draw, y: int, player: Dict[str, Any]
+        self, draw: ImageDraw.Draw, y: int, player: Dict[str, Any],
+        show_rank: bool = True,
     ) -> None:
         rank = str(player.get("rank_by_odds", ""))
         name = str(player.get("display_name", ""))
@@ -160,8 +174,10 @@ class GolfLeaderboardRenderer:
         row_font = self._fonts["row"]
         small_font = self._fonts["small"]
 
-        # Rank
-        draw.text((self.COL_RANK_X, y), rank, fill=COLOR_WHITE, font=row_font)
+        # Rank (skipped on favorites view — double-digit ranks 10+
+        # would collide with the name column).
+        if show_rank:
+            draw.text((self.COL_RANK_X, y), rank, fill=COLOR_WHITE, font=row_font)
         # Name (PressStart2P is ~8px wide; fits ~10 chars in 85px)
         draw.text((self.COL_NAME_X, y), name[:10], fill=COLOR_WHITE, font=row_font)
         # Score
@@ -174,6 +190,19 @@ class GolfLeaderboardRenderer:
         draw.text((self.COL_PCT_X, y), pct_text, fill=COLOR_GOLD, font=row_font)
         # Probability bar
         self._render_prob_bar(draw, y, pct)
+        # Kalshi payout multiple ($1 ticket payout, capped at 99x for clean column)
+        if pct > 0:
+            payout_int = min(99, max(1, int(round(100 / pct))))
+        else:
+            payout_int = 99
+        payout_text = f"{payout_int}x"
+        payout_w = self._text_width(payout_text, row_font)
+        draw.text(
+            (self.COL_PAYOUT_END - payout_w, y),
+            payout_text,
+            fill=COLOR_GOLD,
+            font=row_font,
+        )
 
     def _render_prob_bar(self, draw: ImageDraw.Draw, y: int, pct: int) -> None:
         """Draw a horizontal bar 0-50% mapped to 0-100% of bar width.

@@ -134,5 +134,17 @@
     "web-ui-info": {
         "enabled": true,
         "display_duration": 10
+    },
+    "ufc-scoreboard": {
+        "enabled": true,
+        "show_in_ticker": false,
+        "card_scope": "full",
+        "fight_window_hours": 24,
+        "update_interval": 60,
+        "live_update_interval": 20,
+        "post_fight_hold_seconds": 30,
+        "pre_cycle_interval_seconds": 8,
+        "display_timezone": "America/Chicago",
+        "favorite_fighters": []
     }
 }
