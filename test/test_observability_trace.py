@@ -210,6 +210,128 @@ def test_jsonl_rotation_keeps_only_3_old_files(tmp_path, monkeypatch):
     assert (base.parent / "events.jsonl.3").read_text(encoding="utf-8") == "seed_2"
 
 
+def test_get_recent_events_include_disk_reads_jsonl(tmp_path, monkeypatch):
+    """include_disk=True surfaces events written to events.jsonl from another
+    process (the display controller writes its config_reload/vegas_swap/etc
+    events to the shared on-disk JSONL; the Flask process's in-memory deque
+    only has its own api-layer events). Without include_disk the Phase D
+    /diagnostics/trace endpoint could only see half the chain.
+    """
+    monkeypatch.setenv("LEDMATRIX_CACHE_DIR", str(tmp_path))
+    trace_module._reset_for_testing()
+
+    # Simulate "another process" by writing events directly to events.jsonl.
+    # These events never touched this process's in-memory deque.
+    trace_dir = tmp_path / "trace"
+    trace_dir.mkdir(parents=True, exist_ok=True)
+    jsonl_path = trace_dir / "events.jsonl"
+    other_proc_events = [
+        {"ts": 1000.0, "trace_id": "aaaa111122223333", "layer": "config_reload", "event": "start"},
+        {"ts": 1000.1, "trace_id": "aaaa111122223333", "layer": "config_reload", "event": "ok"},
+        {"ts": 1000.2, "trace_id": "aaaa111122223333", "layer": "vegas_swap", "event": "rebuild"},
+    ]
+    with open(jsonl_path, "w", encoding="utf-8") as f:
+        for e in other_proc_events:
+            f.write(json.dumps(e) + "\n")
+
+    # Default behavior: in-memory only, sees nothing from disk
+    events_no_disk = get_recent_events()
+    assert len(events_no_disk) == 0, "without include_disk, should see no events"
+
+    # include_disk=True surfaces the cross-process events
+    events_with_disk = get_recent_events(include_disk=True)
+    layers = {e["layer"] for e in events_with_disk}
+    assert "config_reload" in layers
+    assert "vegas_swap" in layers
+    trace_ids = {e["trace_id"] for e in events_with_disk}
+    assert "aaaa111122223333" in trace_ids
+
+
+def test_get_recent_events_include_disk_dedupes_against_in_memory(tmp_path, monkeypatch):
+    """When the same event appears in both in-memory and on disk (which is
+    the normal case for events emitted from THIS process), include_disk
+    should not return duplicates.
+    """
+    monkeypatch.setenv("LEDMATRIX_CACHE_DIR", str(tmp_path))
+    trace_module._reset_for_testing()
+
+    # Emit one event — this writes to both the in-memory deque AND disk
+    tid = new_trace("api", "dedupe_test")
+    trace_event("fetch", "ok", plugin_id="xyz")
+
+    in_memory = get_recent_events()
+    assert len(in_memory) == 2  # request_start + fetch
+
+    with_disk = get_recent_events(include_disk=True)
+    # Should still be 2, not 4. The events from disk match the in-memory ones.
+    assert len(with_disk) == 2
+    layers = sorted(e["layer"] for e in with_disk)
+    assert layers == ["api", "fetch"]
+
+
+def test_get_recent_events_include_disk_filters_apply(tmp_path, monkeypatch):
+    """trace_id and layer filters apply uniformly across in-memory + disk."""
+    monkeypatch.setenv("LEDMATRIX_CACHE_DIR", str(tmp_path))
+    trace_module._reset_for_testing()
+
+    trace_dir = tmp_path / "trace"
+    trace_dir.mkdir(parents=True, exist_ok=True)
+    jsonl_path = trace_dir / "events.jsonl"
+    with open(jsonl_path, "w", encoding="utf-8") as f:
+        f.write(json.dumps({"ts": 1, "trace_id": "TID_A", "layer": "config_reload", "event": "start"}) + "\n")
+        f.write(json.dumps({"ts": 2, "trace_id": "TID_B", "layer": "vegas_swap", "event": "rebuild"}) + "\n")
+
+    only_a = get_recent_events(trace_id="TID_A", include_disk=True)
+    assert len(only_a) == 1
+    assert only_a[0]["trace_id"] == "TID_A"
+
+    only_vegas = get_recent_events(layer="vegas_swap", include_disk=True)
+    assert len(only_vegas) == 1
+    assert only_vegas[0]["layer"] == "vegas_swap"
+
+
+def test_get_recent_events_include_disk_no_file(tmp_path, monkeypatch):
+    """include_disk gracefully handles missing JSONL file."""
+    monkeypatch.setenv("LEDMATRIX_CACHE_DIR", str(tmp_path))
+    trace_module._reset_for_testing()
+
+    # No events anywhere
+    events = get_recent_events(include_disk=True)
+    assert events == []
+
+    # Emit one in-memory only — disk file doesn't exist yet on first read
+    new_trace("api", "x")
+    # After emit, the file should exist (trace_event writes to disk). But test
+    # the "no file" path by clearing the path resolution state and removing.
+    # We're not actually exercising the missing-file path here since trace_event
+    # already created it; this test guards that the code doesn't crash if
+    # JSONL is missing.
+    events = get_recent_events(include_disk=True)
+    assert len(events) >= 1
+
+
+def test_get_recent_events_include_disk_skips_bad_json(tmp_path, monkeypatch):
+    """Corrupted or truncated lines in events.jsonl are silently skipped."""
+    monkeypatch.setenv("LEDMATRIX_CACHE_DIR", str(tmp_path))
+    trace_module._reset_for_testing()
+
+    trace_dir = tmp_path / "trace"
+    trace_dir.mkdir(parents=True, exist_ok=True)
+    jsonl_path = trace_dir / "events.jsonl"
+    with open(jsonl_path, "w", encoding="utf-8") as f:
+        f.write('{"ts": 1.0, "trace_id": "good", "layer": "api", "event": "request_start"}\n')
+        f.write('this is not json at all\n')
+        f.write('{"ts": 2.0, "trace_id": "also_good", "layer": "fetch", "event": "ok"}\n')
+        f.write('{"ts": 3.0, "trace_id": "tru\n')  # truncated mid-line
+
+    events = get_recent_events(include_disk=True)
+    # Both well-formed events present; bad ones skipped
+    trace_ids = {e["trace_id"] for e in events}
+    assert "good" in trace_ids
+    assert "also_good" in trace_ids
+    assert len(events) == 2
+
+
 def test_deque_ringbuffer_caps_at_5000():
     """The in-memory ring buffer drops oldest entries past 5000."""
     new_trace("api", "ringtest")

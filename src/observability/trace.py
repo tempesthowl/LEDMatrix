@@ -64,10 +64,87 @@ _recent_events: Deque[Dict[str, Any]] = deque(maxlen=5000)
 _recent_events_lock = threading.Lock()
 
 
+def _read_disk_events_tail(limit: int) -> List[Dict[str, Any]]:
+    """Read up to `limit` most-recent events from the on-disk JSONL log.
+
+    The JSONL is the union of events from EVERY process sharing
+    LEDMATRIX_CACHE_DIR — Flask web UI + display controller both append
+    here. The in-memory deque is per-process, so without disk-tail we'd
+    only ever see half the chain from any given /diagnostics/trace call.
+
+    Tolerates: missing files, malformed JSON lines, truncated lines,
+    file rotation mid-read. Best-effort — never raises.
+
+    Args:
+        limit: max events to return (chronological order preserved)
+    """
+    path = _resolve_jsonl_path()
+    if path is None:
+        return []
+
+    events: List[Dict[str, Any]] = []
+    # Read current file first (newer events)
+    if path.exists():
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        events.append(json.loads(line))
+                    except (json.JSONDecodeError, ValueError):
+                        # Truncated mid-line or hand-written garbage — skip
+                        continue
+        except OSError:
+            pass
+
+    # If we want older events than current file holds, pull from .1 too.
+    # Each rotation file is up to ~1 MB (~4000 events at ~250 bytes), so
+    # one extra file is usually plenty.
+    if len(events) < limit:
+        prev_path = path.with_suffix(path.suffix + ".1")
+        if prev_path.exists():
+            older: List[Dict[str, Any]] = []
+            try:
+                with open(prev_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            older.append(json.loads(line))
+                        except (json.JSONDecodeError, ValueError):
+                            continue
+            except OSError:
+                pass
+            events = older + events
+
+    return events[-limit:]
+
+
+def _event_dedupe_key(event: Dict[str, Any]) -> tuple:
+    """Composite key used to dedupe in-memory events against disk-tail.
+
+    JSON round-trip of float64 is supposed to be lossless in CPython, but
+    rounding to microsecond precision belt-and-suspenders against any
+    serialization drift. The 4-tuple uniquely identifies an event from
+    the same emitter at the same instant on the same layer with the same
+    event name — collisions across distinct events are negligible.
+    """
+    ts = event.get("ts", 0.0)
+    try:
+        ts_round = round(float(ts), 6)
+    except (TypeError, ValueError):
+        ts_round = ts
+    return (ts_round, event.get("trace_id"), event.get("layer"), event.get("event"))
+
+
 def get_recent_events(
     trace_id: Optional[str] = None,
     layer: Optional[str] = None,
     limit: int = 100,
+    include_disk: bool = False,
 ) -> List[Dict[str, Any]]:
     """Return the most recent events from the in-memory ring buffer.
 
@@ -75,9 +152,45 @@ def get_recent_events(
         trace_id: filter to a specific trace
         layer: filter to a specific layer (api/config_reload/vegas_swap/fetch/compose/render/frame_commit)
         limit: max events to return (most-recent-first ordering preserved)
+        include_disk: also merge in events from the on-disk JSONL so
+            cross-process traces are visible. Defaults False to preserve
+            existing single-process callers' behavior. Phase D's
+            /diagnostics/trace endpoint should pass True — without it,
+            the endpoint only sees events from the Flask process and
+            misses everything emitted by the display controller (a
+            separate process).
     """
     with _recent_events_lock:
         snapshot = list(_recent_events)
+
+    if include_disk:
+        # Pull a generous read so post-dedupe we still have enough events
+        # to honour the requested limit when many events are shared
+        # between in-memory and disk.
+        disk_events = _read_disk_events_tail(max(limit * 2, 200))
+        # Dedupe: events from THIS process appear in both sources. Disk
+        # comes first so its (chronologically older or equal) entries
+        # populate the seen-set; any in-memory entry with the same key
+        # is treated as a duplicate.
+        seen: set = set()
+        merged: List[Dict[str, Any]] = []
+        for ev in disk_events:
+            key = _event_dedupe_key(ev)
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(ev)
+        for ev in snapshot:
+            key = _event_dedupe_key(ev)
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(ev)
+        # Re-sort by ts so disk + in-memory interleave correctly when
+        # they overlap in time (e.g. display controller emits at ts=10.0
+        # while Flask process emits at ts=10.05).
+        merged.sort(key=lambda e: e.get("ts", 0.0))
+        snapshot = merged
 
     if trace_id is not None:
         snapshot = [e for e in snapshot if e.get("trace_id") == trace_id]

@@ -1650,11 +1650,14 @@ def get_display_current():
 def get_diagnostics_trace():
     """Phase D: return recent trace events grouped by trace_id.
 
-    Reads from the in-memory deque in src.observability.trace so the response
-    is O(events) without disk I/O.  Groups events into "traces" (one per
-    unique trace_id), sorts most-recent-first, and optionally attaches the
-    snapshot PNG when its meta sidecar trace_id matches the trace's most
-    recent frame_commit.
+    Reads from the in-memory deque in src.observability.trace AND tails the
+    on-disk events.jsonl so cross-process traces (Flask + display controller)
+    are visible in a single response. Without the disk-tail merge, this
+    endpoint only saw events from the Flask process (api layer), masking
+    every config_reload / vegas_swap / frame_commit emitted by the display
+    controller. Disk-tail adds ~10-50ms of I/O per request for a 1 MB cap,
+    which is acceptable for a diagnostic endpoint that's polled at most
+    once every few seconds.
 
     Query params:
         trace_id:   filter to a specific trace
@@ -1682,7 +1685,10 @@ def get_diagnostics_trace():
         # Pull a generous chunk so we have enough to group into "limit" traces.
         # Each trace usually has 4-10 events, so 200 events ~= 20-50 traces.
         # If the user explicitly asked for one trace_id, narrow the read.
-        events = get_recent_events(trace_id=filter_trace_id, limit=2000)
+        # include_disk=True merges in events written by the display controller
+        # process (its in-memory deque is invisible to us; the shared on-disk
+        # events.jsonl is the only cross-process source).
+        events = get_recent_events(trace_id=filter_trace_id, limit=2000, include_disk=True)
 
         # Group events by trace_id (None bucket reserved for untraced events).
         groups: Dict[Optional[str], list] = {}
