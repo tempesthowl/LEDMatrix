@@ -200,6 +200,12 @@ class DisplayController:
             # waiting for the scroll-cycle natural-end (could be 30s+).
             try:
                 self._config_reload_event.set()
+                # 2026-05-28 Phase 1b: timestamp when the file-watcher
+                # thread armed the break-event. Paired with the render
+                # loop's loop_break trace, this gives us "how long after
+                # the event was set did the loop notice." Suspected
+                # ~8.6s gap on the Pi per pre-instrumentation trace.
+                trace_event("config_reload", "event_signaled")
             except Exception:
                 logger.exception("config_reload_event.set failed")
             # Phase B: emit close-out event for the trace chain.  The
@@ -3260,6 +3266,7 @@ class DisplayController:
                                 if self._config_reload_event.is_set():
                                     self._config_reload_event.clear()
                                     logger.info("Config reload signaled during high-FPS loop, breaking early")
+                                    trace_event("render", "loop_break", phase="high_fps", active_mode=active_mode)
                                     break
 
                                 # Check for live priority every ~30s so live
@@ -3361,6 +3368,7 @@ class DisplayController:
                                 if self._config_reload_event.is_set():
                                     self._config_reload_event.clear()
                                     logger.info("Config reload signaled during display loop, breaking early")
+                                    trace_event("render", "loop_break", phase="normal_fps", active_mode=active_mode)
                                     break
 
                                 # Check for live priority every ~30s so live

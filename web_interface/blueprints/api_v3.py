@@ -2513,6 +2513,11 @@ def toggle_plugins_batch():
             return jsonify({'status': 'error', 'message': 'changes (non-empty list) required'}), 400
 
         config = api_v3.config_manager.load_config()
+        # 2026-05-28 Phase 1b: granular sub-step trace events so we can
+        # see which step in this handler eats the user-perceived seconds.
+        # On the Pi (SD card I/O), config_manager.load_config() is the
+        # likely suspect.
+        trace_event("api", "step", step="config_loaded")
         applied = []
         errors = []
         # Workstream A3: track which toggles actually flipped from their
@@ -2575,6 +2580,7 @@ def toggle_plugins_batch():
                 'plugins': [item['plugin_id'] for item in applied],
                 'ts': time.time(),
             })
+            trace_event("api", "step", step="cache_ipc_published")
         except Exception:
             logger.exception("[PluginToggleBatch] Failed to publish config_trace sidecar")
 
@@ -2589,6 +2595,7 @@ def toggle_plugins_batch():
                 )
         else:
             api_v3.config_manager.save_config(config)
+        trace_event("api", "step", step="config_saved")
 
         # Reflect changes in loaded plugin state and fire lifecycle hooks where
         # the plugin is currently loaded in-process. The display controller's
@@ -2620,6 +2627,7 @@ def toggle_plugins_batch():
                     )
                 except Exception:
                     pass
+        trace_event("api", "step", step="lifecycle_done")
 
         return jsonify({
             'status': 'success',
