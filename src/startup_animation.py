@@ -133,8 +133,10 @@ class StartupAnimation:
             x += char_width
 
     _logo_cache: dict = {}
+    _sized_logo_cache: dict = {}
 
     def _load_logo(self, path):
+        """Load a logo at the default LOGO_SIZE (used by SEQUENCE rows)."""
         if not path:
             return None
         if path in self._logo_cache:
@@ -147,6 +149,27 @@ class StartupAnimation:
             logger.debug("startup logo load failed for %s: %s", path, e)
             img = None
         self._logo_cache[path] = img
+        return img
+
+    def _load_logo_at_size(self, path, size):
+        """Load source PNG and resize ONCE to target size.
+
+        Avoids the quality loss from going source → cached-12px → upscaled-20px.
+        Used by the loading-bar phase where larger sizes need sharp logos.
+        """
+        if not path:
+            return None
+        cache_key = (path, size)
+        if cache_key in self._sized_logo_cache:
+            return self._sized_logo_cache[cache_key]
+        abs_path = path if os.path.isabs(path) else os.path.abspath(path)
+        try:
+            img = Image.open(abs_path).convert("RGBA")
+            img = img.resize((size, size), Image.LANCZOS)
+        except Exception as e:
+            logger.debug("sized logo load failed for %s @ %d: %s", path, size, e)
+            img = None
+        self._sized_logo_cache[cache_key] = img
         return img
 
     def _show_logo_row(self, items):
@@ -210,7 +233,7 @@ class StartupAnimation:
     _BAR_FRAME_DELAY = 0.04    # seconds per frame (~25 fps)
     _BAR_MAX_WAIT = 120.0      # safety: give up waiting after this many seconds
 
-    _LOADING_LOGO_SIZE = 20
+    _LOADING_LOGO_SIZE = 14
     _LOADING_LOGO_GAP = 3
 
     def _collect_boot_logos(self):
@@ -239,18 +262,16 @@ class StartupAnimation:
         logo_gap = self._LOADING_LOGO_GAP
         logos = []
         for p in self._collect_boot_logos():
-            img = self._load_logo(p)
+            # Resize ONCE from source PNG to target size — no upscale-from-cache
+            img = self._load_logo_at_size(p, logo_size)
             if img is not None:
-                img = img.resize((logo_size, logo_size), Image.LANCZOS)
                 logos.append(img)
 
-        # Split logos in half: left group anchored to the left edge, right group
-        # anchored to the right edge. Odd count → extra logo goes on the right.
-        half = len(logos) // 2
-        left_logos = logos[:half]
-        right_logos = logos[half:]
+        # Centered cluster: all logos sit together in the middle of the display.
+        n = len(logos)
+        cluster_width = n * logo_size + max(0, (n - 1)) * logo_gap
+        x_start = max(0, (self.width - cluster_width) // 2)
 
-        edge_pad = 2
         logo_y = (self.height - logo_size) // 2 - 3  # nudge up to leave bar room
 
         bar_height = 3
@@ -261,16 +282,10 @@ class StartupAnimation:
 
         def _draw_bar(progress):
             self.dm.clear()
-            # left group: left-to-right from edge_pad
-            x = edge_pad
-            for img in left_logos:
+            x = x_start
+            for img in logos:
                 self.dm.image.paste(img, (x, logo_y), img.split()[3])
                 x += logo_size + logo_gap
-            # right group: right-to-left from right edge
-            x = self.width - edge_pad - logo_size
-            for img in reversed(right_logos):
-                self.dm.image.paste(img, (x, logo_y), img.split()[3])
-                x -= logo_size + logo_gap
 
             self.dm.draw.rectangle(
                 [bar_x, y_bar, bar_x + bar_width - 1, y_bar + bar_height - 1],
