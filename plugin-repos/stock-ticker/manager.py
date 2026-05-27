@@ -125,6 +125,11 @@ class StockTickerPlugin(BasePlugin):
         # State
         self.tickers_data: List[Dict] = []
         self.ticker_image: Optional[Image.Image] = None
+        # Per-tile cache for Vegas mode. Invalidated explicitly by update() and
+        # on_config_change(). NOT cleared by scroll_helper.clear_cache() — the
+        # whole point is to survive the coordinator's config-change flushes.
+        self._cached_vegas_tiles: Optional[List[Image.Image]] = None
+        self._cached_vegas_key: Optional[Tuple] = None
         self.last_update: float = 0
         self.dynamic_duration: float = 60
         self._update_lock = threading.Lock()
@@ -673,25 +678,55 @@ class StockTickerPlugin(BasePlugin):
     def on_config_change(self, new_config: Dict[str, Any]) -> None:
         """Apply hot config changes without a service restart.
 
-        Currently picks up `scroll_speed` from `display_options.scroll_speed`
-        or top-level `scroll_speed`, re-applies it to the scroll helper so
-        the speed change is immediately visible on the panels.
+        Two effects:
+        - `scroll_speed` is reapplied to the scroll helper immediately.
+        - Changes to the ticker lists (`stocks`/`crypto`/`forex`) or display
+          flags (`show_chart`/`show_logo`) invalidate the per-tile Vegas cache
+          so the next get_vegas_content() rebuilds tiles with the new state.
         """
         super().on_config_change(new_config)
 
         cfg = new_config or {}
-        display_opts = cfg.get("display_options", {}) if isinstance(cfg, dict) else {}
-        new_speed = display_opts.get("scroll_speed", cfg.get("scroll_speed", self.scroll_speed))
+        if not isinstance(cfg, dict):
+            return
+
+        # --- scroll_speed (immediate effect on scroll helper) ---
+        display_opts = cfg.get("display_options", {}) or {}
         try:
-            new_speed = float(new_speed)
+            new_speed = float(display_opts.get("scroll_speed", cfg.get("scroll_speed", self.scroll_speed)))
+            if abs(new_speed - float(self.scroll_speed)) >= 1e-6:
+                self.scroll_speed = new_speed
+                if self.scroll_helper and hasattr(self.scroll_helper, "set_scroll_speed"):
+                    self.scroll_helper.set_scroll_speed(new_speed)
+                self.logger.info("scroll_speed updated to %.2f via on_config_change", new_speed)
         except (TypeError, ValueError):
-            return
-        if abs(new_speed - float(self.scroll_speed)) < 1e-6:
-            return
-        self.scroll_speed = new_speed
-        if self.scroll_helper and hasattr(self.scroll_helper, "set_scroll_speed"):
-            self.scroll_helper.set_scroll_speed(new_speed)
-        self.logger.info("scroll_speed updated to %.2f via on_config_change", new_speed)
+            pass
+
+        # --- ticker_list / display-flag changes (invalidate Vegas cache) ---
+        new_stocks = [s.upper() for s in cfg.get("stocks", self.stock_symbols)]
+        new_crypto = [s.upper() for s in cfg.get("crypto", self.crypto_symbols)]
+        new_forex = [s.upper() for s in cfg.get("forex", self.forex_symbols)]
+        new_show_chart = bool(cfg.get("show_chart", self.show_chart))
+        new_show_logo = bool(cfg.get("show_logo", self.show_logo))
+
+        changed = (
+            new_stocks != self.stock_symbols
+            or new_crypto != self.crypto_symbols
+            or new_forex != self.forex_symbols
+            or new_show_chart != self.show_chart
+            or new_show_logo != self.show_logo
+        )
+        if changed:
+            # watchlist_file path always wins — file source overrides UI symbol edits.
+            if not self.watchlist_file:
+                self.stock_symbols = new_stocks
+                self.crypto_symbols = new_crypto
+                self.forex_symbols = new_forex
+            self.show_chart = new_show_chart
+            self.show_logo = new_show_logo
+            self._cached_vegas_tiles = None
+            self._cached_vegas_key = None
+            self.logger.info("Vegas tile cache invalidated via on_config_change")
 
     def update(self) -> None:
         # Hot-reload the symbol list when the watchlist file changes on disk.
@@ -702,6 +737,8 @@ class StockTickerPlugin(BasePlugin):
                 self.cache_manager.clear_cache(_CHART_CACHE_KEY)
             except Exception:
                 pass
+            self._cached_vegas_tiles = None
+            self._cached_vegas_key = None
             self.last_update = 0  # force immediate re-fetch below
 
         current_time = time.time()
@@ -714,6 +751,8 @@ class StockTickerPlugin(BasePlugin):
                 tickers = self._fetch_all_tickers()
                 self.tickers_data = tickers
                 self._build_ticker_image()
+                self._cached_vegas_tiles = None
+                self._cached_vegas_key = None
                 self.logger.info("Updated: %d tickers loaded", len(self.tickers_data))
             except Exception as e:
                 self.logger.error("Update error: %s", e, exc_info=True)
@@ -807,9 +846,30 @@ class StockTickerPlugin(BasePlugin):
     # ------------------------------------------------------------------
 
     def get_vegas_content(self):
-        if not self.tickers_data:
+        # Snapshot reads into locals first — update() runs on a separate thread
+        # and may swap tickers_data / invalidate the cache mid-call. The worst
+        # case here is returning one rotation of slightly-stale tiles, which is
+        # already what the 5-min update_interval permits.
+        tickers = self.tickers_data
+        if not tickers:
             return None
-        return [self._create_ticker_tile(t) for t in self.tickers_data] or None
+        cached_tiles = self._cached_vegas_tiles
+        cached_key = self._cached_vegas_key
+        key = (
+            tuple(self.stock_symbols),
+            tuple(self.crypto_symbols),
+            tuple(self.forex_symbols),
+            bool(self.show_chart),
+            bool(self.show_logo),
+        )
+        if cached_tiles is not None and cached_key == key:
+            return cached_tiles
+        tiles = [self._create_ticker_tile(t) for t in tickers]
+        if not tiles:
+            return None
+        self._cached_vegas_tiles = tiles
+        self._cached_vegas_key = key
+        return tiles
 
     def get_vegas_content_type(self) -> str:
         return "multi"
@@ -830,6 +890,8 @@ class StockTickerPlugin(BasePlugin):
     def cleanup(self) -> None:
         self.tickers_data = []
         self.ticker_image = None
+        self._cached_vegas_tiles = None
+        self._cached_vegas_key = None
         self._icon_cache.clear()
         if self.scroll_helper:
             self.scroll_helper.clear_cache()
