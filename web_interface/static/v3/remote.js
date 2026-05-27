@@ -83,7 +83,25 @@
     // EXCEPT the PGA one; 'golf' = on-demand pinned to pga-tour-leaderboard.
     let activeMode = 'ticker';
 
+    // 2026-05-28: optimistic-mode lock. When the user taps Ticker/Game,
+    // we flip activeMode immediately for snappy UI. But refreshMode polls
+    // the server and overwrites activeMode from authoritative state —
+    // during the transition window the server hasn't fully flipped yet,
+    // so the UI flickers (Game → Ticker → Game) before settling. This
+    // timestamp lets refreshMode skip its overwrite while a recent
+    // user-initiated mode change is still propagating.
+    let _modeChangeLockUntilTs = 0;
+    const _MODE_CHANGE_LOCK_MS = 3000;  // give the chain 3s to settle
+
     async function refreshMode() {
+        // 2026-05-28: honour the optimistic-mode lock. If the user just
+        // tapped Ticker/Game, the server's on-demand status + game_mode_active
+        // flags will lag behind the request by a couple of seconds. Without
+        // this guard, the next refreshMode poll snaps activeMode back to
+        // whatever the server still thinks is true, then the poll after
+        // that snaps it forward again — visible as button flicker.
+        const lockActive = Date.now() < _modeChangeLockUntilTs;
+
         try {
             // Primary signal: on-demand status knows the exact plugin.
             let pluginId = null;
@@ -95,13 +113,19 @@
                 pluginId = st.plugin_id || null;
             } catch (_) { /* optional */ }
 
-            if (onDemandActive && pluginId === 'pga-tour-leaderboard') {
-                activeMode = 'golf';
-            } else {
-                const data = await api('/games/live');
-                const gameModeActive = !!data?.data?.game_mode_active;
-                activeMode = gameModeActive ? 'game' : 'ticker';
+            if (!lockActive) {
+                if (onDemandActive && pluginId === 'pga-tour-leaderboard') {
+                    activeMode = 'golf';
+                } else {
+                    const data = await api('/games/live');
+                    const gameModeActive = !!data?.data?.game_mode_active;
+                    activeMode = gameModeActive ? 'game' : 'ticker';
+                }
             }
+            // If lock is active: do NOT mutate activeMode here. The optimistic
+            // value set by setMode() / _setModeUIOptimistic() stands until the
+            // lock expires. Still fetch the endpoints above so other zones
+            // (Live Games list, Now Showing card) get fresh data.
         } catch (_) { /* leave last value */ }
 
         document.getElementById('btn-ticker').setAttribute('aria-pressed', (activeMode === 'ticker').toString());
@@ -141,6 +165,10 @@
     // next poll cycle will correct the UI from authoritative server state.
     function _setModeUIOptimistic(mode) {
         activeMode = mode;
+        // Arm the lock so refreshMode() doesn't snap activeMode back to
+        // server-truth while the request is still propagating to the
+        // display controller (on-demand state takes 1-2s to settle).
+        _modeChangeLockUntilTs = Date.now() + _MODE_CHANGE_LOCK_MS;
         const tBtn = document.getElementById('btn-ticker');
         const gBtn = document.getElementById('btn-game');
         const golfBtn = document.getElementById('btn-golf');
