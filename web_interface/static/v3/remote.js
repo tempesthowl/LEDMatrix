@@ -133,16 +133,34 @@
         return { ok: null, state: null };
     }
 
+    // 2026-05-28: optimistic UI for mode buttons. Previously the button
+    // aria-pressed state only updated AFTER refreshAll() finished polling
+    // 9 endpoints, so tapping Game showed a half-second+ where neither
+    // button looked active. Now we flip activeMode + aria-pressed inline
+    // BEFORE the API call. If the request fails, refreshMode() on the
+    // next poll cycle will correct the UI from authoritative server state.
+    function _setModeUIOptimistic(mode) {
+        activeMode = mode;
+        const tBtn = document.getElementById('btn-ticker');
+        const gBtn = document.getElementById('btn-game');
+        const golfBtn = document.getElementById('btn-golf');
+        if (tBtn) tBtn.setAttribute('aria-pressed', (mode === 'ticker').toString());
+        if (gBtn) gBtn.setAttribute('aria-pressed', (mode === 'game').toString());
+        if (golfBtn) golfBtn.setAttribute('aria-pressed', (mode === 'golf').toString());
+    }
+
     window.setMode = async function (mode) {
         try {
             if (mode === 'ticker') {
-                await api('/display/on-demand/stop', { method: 'POST' });
+                _setModeUIOptimistic('ticker');
                 showToast('Switching to ticker…');
-                activeMode = 'ticker';
+                await api('/display/on-demand/stop', { method: 'POST' });
                 await refreshAll();
                 return;
             }
             if (mode === 'game') {
+                _setModeUIOptimistic('game');
+                showToast('Switching to game mode…');
                 // Send game_focus WITHOUT a pre-selected plugin/game. The display
                 // will render the "Select a game" placeholder if no favorite is
                 // live, or auto-focus a favorite that is live. User taps a
@@ -151,20 +169,19 @@
                     method: 'POST',
                     body: { mode: 'game_focus', start_service: false }
                 });
-                showToast('Switching to game mode…');
 
                 const outcome = await awaitOnDemandOutcome();
                 if (outcome.ok === false) {
                     const reason = outcome.state?.error || 'unknown';
                     showToast(`Game mode failed (${reason})`, 4000);
-                    activeMode = 'ticker';
-                } else {
-                    activeMode = 'game';
+                    _setModeUIOptimistic('ticker');  // revert
                 }
                 await refreshAll();
                 return;
             }
             if (mode === 'golf') {
+                _setModeUIOptimistic('golf');
+                showToast('Switching to golf mode…');
                 // Pass a sentinel game_id so the display controller pins
                 // on_demand_modes to ['game_focus'] only — without it, the
                 // controller rotates between game_focus and pga_leaderboard,
@@ -180,14 +197,11 @@
                         start_service: false
                     }
                 });
-                showToast('Switching to golf mode…');
                 const outcome = await awaitOnDemandOutcome();
                 if (outcome.ok === false) {
                     const reason = outcome.state?.error || 'no Kalshi markets';
                     showToast(`Golf mode unavailable (${reason})`, 4000);
-                    activeMode = 'ticker';
-                } else {
-                    activeMode = 'golf';
+                    _setModeUIOptimistic('ticker');  // revert
                 }
                 await refreshAll();
                 return;
