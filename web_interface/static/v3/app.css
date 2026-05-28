@@ -1617,26 +1617,29 @@ input[type="range"].remote-range { width: 100%; height: 44px; }
    a section across columns. `column-span: all` keeps the header full-width. */
 @media (min-width: 1024px) {
     .remote-body {
-        max-width: 1100px;
-        padding: var(--space-5) var(--space-4);
+        max-width: 1200px;
+        padding: var(--space-6) var(--space-4);
         column-count: 2;
-        column-gap: var(--space-4);
+        column-gap: var(--space-6);
         column-fill: balance;
     }
     .remote-header {
         column-span: all;
-        margin-bottom: var(--space-5);
+        margin-bottom: var(--space-6);
+        padding-bottom: 0;
+        border: none;
     }
     .remote-section {
         break-inside: avoid;
-        /* Section margin still controls inter-section spacing within a column. */
+        margin-bottom: var(--space-6);
     }
 }
 
 @media (min-width: 1440px) {
     .remote-body {
-        max-width: 1400px;
+        max-width: 1500px;
         column-count: 3;
+        column-gap: var(--space-6);
     }
 }
 
