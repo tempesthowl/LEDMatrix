@@ -1295,6 +1295,47 @@ input[type="range"].remote-range { width: 100%; height: 44px; }
 .pending-apply:disabled { opacity: .6; cursor: wait; }
 .remote-body.has-pending { padding-bottom: 80px; }
 
+/* Pi Health — compact 2-col metric grid. Each metric has a small uppercase
+   label + a tabular-numeric value. Thresholds (.warn / .crit / .ok) are
+   applied dynamically by refreshPiHealth() in remote.js based on CPU temp,
+   memory %, disk %, service_active. */
+.health-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-3) var(--space-4);
+}
+.health-metric {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.health-metric-full { grid-column: 1 / -1; }
+.health-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--color-text-tertiary);
+    font-weight: var(--font-weight-semibold);
+}
+.health-value {
+    font-size: 18px;
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-primary);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+}
+.health-value-sub {
+    display: block;
+    font-size: 11px;
+    font-weight: var(--font-weight-regular);
+    color: var(--color-text-tertiary);
+    margin-top: 2px;
+}
+.health-value.warn { color: var(--color-warning); }
+.health-value.crit { color: var(--color-error); }
+.health-value.ok   { color: var(--color-success); }
+
 .select-toolbar {
     display: flex;
     justify-content: flex-end;

@@ -791,6 +791,90 @@
         pollTimer = null;
     }
 
+    // --- Zone: Pi Health (independent 10s poll — the backend caches at 10s
+    //     anyway, and these metrics don't change rapidly). ---
+    const HEALTH_POLL_MS = 10000;
+    let healthTimer = null;
+
+    function setHealthClass(el, value, thresholds) {
+        // thresholds = { warn: number, crit: number }
+        el.classList.remove('ok', 'warn', 'crit');
+        if (value == null) return;
+        if (value >= thresholds.crit) el.classList.add('crit');
+        else if (value >= thresholds.warn) el.classList.add('warn');
+        else el.classList.add('ok');
+    }
+
+    async function refreshPiHealth() {
+        let s;
+        try {
+            const r = await api('/system/status');
+            s = r?.data;
+            if (!s) throw new Error('no data');
+        } catch (_) {
+            document.getElementById('health-cpu-temp').textContent = '—';
+            document.getElementById('health-memory').textContent = '—';
+            document.getElementById('health-disk').textContent = '—';
+            document.getElementById('health-uptime').textContent = '—';
+            const sv = document.getElementById('health-service');
+            sv.textContent = 'Unreachable';
+            sv.classList.remove('ok', 'warn');
+            sv.classList.add('crit');
+            return;
+        }
+
+        // CPU temp — Pi throttles >80°C
+        const tempEl = document.getElementById('health-cpu-temp');
+        if (s.cpu_temp != null) {
+            tempEl.textContent = `${s.cpu_temp.toFixed(1)} °C`;
+            setHealthClass(tempEl, s.cpu_temp, { warn: 70, crit: 80 });
+        } else {
+            tempEl.textContent = 'n/a';
+            tempEl.classList.remove('ok', 'warn', 'crit');
+        }
+
+        // Memory — show used% with absolute MB underneath
+        const memEl = document.getElementById('health-memory');
+        const memUsedGb = (s.memory_used_mb / 1024).toFixed(2);
+        const memTotalGb = (s.memory_total_mb / 1024).toFixed(2);
+        memEl.innerHTML = `${s.memory_used_percent.toFixed(0)}%`
+            + `<span class="health-value-sub">${memUsedGb} / ${memTotalGb} GB</span>`;
+        setHealthClass(memEl, s.memory_used_percent, { warn: 70, crit: 90 });
+
+        // Disk — same pattern
+        const diskEl = document.getElementById('health-disk');
+        diskEl.innerHTML = `${s.disk_used_percent.toFixed(0)}%`
+            + `<span class="health-value-sub">${s.disk_used_gb.toFixed(1)} / ${s.disk_total_gb.toFixed(1)} GB</span>`;
+        setHealthClass(diskEl, s.disk_used_percent, { warn: 80, crit: 95 });
+
+        // Uptime — string from backend; show CPU% as subline so we
+        // surface CPU load somewhere too.
+        const upEl = document.getElementById('health-uptime');
+        upEl.innerHTML = (s.uptime || '—')
+            + `<span class="health-value-sub">CPU ${s.cpu_percent.toFixed(0)}%</span>`;
+        upEl.classList.remove('ok', 'warn', 'crit');
+
+        // Service
+        const svcEl = document.getElementById('health-service');
+        if (s.service_active) {
+            svcEl.textContent = 'Active';
+            svcEl.classList.remove('warn', 'crit');
+            svcEl.classList.add('ok');
+        } else {
+            svcEl.textContent = 'Inactive';
+            svcEl.classList.remove('ok', 'warn');
+            svcEl.classList.add('crit');
+        }
+    }
+
+    function startHealthPolling() {
+        if (healthTimer) return;
+        refreshPiHealth();
+        healthTimer = setInterval(() => {
+            if (!document.hidden) refreshPiHealth();
+        }, HEALTH_POLL_MS);
+    }
+
     // --- Zone: Brightness ---
     let brightnessDebounce = null;
     let currentBrightness = 65;
@@ -1124,6 +1208,7 @@
 
     document.addEventListener('DOMContentLoaded', () => {
         startPolling();
+        startHealthPolling();
         probeDiagEndpoint();
     });
     document.addEventListener('visibilitychange', () => {

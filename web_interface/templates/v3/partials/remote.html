@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#111827">
     <title>Outdoor Ticker — Remote</title>
-    <link rel="stylesheet" href="/static/v3/app.css?v=26">
+    <link rel="stylesheet" href="/static/v3/app.css?v=27">
 </head>
 <body class="remote-body">
     <header class="remote-header" role="banner">
@@ -129,6 +129,32 @@
         </div>
     </section>
 
+    <section class="remote-section" id="pi-health">
+        <h3>Pi Health</h3>
+        <div class="health-grid">
+            <div class="health-metric">
+                <span class="health-label">CPU temp</span>
+                <span class="health-value" id="health-cpu-temp">—</span>
+            </div>
+            <div class="health-metric">
+                <span class="health-label">Memory</span>
+                <span class="health-value" id="health-memory">—</span>
+            </div>
+            <div class="health-metric">
+                <span class="health-label">Disk</span>
+                <span class="health-value" id="health-disk">—</span>
+            </div>
+            <div class="health-metric">
+                <span class="health-label">Uptime</span>
+                <span class="health-value" id="health-uptime">—</span>
+            </div>
+            <div class="health-metric health-metric-full">
+                <span class="health-label">Display service</span>
+                <span class="health-value" id="health-service">—</span>
+            </div>
+        </div>
+    </section>
+
     {% if power_controls_enabled %}
     <section class="remote-section" id="power-controls">
         <h3>Power</h3>
@@ -153,6 +179,6 @@
         <button type="button" class="pending-apply" onclick="applyPending()">Apply</button>
     </div>
 
-    <script src="/static/v3/remote.js?v=27" defer></script>
+    <script src="/static/v3/remote.js?v=28" defer></script>
 </body>
 </html>
