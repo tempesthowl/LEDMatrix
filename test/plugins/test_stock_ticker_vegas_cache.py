@@ -316,3 +316,41 @@ def test_vegas_cache_watchlist_file_blocks_symbol_overwrite(plugin, stock_module
     assert plugin.stock_symbols == ["AAPL", "MSFT"], "watchlist_file must win over UI symbol edits"
     assert plugin.show_chart is False, "non-symbol flags still apply"
     assert plugin._cached_vegas_tiles is None, "cache invalidated because show_chart changed"
+
+
+def test_vegas_cache_survives_config_reload_when_watchlist_file_set(plugin, stock_module):
+    """REGRESSION: when watchlist_file is set and only config["stocks"] diverges
+    from the loaded watchlist (which is normal — file always wins), the cache
+    must NOT invalidate. Otherwise every plugin toggle nukes the cache and the
+    20s rebuild fires on every cycle.
+
+    This is the bug that defeated Fix #2 on Eric's Pi 2026-05-27 — verify ran
+    and every cycle stalled 21-34s instead of hitting the cache.
+    """
+    plugin.stock_symbols = [f"SYM{i:03d}" for i in range(100)]  # loaded from file
+    plugin.watchlist_file = "/some/path/watchlist.txt"
+    plugin.show_chart = True
+    plugin.show_logo = False
+
+    sentinel = [Image.new("RGB", (10, 32), (0, 0, 0))]
+    plugin._cached_vegas_tiles = sentinel
+    plugin._cached_vegas_key = (tuple(plugin.stock_symbols), (), (), True, False)
+
+    # Toggle-style config_reload: config["stocks"] is the default 6-symbol seed,
+    # nothing like the loaded watchlist. No flag changes.
+    stock_module.StockTickerPlugin.on_config_change(
+        plugin,
+        {
+            "enabled": True,
+            "stocks": ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "NVDA"],
+            "crypto": [],
+            "forex": [],
+            "show_chart": True,
+            "show_logo": False,
+        },
+    )
+
+    assert plugin._cached_vegas_tiles is sentinel, (
+        "cache must survive a no-op config reload when watchlist_file is set"
+    )
+    assert len(plugin.stock_symbols) == 100, "watchlist symbols must not be overwritten"

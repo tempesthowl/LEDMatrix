@@ -703,22 +703,34 @@ class StockTickerPlugin(BasePlugin):
             pass
 
         # --- ticker_list / display-flag changes (invalidate Vegas cache) ---
-        new_stocks = [s.upper() for s in cfg.get("stocks", self.stock_symbols)]
-        new_crypto = [s.upper() for s in cfg.get("crypto", self.crypto_symbols)]
-        new_forex = [s.upper() for s in cfg.get("forex", self.forex_symbols)]
+        # When watchlist_file is set, the file is the source of truth for
+        # symbols and config["stocks"] is always stale relative to the loaded
+        # list — including it in the change check would invalidate the cache
+        # on every single config_reload, defeating the whole point.
         new_show_chart = bool(cfg.get("show_chart", self.show_chart))
         new_show_logo = bool(cfg.get("show_logo", self.show_logo))
-
-        changed = (
-            new_stocks != self.stock_symbols
-            or new_crypto != self.crypto_symbols
-            or new_forex != self.forex_symbols
-            or new_show_chart != self.show_chart
+        changed_flags = (
+            new_show_chart != self.show_chart
             or new_show_logo != self.show_logo
         )
-        if changed:
-            # watchlist_file path always wins — file source overrides UI symbol edits.
-            if not self.watchlist_file:
+
+        if self.watchlist_file:
+            changed_symbols = False
+            new_stocks = self.stock_symbols
+            new_crypto = self.crypto_symbols
+            new_forex = self.forex_symbols
+        else:
+            new_stocks = [s.upper() for s in cfg.get("stocks", self.stock_symbols)]
+            new_crypto = [s.upper() for s in cfg.get("crypto", self.crypto_symbols)]
+            new_forex = [s.upper() for s in cfg.get("forex", self.forex_symbols)]
+            changed_symbols = (
+                new_stocks != self.stock_symbols
+                or new_crypto != self.crypto_symbols
+                or new_forex != self.forex_symbols
+            )
+
+        if changed_symbols or changed_flags:
+            if changed_symbols:
                 self.stock_symbols = new_stocks
                 self.crypto_symbols = new_crypto
                 self.forex_symbols = new_forex
