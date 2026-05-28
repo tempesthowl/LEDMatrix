@@ -1361,8 +1361,11 @@ input[type="range"].remote-range { width: 100%; height: 44px; }
 .power-overlay {
     position: fixed;
     inset: 0;
-    background: var(--color-text-primary);
-    color: var(--color-background);
+    /* Match the page background so dark-mode users don't get blinded by a
+       white overlay. Previous code inverted the vars (background was set to
+       --color-text-primary, which is near-white in dark mode). */
+    background: var(--color-background);
+    color: var(--color-text-primary);
     display: none;
     flex-direction: column;
     align-items: center;
