@@ -823,11 +823,13 @@
             return;
         }
 
-        // CPU temp — Pi throttles >80°C
+        // CPU temp — Pi throttles >80°C (176°F). Backend returns Celsius;
+        // convert for display since Eric is American.
         const tempEl = document.getElementById('health-cpu-temp');
         if (s.cpu_temp != null) {
-            tempEl.textContent = `${s.cpu_temp.toFixed(1)} °C`;
-            setHealthClass(tempEl, s.cpu_temp, { warn: 70, crit: 80 });
+            const tempF = s.cpu_temp * 9 / 5 + 32;
+            tempEl.textContent = `${tempF.toFixed(1)} °F`;
+            setHealthClass(tempEl, tempF, { warn: 158, crit: 176 });
         } else {
             tempEl.textContent = 'n/a';
             tempEl.classList.remove('ok', 'warn', 'crit');
