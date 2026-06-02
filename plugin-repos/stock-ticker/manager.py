@@ -138,6 +138,11 @@ class StockTickerPlugin(BasePlugin):
         self._cached_dynamic_duration: Optional[float] = None
         self._duration_cache_time: float = 0
         self._icon_cache: Dict[str, Optional[Image.Image]] = {}
+        # FIFO insertion order for cap-based eviction. Mirrors the LRU pattern
+        # in src/common/logo_helper.py:232-242. Bounded so a large watchlist
+        # plus repeated symbol churn can't grow this dict without limit.
+        self._icon_cache_order: List[str] = []
+        self._icon_cache_max: int = 128
 
         # Display dimensions
         if hasattr(self.display_manager, 'matrix') and self.display_manager.matrix is not None:
@@ -324,12 +329,22 @@ class StockTickerPlugin(BasePlugin):
             # Composite RGBA onto black background for LED matrix
             bg = Image.new("RGB", ICON_SIZE, COLOR_BLACK)
             bg.paste(img, (0, 0), img.split()[3])  # use alpha as mask
-            self._icon_cache[icon_path] = bg
+            self._cache_icon(icon_path, bg)
             return bg
         except Exception:
             self.logger.debug("Failed to load icon: %s", icon_path)
-            self._icon_cache[icon_path] = None
+            self._cache_icon(icon_path, None)
             return None
+
+    def _cache_icon(self, key: str, value: Optional[Image.Image]) -> None:
+        """Insert into _icon_cache, evicting the oldest entry if at cap."""
+        if key in self._icon_cache:
+            return
+        if len(self._icon_cache) >= self._icon_cache_max and self._icon_cache_order:
+            oldest = self._icon_cache_order.pop(0)
+            self._icon_cache.pop(oldest, None)
+        self._icon_cache[key] = value
+        self._icon_cache_order.append(key)
 
     # ------------------------------------------------------------------
     # Data fetching
@@ -905,6 +920,7 @@ class StockTickerPlugin(BasePlugin):
         self._cached_vegas_tiles = None
         self._cached_vegas_key = None
         self._icon_cache.clear()
+        self._icon_cache_order.clear()
         if self.scroll_helper:
             self.scroll_helper.clear_cache()
         super().cleanup()

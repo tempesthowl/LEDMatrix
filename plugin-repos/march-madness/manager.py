@@ -164,6 +164,11 @@ class MarchMadnessPlugin(BasePlugin):
         # Logos
         self._round_logos: Dict[str, Image.Image] = {}
         self._team_logo_cache: Dict[str, Optional[Image.Image]] = {}
+        # FIFO insertion order so the team-logo cache caps at a sane bound.
+        # NCAA has ~350 D1 teams; without a cap, every team seen over the
+        # process's lifetime stays in RAM.
+        self._team_logo_cache_order: List[str] = []
+        self._team_logo_cache_max: int = 256
         self._march_madness_logo: Optional[Image.Image] = None
         self._load_round_logos()
 
@@ -236,15 +241,25 @@ class MarchMadnessPlugin(BasePlugin):
             ratio = target_h / img.height
             target_w = int(img.width * ratio)
             img = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
-            self._team_logo_cache[abbr] = img
+            self._cache_team_logo(abbr, img)
             return img
         except (FileNotFoundError, OSError, ValueError):
-            self._team_logo_cache[abbr] = None
+            self._cache_team_logo(abbr, None)
             return None
         except Exception:
             self.logger.exception(f"Unexpected error loading team logo for {abbr}")
-            self._team_logo_cache[abbr] = None
+            self._cache_team_logo(abbr, None)
             return None
+
+    def _cache_team_logo(self, key: str, value: Optional[Image.Image]) -> None:
+        """Insert into _team_logo_cache, evicting the oldest entry if at cap."""
+        if key in self._team_logo_cache:
+            return
+        if len(self._team_logo_cache) >= self._team_logo_cache_max and self._team_logo_cache_order:
+            oldest = self._team_logo_cache_order.pop(0)
+            self._team_logo_cache.pop(oldest, None)
+        self._team_logo_cache[key] = value
+        self._team_logo_cache_order.append(key)
 
     # ------------------------------------------------------------------
     # Data fetching
@@ -901,6 +916,7 @@ class MarchMadnessPlugin(BasePlugin):
         if self.scroll_helper:
             self.scroll_helper.clear_cache()
         self._team_logo_cache.clear()
+        self._team_logo_cache_order.clear()
         if self.session:
             self.session.close()
             self.session = None

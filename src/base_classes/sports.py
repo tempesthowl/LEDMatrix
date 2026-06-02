@@ -86,7 +86,13 @@ class SportsCore(ABC):
         self.session.mount("https://", adapter)
         self.session.mount("http://", adapter)
 
-        self._logo_cache = {}
+        self._logo_cache: Dict[str, Image.Image] = {}
+        # FIFO insertion order for cap-based eviction. Without this, every
+        # unique team logo loaded over the lifetime of the process stays in
+        # RAM forever — fine for the 32-team major leagues, but college sports
+        # rotate through hundreds of teams.
+        self._logo_cache_order: List[str] = []
+        self._logo_cache_max: int = 256
 
         # Set up headers
         self.headers = {
@@ -346,6 +352,16 @@ class SportsCore(ABC):
             draw.text((x + dx, y + dy), text, font=font, fill=outline_color)
         draw.text((x, y), text, font=font, fill=fill)
 
+    def _cache_logo(self, key: str, value: Image.Image) -> None:
+        """Insert into _logo_cache, evicting the oldest entry if at cap."""
+        if key in self._logo_cache:
+            return
+        if len(self._logo_cache) >= self._logo_cache_max and self._logo_cache_order:
+            oldest = self._logo_cache_order.pop(0)
+            self._logo_cache.pop(oldest, None)
+        self._logo_cache[key] = value
+        self._logo_cache_order.append(key)
+
     def _load_and_resize_logo(self, team_id: str, team_abbrev: str, logo_path: Path, logo_url: str | None ) -> Optional[Image.Image]:
         """Load and resize a team logo, with caching and automatic download if missing."""
         self.logger.debug(f"Logo path: {logo_path}")
@@ -389,7 +405,7 @@ class SportsCore(ABC):
             max_width = int(self.display_width * 1.5)
             max_height = int(self.display_height * 1.5)
             logo.thumbnail((max_width, max_height), Image.Resampling.LANCZOS)
-            self._logo_cache[team_abbrev] = logo
+            self._cache_logo(team_abbrev, logo)
             return logo
 
         except Exception as e:

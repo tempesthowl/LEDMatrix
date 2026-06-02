@@ -1136,6 +1136,41 @@ else
 fi
 echo ""
 
+# jemalloc preload — replaces glibc malloc for the display controller to
+# prevent the slow RSS climb that long-running Python+PIL processes exhibit
+# on Linux. See scripts/install/install_jemalloc.sh for the why.
+if [ -f "$PROJECT_ROOT_DIR/scripts/install/install_jemalloc.sh" ]; then
+    echo "Installing jemalloc preload..."
+    if bash "$PROJECT_ROOT_DIR/scripts/install/install_jemalloc.sh"; then
+        echo "✓ jemalloc preload installation completed"
+    else
+        INSTALL_EXIT_CODE=$?
+        echo "⚠ jemalloc installer returned exit code $INSTALL_EXIT_CODE"
+        echo "  Continuing — service will run with glibc malloc (the leak the install was meant to fix)"
+    fi
+else
+    echo "⚠ install_jemalloc.sh not found; skipping jemalloc preload"
+    echo "  You can install it later by running: sudo ./scripts/install/install_jemalloc.sh"
+fi
+echo ""
+
+# Systemd safety net — MemoryMax + daily restart so a future leak regression
+# never OOMs the kernel (kernel OOM has historically corrupted the SD card).
+if [ -f "$PROJECT_ROOT_DIR/scripts/install/install_systemd_safety_net.sh" ]; then
+    echo "Installing systemd safety net (MemoryMax + daily restart timer)..."
+    if bash "$PROJECT_ROOT_DIR/scripts/install/install_systemd_safety_net.sh"; then
+        echo "✓ Safety net installation completed"
+    else
+        INSTALL_EXIT_CODE=$?
+        echo "⚠ Safety-net installer returned exit code $INSTALL_EXIT_CODE"
+        echo "  Continuing — service will run without the MemoryMax cap or daily restart"
+    fi
+else
+    echo "⚠ install_systemd_safety_net.sh not found; skipping safety net"
+    echo "  You can install it later by running: sudo ./scripts/install/install_systemd_safety_net.sh"
+fi
+echo ""
+
 CURRENT_STEP="Configure web interface permissions"
 echo "Step 9: Configuring web interface permissions..."
 echo "------------------------------------------------"

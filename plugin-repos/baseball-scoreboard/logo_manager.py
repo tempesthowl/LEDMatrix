@@ -7,7 +7,7 @@ Handles logo loading, caching, and auto-download for all baseball leagues.
 import os
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Dict, List, Optional
 
 from PIL import Image
 
@@ -39,7 +39,12 @@ class BaseballLogoManager:
         self.display_manager = display_manager
         self.logger = logger
         self.sport_key = sport_key
-        self._logo_cache = {}
+        self._logo_cache: Dict[str, Image.Image] = {}
+        # FIFO insertion order so the cache caps. MLB is only 30 teams but
+        # adding MiLB affiliates plus historical churn can grow this dict
+        # well past that.
+        self._logo_cache_order: List[str] = []
+        self._logo_cache_max: int = 64
 
         # Get display dimensions
         if display_manager and hasattr(display_manager, 'matrix') and display_manager.matrix is not None:
@@ -123,7 +128,7 @@ class BaseballLogoManager:
             logo.thumbnail((max_width, max_height), RESAMPLE_FILTER)
 
             # Cache the logo
-            self._logo_cache[team_abbr] = logo
+            self._cache_logo(team_abbr, logo)
             return logo
 
         except Exception as e:
@@ -164,16 +169,27 @@ class BaseballLogoManager:
             logo.thumbnail((max_width, max_height), RESAMPLE_FILTER)
 
             # Cache the logo
-            self._logo_cache[team_abbr] = logo
+            self._cache_logo(team_abbr, logo)
             return logo
 
         except Exception as e:
             self.logger.error(f"Error loading MiLB logo for {team_abbr}: {e}", exc_info=True)
             return None
 
+    def _cache_logo(self, key: str, value: Image.Image) -> None:
+        """Insert into _logo_cache, evicting the oldest entry if at cap."""
+        if key in self._logo_cache:
+            return
+        if len(self._logo_cache) >= self._logo_cache_max and self._logo_cache_order:
+            oldest = self._logo_cache_order.pop(0)
+            self._logo_cache.pop(oldest, None)
+        self._logo_cache[key] = value
+        self._logo_cache_order.append(key)
+
     def clear_cache(self) -> None:
         """Clear the logo cache."""
         self._logo_cache.clear()
+        self._logo_cache_order.clear()
         self.logger.debug("Logo cache cleared")
 
     def get_cache_size(self) -> int:
