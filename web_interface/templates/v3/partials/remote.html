@@ -153,6 +153,26 @@
                 <span class="health-value" id="health-service">—</span>
             </div>
         </div>
+        <div class="health-trend" id="health-memory-trend" hidden>
+            <div class="health-trend-label">
+                <span class="health-trend-title">Memory trend (1h)</span>
+                <span class="health-trend-stats">
+                    <span id="memTrendMin">—</span>
+                    <span class="health-trend-sep" aria-hidden="true">·</span>
+                    <span id="memTrendMax">—</span>
+                    <span class="health-trend-sep" aria-hidden="true">·</span>
+                    <span class="health-trend-now" id="memTrendNowLabel">—</span>
+                </span>
+            </div>
+            <svg class="health-trend-svg" viewBox="0 0 600 60"
+                 preserveAspectRatio="none" role="img"
+                 aria-label="Memory percentage trend over the last hour">
+                <polyline id="memTrendLine" points="" fill="none"
+                          stroke="#22c55e" stroke-width="1.5"
+                          stroke-linejoin="round" stroke-linecap="round"
+                          vector-effect="non-scaling-stroke"/>
+            </svg>
+        </div>
     </section>
 
     {% if power_controls_enabled %}
@@ -180,5 +200,186 @@
     </div>
 
     <script src="/static/v3/remote.js?v=29" defer></script>
+
+    <style>
+        .health-trend {
+            margin-top: 14px;
+            padding-top: 14px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .health-trend-label {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 10px;
+            margin-bottom: 8px;
+            font-size: 0.85rem;
+            color: rgba(255, 255, 255, 0.7);
+        }
+        .health-trend-title {
+            font-weight: 500;
+            letter-spacing: 0.01em;
+        }
+        .health-trend-stats {
+            display: inline-flex;
+            gap: 6px;
+            align-items: baseline;
+            font-size: 0.8rem;
+            color: rgba(255, 255, 255, 0.55);
+            font-variant-numeric: tabular-nums;
+        }
+        .health-trend-sep { opacity: 0.45; }
+        .health-trend-now {
+            color: rgba(255, 255, 255, 0.95);
+            font-weight: 600;
+        }
+        .health-trend-svg {
+            display: block;
+            width: 100%;
+            height: 60px;
+            overflow: visible;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 4px;
+        }
+    </style>
+
+    <script>
+    (function () {
+        const STORAGE_KEY = 'ledticker.memTrend.v1';
+        const MAX_SAMPLES = 360;            // 1h at the existing 10s health-poll cadence
+        const MAX_AGE_MS = 2 * 3600 * 1000; // drop entries older than 2h on load
+        const SAVE_DEBOUNCE_MS = 1000;
+        const POLL_FALLBACK_MS = 30000;
+        const DEDUP_MS = 2000;
+        const WARN = 70;
+        const CRIT = 90;
+        const VIEW_W = 600;
+        const VIEW_H = 60;
+        const COLOR_OK = '#22c55e';
+        const COLOR_WARN = '#f59e0b';
+        const COLOR_CRIT = '#ef4444';
+
+        let buffer = [];
+        let saveTimer = null;
+
+        function loadBuffer() {
+            try {
+                const raw = localStorage.getItem(STORAGE_KEY);
+                if (!raw) return [];
+                const arr = JSON.parse(raw);
+                if (!Array.isArray(arr)) return [];
+                const now = Date.now();
+                return arr
+                    .filter(s => s && typeof s.t === 'number' && typeof s.v === 'number'
+                                 && s.v >= 0 && s.v <= 100
+                                 && (now - s.t) <= MAX_AGE_MS)
+                    .slice(-MAX_SAMPLES);
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function scheduleSave() {
+            if (saveTimer) return;
+            saveTimer = setTimeout(() => {
+                saveTimer = null;
+                try {
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(buffer));
+                } catch (e) { /* quota / private mode — silently ignore */ }
+            }, SAVE_DEBOUNCE_MS);
+        }
+
+        function parsePercent(text) {
+            if (!text) return null;
+            const m = text.match(/(\d+(?:\.\d+)?)\s*%/);
+            if (!m) return null;
+            const v = parseFloat(m[1]);
+            if (!isFinite(v) || v < 0 || v > 100) return null;
+            return v;
+        }
+
+        function strokeFor(v) {
+            if (v >= CRIT) return COLOR_CRIT;
+            if (v >= WARN) return COLOR_WARN;
+            return COLOR_OK;
+        }
+
+        function render() {
+            const container = document.getElementById('health-memory-trend');
+            const line = document.getElementById('memTrendLine');
+            const minEl = document.getElementById('memTrendMin');
+            const maxEl = document.getElementById('memTrendMax');
+            const nowEl = document.getElementById('memTrendNowLabel');
+            if (!container || !line || !buffer.length) return;
+            container.removeAttribute('hidden');
+
+            const n = buffer.length;
+            const denom = Math.max(n - 1, 1);
+            const pts = buffer.map((s, i) => {
+                const x = (i / denom) * VIEW_W;
+                const clamped = Math.max(0, Math.min(100, s.v));
+                const y = VIEW_H - (clamped / 100) * VIEW_H;
+                return x.toFixed(1) + ',' + y.toFixed(1);
+            }).join(' ');
+            line.setAttribute('points', pts);
+
+            const latest = buffer[n - 1].v;
+            line.setAttribute('stroke', strokeFor(latest));
+
+            const vals = buffer.map(s => s.v);
+            const minV = Math.min.apply(null, vals);
+            const maxV = Math.max.apply(null, vals);
+            if (minEl) minEl.textContent = 'min ' + minV.toFixed(0) + '%';
+            if (maxEl) maxEl.textContent = 'max ' + maxV.toFixed(0) + '%';
+            if (nowEl) nowEl.textContent = latest.toFixed(0) + '%';
+        }
+
+        function pushSample(percent) {
+            if (percent == null) return;
+            const now = Date.now();
+            const last = buffer[buffer.length - 1];
+            // MutationObserver can fire multiple times per innerHTML replace.
+            // Skip if the same value arrives within the dedup window.
+            if (last && (now - last.t) < DEDUP_MS && Math.abs(last.v - percent) < 0.05) return;
+            buffer.push({ t: now, v: percent });
+            if (buffer.length > MAX_SAMPLES) buffer = buffer.slice(-MAX_SAMPLES);
+            scheduleSave();
+            render();
+        }
+
+        function readCurrent() {
+            const el = document.getElementById('health-memory');
+            if (!el) return null;
+            return parsePercent(el.textContent || '');
+        }
+
+        function init() {
+            const target = document.getElementById('health-memory');
+            if (!target) return;
+            buffer = loadBuffer();
+            const seed = readCurrent();
+            if (seed != null) pushSample(seed);
+            render();
+
+            const obs = new MutationObserver(() => {
+                const v = readCurrent();
+                if (v != null) pushSample(v);
+            });
+            obs.observe(target, { childList: true, subtree: true, characterData: true });
+
+            // Safety net: in case the observer ever misses an update, poll cheaply.
+            setInterval(() => {
+                const v = readCurrent();
+                if (v != null) pushSample(v);
+            }, POLL_FALLBACK_MS);
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            init();
+        }
+    })();
+    </script>
 </body>
 </html>
