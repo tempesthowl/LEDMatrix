@@ -264,6 +264,51 @@ _LEAGUE_COLORS_SECONDARY = {
     "ncaa_football": NCAAFB_COLORS_SECONDARY,
 }
 
+# Per-sport ESPN abbreviation aliases.
+# ESPN's live feeds sometimes use shorter forms (e.g. "NY" / "SA") than the
+# brand-book canonicals our color dicts are keyed on (e.g. "NYK" / "SAS").
+# Maps below normalize feed variants -> canonical key.
+
+NBA_ALIASES = {
+    "NY":   "NYK",
+    "SA":   "SAS",
+    "GS":   "GSW",
+    "NO":   "NOP",
+    "NOH":  "NOP",
+    "PHO":  "PHX",
+    "BRK":  "BKN",
+    "WSH":  "WAS",
+    "UTAH": "UTA",
+}
+
+MLB_ALIASES = {
+    "CHW": "CWS",
+    "WSN": "WSH",
+    "TBR": "TB",
+    "KCR": "KC",
+    "SDP": "SD",
+    "SFG": "SF",
+    "AZ":  "ARI",
+}
+
+NFL_ALIASES = {
+    "JAC": "JAX",
+    "WSH": "WAS",
+    "LA":  "LAR",
+}
+
+NCAAFB_ALIASES = {
+    "TAM": "TAMU",
+}
+
+_LEAGUE_ALIASES = {
+    "mlb":           MLB_ALIASES,
+    "nfl":           NFL_ALIASES,
+    "nba":           NBA_ALIASES,
+    "ncaa_fb":       NCAAFB_ALIASES,
+    "ncaa_football": NCAAFB_ALIASES,
+}
+
 # Fallback for teams not in our map
 _DEFAULT_COLOR = (180, 180, 180)  # Light grey
 _DEFAULT_SECONDARY = (255, 255, 255)  # White
@@ -280,6 +325,13 @@ def _get_league_map(league: str, secondary: bool = False) -> dict:
     return table.get((league or "").lower(), {})
 
 
+def _canonicalize(abbrev: str, league: str) -> str:
+    """Normalize an ESPN feed abbreviation to its brand-book canonical key."""
+    aliases = _LEAGUE_ALIASES.get((league or "").lower(), {})
+    key = (abbrev or "").upper()
+    return aliases.get(key, key)
+
+
 def get_team_color(abbrev: str, league: str = "mlb") -> tuple:
     """Get the primary brand color for a team.
 
@@ -290,13 +342,14 @@ def get_team_color(abbrev: str, league: str = "mlb") -> tuple:
     Returns:
         RGB tuple like (235, 110, 31).
     """
+    key = _canonicalize(abbrev, league)
     colors = _get_league_map(league, secondary=False)
-    color = colors.get(abbrev.upper())
+    color = colors.get(key)
     if color:
         return color
     # Try other leagues as fallback (same city teams share abbreviations)
     for lc in _LEAGUE_COLORS.values():
-        color = lc.get(abbrev.upper())
+        color = lc.get(key)
         if color:
             return color
     return _DEFAULT_COLOR
@@ -323,8 +376,8 @@ def get_contrasting_pair(home_abbrev: str, away_abbrev: str, league: str) -> tup
         (home_rgb, away_rgb) tuple. One side may be the team's secondary
         color if the primaries were too similar.
     """
-    home_key = (home_abbrev or "").upper()
-    away_key = (away_abbrev or "").upper()
+    home_key = _canonicalize(home_abbrev, league)
+    away_key = _canonicalize(away_abbrev, league)
 
     primary_map = _get_league_map(league, secondary=False)
     secondary_map = _get_league_map(league, secondary=True)
