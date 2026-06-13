@@ -431,33 +431,47 @@ class GameModeRenderer:
 
         # --- Row 2: Payout multiples (team colors matching bar above) ---
         if kalshi:
-            fav_payout = kalshi.get("fav_payout", 0)
-            dog_payout = kalshi.get("dog_payout", 0)
-            fav_text = f"{fav_payout:.1f}x payout"
-            dog_text = f"{dog_payout:.1f}x payout"
-
-            fav_team = kalshi.get("fav_team", "")
             away = data.get("away_team", "")
             home = data.get("home_team", "")
             away_color = data.get("away_color", COLOR_GREEN)
             home_color = data.get("home_color", COLOR_RED)
-            fav_color = home_color if fav_team == home else away_color
-            dog_color = away_color if fav_team == home else home_color
+
+            if kalshi.get("is_three_way") and kalshi.get("draw_pct") is not None:
+                # Align with the 3-way bar above (away | draw | home). The old
+                # fav/dog ordering put the FAVOURITE's payout on the left, but
+                # the 3-way bar puts the AWAY team on the left — so a home
+                # favourite's payout landed under the away segment ("USA 74%"
+                # sitting over Paraguay's 11x). Derive each payout from the same
+                # pct the bar uses, and label it with the team so it can't be
+                # misread regardless of position.
+                away_pct = max(int(kalshi.get("away_pct", 0)), 1)
+                home_pct = max(int(kalshi.get("home_pct", 0)), 1)
+                left_text = f"{away} {100 / away_pct:.1f}x"
+                right_text = f"{home} {100 / home_pct:.1f}x"
+                left_color, right_color = away_color, home_color
+            else:
+                fav_payout = kalshi.get("fav_payout", 0)
+                dog_payout = kalshi.get("dog_payout", 0)
+                fav_team = kalshi.get("fav_team", "")
+                left_text = f"{fav_payout:.1f}x payout"
+                right_text = f"{dog_payout:.1f}x payout"
+                left_color = home_color if fav_team == home else away_color
+                right_color = away_color if fav_team == home else home_color
 
             draw.text(
                 (right_x, row2_y),
-                fav_text,
-                fill=fav_color,
+                left_text,
+                fill=left_color,
                 font=self.fonts["payout"],
             )
 
-            # Right-align dog payout
-            dog_bbox = self.fonts["payout"].getbbox(dog_text)
-            dog_w = dog_bbox[2] - dog_bbox[0]
+            # Right-align the right-hand payout
+            right_bbox = self.fonts["payout"].getbbox(right_text)
+            right_w_px = right_bbox[2] - right_bbox[0]
             draw.text(
-                (right_x + right_w - dog_w, row2_y),
-                dog_text,
-                fill=dog_color,
+                (right_x + right_w - right_w_px, row2_y),
+                right_text,
+                fill=right_color,
                 font=self.fonts["payout"],
             )
 
@@ -597,7 +611,7 @@ class GameModeRenderer:
         home_team = data.get("home_team", "")
         away_color = data.get("away_color", BAR_GREEN)
         home_color = data.get("home_color", BAR_RED)
-        draw_color = COLOR_GRAY
+        draw_color = (205, 205, 205)  # bright neutral — reads as "draw", not a team
 
         # Proportional widths: each at least 1px, sum exactly == width.
         # Give any rounding remainder to the largest segment.
@@ -624,6 +638,12 @@ class GameModeRenderer:
         draw.rectangle([away_x, y, away_x + away_w - 1, y + bar_h - 1], fill=away_color)
         draw.rectangle([draw_x, y, draw_x + draw_w - 1, y + bar_h - 1], fill=draw_color)
         draw.rectangle([home_x, y, x + width - 1, y + bar_h - 1], fill=home_color)
+
+        # 1px dark dividers between segments so adjacent same-colored blocks
+        # (e.g. a grey-fallback team butting against the grey draw) stay
+        # visually distinct on the LED panel instead of merging into one blob.
+        draw.line([(draw_x, y), (draw_x, y + bar_h - 1)], fill=COLOR_BLACK, width=1)
+        draw.line([(home_x, y), (home_x, y + bar_h - 1)], fill=COLOR_BLACK, width=1)
 
         league = data.get("league", "")
 
@@ -656,8 +676,8 @@ class GameModeRenderer:
         )
         _label_segment(
             draw_x, draw_w,
-            f"{draw_pct}%", "TIE",
-            COLOR_WHITE, "",
+            f"TIE {draw_pct}%", "TIE",
+            COLOR_BLACK, "",
         )
         _label_segment(
             home_x, home_w,

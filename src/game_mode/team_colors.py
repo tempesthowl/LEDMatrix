@@ -279,6 +279,27 @@ FIFA_WORLD_COLORS = {
     "NGA": (0, 135, 81),      # Green
     "GHA": (0, 107, 63),      # Green
     "CMR": (0, 135, 81),      # Green
+    "PAR": (211, 47, 47),     # Red
+    "SCO": (0, 94, 184),      # Dark blue
+    "HAI": (0, 33, 71),       # Navy
+    "QAT": (138, 21, 56),     # Maroon
+    "TUR": (227, 10, 23),     # Red
+    "CUW": (0, 40, 135),      # Blue
+    "TUN": (206, 17, 38),     # Red
+    "SWE": (255, 205, 0),     # Yellow
+    "IRN": (35, 159, 64),     # Green
+    "IRI": (35, 159, 64),     # Green (Kalshi spelling)
+    "EGY": (206, 17, 38),     # Red
+    "NOR": (186, 12, 47),     # Red
+    "IRQ": (0, 122, 61),      # Green
+    "KSA": (0, 90, 48),       # Green
+    "CPV": (0, 51, 160),      # Blue
+    "NZL": (40, 40, 40),      # Black
+    "COD": (0, 114, 206),     # Sky blue
+    "UZB": (0, 114, 206),     # Blue
+    "PAN": (218, 41, 28),     # Red
+    "ECU": (255, 213, 0),     # Yellow
+    "CIV": (255, 130, 0),     # Orange
 }
 
 # World Cup national teams — secondary (alternate kit / contrast color)
@@ -314,6 +335,27 @@ FIFA_WORLD_COLORS_SECONDARY = {
     "NGA": (255, 255, 255),   # White
     "GHA": (200, 16, 46),     # Red
     "CMR": (200, 16, 46),     # Red
+    "PAR": (0, 51, 160),      # Blue
+    "SCO": (255, 255, 255),   # White
+    "HAI": (200, 16, 46),     # Red
+    "QAT": (255, 255, 255),   # White
+    "TUR": (255, 255, 255),   # White
+    "CUW": (255, 255, 255),   # White
+    "TUN": (255, 255, 255),   # White
+    "SWE": (0, 60, 140),      # Blue
+    "IRN": (200, 16, 46),     # Red
+    "IRI": (200, 16, 46),     # Red
+    "EGY": (255, 255, 255),   # White
+    "NOR": (0, 40, 104),      # Navy
+    "IRQ": (255, 255, 255),   # White
+    "KSA": (255, 255, 255),   # White
+    "CPV": (255, 255, 255),   # White
+    "NZL": (255, 255, 255),   # White
+    "COD": (211, 47, 47),     # Red
+    "UZB": (255, 255, 255),   # White
+    "PAN": (0, 51, 160),      # Blue
+    "ECU": (0, 51, 160),      # Blue
+    "CIV": (0, 122, 61),      # Green
 }
 
 # Lookup by league then abbreviation — primary
