@@ -3439,6 +3439,8 @@ class BasketballScoreboardPlugin(BasePlugin if BasePlugin else object):
                     "period_label": g.get("period_text", ""),
                     "status_state": "in",
                     "league": league_id,
+                    "away_logo_url": g.get("away_logo_url", ""),
+                    "home_logo_url": g.get("home_logo_url", ""),
                 })
 
         return games

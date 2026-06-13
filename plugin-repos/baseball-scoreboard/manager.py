@@ -3863,6 +3863,8 @@ class BaseballScoreboardPlugin(BasePlugin if BasePlugin else object):
                     "period_label": period_label,
                     "status_state": "in",
                     "league": league_id,
+                    "away_logo_url": g.get("away_logo_url", ""),
+                    "home_logo_url": g.get("home_logo_url", ""),
                 })
 
         return games

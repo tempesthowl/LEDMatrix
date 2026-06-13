@@ -5,6 +5,43 @@
     const POLL_MS = 2000;
     let pollTimer = null;
 
+    // --- Sport styling: color-code + icon by league (game cards) or plugin
+    // id (ticker toggles). Static + offline; logos layer on top separately. ---
+    // Font Awesome 6 names (the app already loads FA; remote.html now does too).
+    const SPORT_META = {
+        'fifa.world': { color: '#639922', icon: 'fa-futbol', label: 'World Cup' },
+        'mls':        { color: '#639922', icon: 'fa-futbol', label: 'MLS' },
+        'eng.1':      { color: '#3D195B', icon: 'fa-futbol', label: 'Premier League' },
+        'mlb':        { color: '#378ADD', icon: 'fa-baseball-ball', label: 'MLB' },
+        'nfl':        { color: '#D85A30', icon: 'fa-football-ball', label: 'NFL' },
+        'ncaa_fb':    { color: '#C8102E', icon: 'fa-football-ball', label: 'NCAA FB' },
+        'nba':        { color: '#BA7517', icon: 'fa-basketball-ball', label: 'NBA' },
+        'nhl':        { color: '#7F77DD', icon: 'fa-hockey-puck', label: 'NHL' },
+        'pga':        { color: '#1D9E75', icon: 'fa-golf-ball', label: 'PGA' },
+        'f1':         { color: '#E24B4A', icon: 'fa-flag-checkered', label: 'F1' },
+    };
+    const PLUGIN_SPORT = {
+        'soccer-scoreboard': 'fifa.world', 'baseball-scoreboard': 'mlb',
+        'football-scoreboard': 'nfl', 'basketball-scoreboard': 'nba',
+        'hockey-scoreboard': 'nhl', 'pga-tour-leaderboard': 'pga',
+        'f1-scoreboard': 'f1',
+    };
+    function sportMeta(key) {
+        if (!key) return null;
+        const k = String(key).toLowerCase();
+        return SPORT_META[k] || SPORT_META[PLUGIN_SPORT[k]] || null;
+    }
+    function escAttr(s) { return String(s == null ? '' : s).replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+    function teamLogo(url, abbr, color) {
+        const a = escAttr(abbr), c = escAttr(color || '#888');
+        if (url) {
+            return `<img class="live-team-logo" src="${escAttr(url)}" alt="${a}" loading="lazy"`
+                + ` onerror="this.replaceWith(Object.assign(document.createElement('span'),`
+                + `{className:'live-team-badge',textContent:'${a}',style:'background:${c}'}))">`;
+        }
+        return `<span class="live-team-badge" style="background:${c}">${a}</span>`;
+    }
+
     // --- Utilities ---
     function api(path, opts = {}) {
         return fetch('/api/v3' + path, {
@@ -465,18 +502,26 @@
                 const isFocused = gid === String(focusedGameId);
                 // Empty selection = nothing selected (placeholder state).
                 const isSelected = selectedGameIds.has(gid);
+                const m = sportMeta(g.league);
+                const accent = m ? m.color : 'var(--color-border-secondary)';
+                const leagueLabel = (m && m.label) || g.league || '';
                 return `
-                    <div class="game-card" data-focused="${isFocused}">
+                    <div class="game-card sport-accent" data-focused="${isFocused}" style="border-left-color:${accent}">
                         <div class="game-card-inner">
                             <input type="checkbox" class="game-check"
                                    ${isSelected ? 'checked' : ''}
                                    onchange="toggleGameSelection('${gid}', this)">
+                            <i class="fas ${m ? m.icon : 'fa-futbol'} sport-icon" style="color:${accent}" aria-hidden="true"></i>
+                            <div class="game-logos">
+                                ${teamLogo(g.away_logo_url, g.away_team, accent)}
+                                ${teamLogo(g.home_logo_url, g.home_team, accent)}
+                            </div>
                             <div>
                                 <div style="font-weight:600;">
                                     ${g.away_team} ${g.away_score ?? ''} – ${g.home_score ?? ''} ${g.home_team}
                                 </div>
-                                <div style="font-size:12px;color:#6b7280;margin-top:2px;">
-                                    ${g.period_label || ''} · ${g.league || ''}
+                                <div style="font-size:12px;color:var(--color-text-secondary);margin-top:2px;">
+                                    ${g.period_label || ''} · ${leagueLabel}
                                 </div>
                             </div>
                         </div>
@@ -573,9 +618,14 @@
             el.innerHTML = visible.map(p => {
                 const pending = p.id in pendingPluginChanges;
                 const shown = pending ? pendingPluginChanges[p.id] : !!p.enabled;
+                const m = sportMeta(p.id);
+                const accentStyle = m ? ` sport-accent" style="border-left-color:${m.color}` : '';
+                const icon = m
+                    ? `<i class="fas ${m.icon} sport-icon" style="color:${m.color}" aria-hidden="true"></i>`
+                    : '';
                 return `
-                    <div class="toggle-row ${pending ? 'pending' : ''}" id="row-plugin-${p.id}">
-                        <label for="plugin-toggle-${p.id}">${p.name || p.id}</label>
+                    <div class="toggle-row ${pending ? 'pending' : ''}${accentStyle}" id="row-plugin-${p.id}">
+                        <label for="plugin-toggle-${p.id}">${icon}${p.name || p.id}</label>
                         <button class="toggle ${pending ? 'pending' : ''}" id="plugin-toggle-${p.id}"
                                 role="switch" aria-checked="${shown}"
                                 onclick="togglePlugin('${p.id}', this)"></button>
