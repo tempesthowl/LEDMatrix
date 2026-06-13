@@ -1605,6 +1605,23 @@ class SoccerScoreboardPlugin(BasePlugin if BasePlugin else object):
                 focus_data["kalshi"] = kalshi_match_game(self.plugin_manager, _away, _home, league)
             except Exception as e:
                 self.logger.debug(f"Kalshi soccer match failed: {e}")
+
+        # ESPN odds row (below the Kalshi bar) — mirror baseball:3997 so soccer
+        # shows the traditional line (O/U goals, moneylines, handicap) like the
+        # other sports instead of a blank row.
+        odds = game.get("odds")
+        if odds:
+            try:
+                home_odds = odds.get("home_team_odds", {})
+                away_odds = odds.get("away_team_odds", {})
+                focus_data["espn_odds"] = {
+                    "spread": home_odds.get("spread_odds") or odds.get("spread"),
+                    "home_ml": home_odds.get("moneyLine") or home_odds.get("money_line"),
+                    "away_ml": away_odds.get("moneyLine") or away_odds.get("money_line"),
+                    "over_under": odds.get("overUnder") or odds.get("over_under"),
+                }
+            except Exception as e:
+                self.logger.debug(f"ESPN odds extraction failed: {e}")
         return focus_data
 
     def _display_game_focus(self, force_clear: bool = False) -> bool:
