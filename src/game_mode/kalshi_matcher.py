@@ -99,6 +99,36 @@ TEAM_ALIASES: Dict[str, list[str]] = {
     "TEX-A&M": ["texas a&m", "aggies"],
 }
 
+# National-team aliases for World Cup matching, keyed by 3-letter FIFA
+# country code -> lowercase search terms found in Kalshi market titles.
+WORLD_CUP_ALIASES: Dict[str, list[str]] = {
+    "USA": ["united states", "usa", "usmnt", "u.s."],
+    "MEX": ["mexico"],
+    "CAN": ["canada"],
+    "BRA": ["brazil"],
+    "ARG": ["argentina"],
+    "FRA": ["france"],
+    "ENG": ["england"],
+    "ESP": ["spain"],
+    "GER": ["germany"],
+    "POR": ["portugal"],
+    "NED": ["netherlands", "holland"],
+    "ITA": ["italy"],
+    "BEL": ["belgium"],
+    "CRO": ["croatia"],
+    "URU": ["uruguay"],
+    "COL": ["colombia"],
+    "JPN": ["japan"],
+    "KOR": ["south korea", "korea republic"],
+    "MAR": ["morocco"],
+    "SEN": ["senegal"],
+    "SUI": ["switzerland"],
+    "DEN": ["denmark"],
+    "AUT": ["austria"],
+    "DZA": ["algeria"],
+    "JOR": ["jordan"],
+}
+
 
 def match_game(
     plugin_manager: Any,
@@ -172,10 +202,17 @@ def match_game(
 
 
 def _get_search_terms(team_abbrev: str) -> list[str]:
-    """Get lowercase search terms for a team abbreviation."""
+    """Get lowercase search terms for a team abbreviation.
+
+    Consults US-team aliases (``TEAM_ALIASES``); if the abbrev isn't a US
+    team, also checks national-team aliases (``WORLD_CUP_ALIASES``) so World
+    Cup matchups resolve. The lowercased abbrev is always included.
+    """
     terms = [team_abbrev.lower()]
-    aliases = TEAM_ALIASES.get(team_abbrev, [])
-    terms.extend(aliases)
+    if team_abbrev in TEAM_ALIASES:
+        terms.extend(TEAM_ALIASES[team_abbrev])
+    else:
+        terms.extend(WORLD_CUP_ALIASES.get(team_abbrev, []))
     return terms
 
 
@@ -210,7 +247,7 @@ def _build_odds_result(
     fav_payout = round(100 / max(fav_pct, 1), 2)
     dog_payout = round(100 / max(dog_pct, 1), 2)
 
-    return {
+    result = {
         "fav_team": fav_team,
         "fav_pct": fav_pct,
         "dog_pct": dog_pct,
@@ -218,6 +255,17 @@ def _build_odds_result(
         "dog_payout": dog_payout,
         "market_ticker": market.get("ticker", ""),
     }
+
+    # Defensive 3-way passthrough: some combined soccer markets may carry
+    # draw data. The primary fetch_game_odds path already handles 3-way; this
+    # just keeps the cached-markets fallback from silently dropping it.
+    if "draw_pct" in market or market.get("is_three_way"):
+        result["draw_pct"] = market.get("draw_pct")
+        if "draw_payout" in market:
+            result["draw_payout"] = market.get("draw_payout")
+        result["is_three_way"] = market.get("is_three_way", True)
+
+    return result
 
 
 def match_fight(

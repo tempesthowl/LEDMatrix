@@ -86,6 +86,91 @@ def _prob_color(pct: int) -> tuple:
 
 
 # ---------------------------------------------------------------------------
+# FIFA World Cup per-match (KXWCGAME) 3-way odds parsing
+# ---------------------------------------------------------------------------
+
+# ESPN 3-letter codes that differ from Kalshi's FIFA codes. Default is
+# identity (most codes match). Add only confirmed exceptions here.
+#   ALG (ESPN) -> DZA (Kalshi/FIFA, Algeria).
+# ESPN soccer abbreviation -> Kalshi/FIFA 3-letter code, for the cases where
+# they disagree (most are identical). Verified against live 2026 WC fixtures.
+SOCCER_CODE_ALIAS: Dict[str, str] = {
+    "ALG": "DZA",  # Algeria
+    "IRN": "IRI",  # Iran
+    "HAI": "HTI",  # Haiti
+}
+
+
+def parse_kxwcgame_event(event, away_team, home_team):
+    """Parse a KXWCGAME 3-way (home/away/draw) World Cup match event into odds.
+
+    Kalshi exposes prices in two parallel field families on each nested market:
+    integer-cent fields (``last_price``/``yes_bid``/``yes_ask``, 0-100) and
+    dollar-string fields (``last_price_dollars``/``yes_bid_dollars``/
+    ``yes_ask_dollars``, "0.0000"-"1.0000"). On the
+    ``/events?with_nested_markets=true`` response the integer fields are
+    frequently null while the dollar fields carry the live price, so ``pct``
+    tries the integer family first and falls back to the dollar family.
+
+    Price preference within each family: ``last_price`` (a real trade) first,
+    then the ``yes_bid``/``yes_ask`` midpoint. Returns percentages on a 0-100
+    scale, or None for a market with no usable price.
+    """
+
+    def _num(v):
+        if v is None:
+            return None
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return None
+        return f
+
+    def pct(m):
+        # Integer-cent family (already 0-100).
+        p = _num(m.get("last_price"))
+        if p is None:
+            yb, ya = _num(m.get("yes_bid")), _num(m.get("yes_ask"))
+            if yb is not None and ya is not None:
+                p = (yb + ya) / 2
+        if p is not None:
+            return p
+        # Dollar-string family (0-1 → scale to 0-100).
+        d = _num(m.get("last_price_dollars"))
+        if d is None:
+            yb, ya = _num(m.get("yes_bid_dollars")), _num(m.get("yes_ask_dollars"))
+            if yb is not None and ya is not None:
+                d = (yb + ya) / 2
+        return d * 100 if d is not None else None
+
+    home_pct = away_pct = draw_pct = None
+    for m in event.get("markets", []):
+        suffix = m.get("ticker", "").rsplit("-", 1)[-1].upper()
+        if suffix == "TIE":
+            draw_pct = pct(m)
+        elif suffix == (home_team or "").upper():
+            home_pct = pct(m)
+        elif suffix == (away_team or "").upper():
+            away_pct = pct(m)
+    if home_pct is None or away_pct is None:
+        return None
+    draw_pct = draw_pct if draw_pct is not None else 0.0
+    if home_pct >= away_pct:
+        fav_team, fav_pct, dog_pct = home_team, home_pct, away_pct
+    else:
+        fav_team, fav_pct, dog_pct = away_team, away_pct, home_pct
+    return {
+        "home_pct": round(home_pct), "away_pct": round(away_pct), "draw_pct": round(draw_pct),
+        "fav_team": fav_team, "fav_pct": round(fav_pct), "dog_pct": round(dog_pct),
+        "fav_payout": round(100 / max(fav_pct, 1), 2),
+        "dog_payout": round(100 / max(dog_pct, 1), 2),
+        "draw_payout": round(100 / max(draw_pct, 1), 2),
+        "market_ticker": event.get("event_ticker", ""),
+        "is_three_way": True,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Plugin
 # ---------------------------------------------------------------------------
 
@@ -573,6 +658,11 @@ class KalshiMarketsPlugin(BasePlugin):
         # two markets each (one per fighter). Not to be confused with
         # KXUFCMOF (method-of-finish).
         "ufc": "KXUFCFIGHT",
+        # FIFA World Cup per-match 3-way (home/away/draw) markets. Each fixture
+        # is one event with exactly 3 markets:
+        # KXWCGAME-{YY}{MON}{DD}{AWAY}{HOME}-{CODE_or_TIE}. Routed to a
+        # dedicated 3-way parser via _fetch_worldcup_odds.
+        "fifa.world": "KXWCGAME",
     }
 
     # Kalshi uses non-standard abbreviations for some teams
@@ -604,6 +694,12 @@ class KalshiMarketsPlugin(BasePlugin):
         if not series_prefix:
             self.logger.debug("No Kalshi series prefix for league: %s", league)
             return None
+
+        # FIFA World Cup uses a 3-way (home/away/draw) market shape that the
+        # 2-way US-sports path below can't parse. Route it to a dedicated
+        # handler before any of the 2-way matching logic runs.
+        if series_prefix == "KXWCGAME":
+            return self._fetch_worldcup_odds(away_team, home_team)
 
         # Check cache first (20s — lockstep with game mode scoreboard refresh)
         cache_key = f"kalshi_game_{league}_{away_team}_{home_team}"
@@ -758,6 +854,101 @@ class KalshiMarketsPlugin(BasePlugin):
 
         except Exception:
             self.logger.exception("Error fetching Kalshi game odds for %s vs %s", away_team, home_team)
+            return None
+
+    def _fetch_worldcup_odds(
+        self, away_team: str, home_team: str
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch Kalshi 3-way odds for a single FIFA World Cup fixture.
+
+        Each KXWCGAME event is one mutually-exclusive fixture with exactly
+        three markets (away win / home win / draw). The event_ticker embeds
+        both 3-letter FIFA codes
+        (KXWCGAME-{YY}{MON}{DD}{AWAY}{HOME}-{CODE_or_TIE}), so we match by
+        finding the event whose ticker contains both normalized codes.
+
+        Returns the 3-way odds dict from parse_kxwcgame_event (with an extra
+        is_three_way flag and draw fields), or None if no fixture matched.
+        """
+        # Normalize ESPN codes to Kalshi/FIFA codes (identity for most).
+        away_norm = SOCCER_CODE_ALIAS.get((away_team or "").upper(), (away_team or "").upper())
+        home_norm = SOCCER_CODE_ALIAS.get((home_team or "").upper(), (home_team or "").upper())
+
+        # Check cache first (20s — lockstep with game mode scoreboard refresh)
+        cache_key = f"kalshi_wc_{away_team}_{home_team}"
+        cached = self.cache_manager.get(cache_key, max_age=20)
+        if cached is not None:
+            return cached if cached else None  # empty dict means "checked, nothing found"
+
+        try:
+            # The group stage alone has 70+ concurrently-open KXWCGAME events,
+            # and Kalshi returns them newest-date-first — so a single limit=50
+            # page misses near-term fixtures. Page through with the cursor until
+            # the fixture is found (cap pages as a runaway guard).
+            matched_event = None
+            cursor = None
+            pages = 0
+            while pages < 5:
+                params = {
+                    "series_ticker": "KXWCGAME",
+                    "status": "open",
+                    "limit": 200,
+                    "with_nested_markets": "true",
+                }
+                if cursor:
+                    params["cursor"] = cursor
+                resp = self.session.get(
+                    f"{KALSHI_BASE_URL}/events",
+                    headers=self.headers,
+                    params=params,
+                    timeout=15,
+                )
+                resp.raise_for_status()
+                body = resp.json()
+                events = body.get("events", [])
+                for event in events:
+                    ticker = event.get("event_ticker", "").upper()
+                    if away_norm in ticker and home_norm in ticker:
+                        matched_event = event
+                        break
+                if matched_event or not events:
+                    break
+                cursor = body.get("cursor")
+                pages += 1
+                if not cursor:
+                    break
+
+            if not matched_event:
+                self.logger.debug(
+                    "No Kalshi World Cup event matched %s vs %s",
+                    away_norm, home_norm,
+                )
+                self.cache_manager.set(cache_key, {}, ttl=20)
+                return None
+
+            result = parse_kxwcgame_event(matched_event, away_norm, home_norm)
+            if result is None:
+                self.logger.debug(
+                    "World Cup event %s matched but had no usable prices",
+                    matched_event.get("event_ticker", ""),
+                )
+                self.cache_manager.set(cache_key, {}, ttl=20)
+                return None
+
+            self.cache_manager.set(cache_key, result, ttl=20)
+            self.logger.info(
+                "Kalshi World Cup odds: %s home=%d%% away=%d%% draw=%d%% (fav %s)",
+                result.get("market_ticker"),
+                result.get("home_pct"), result.get("away_pct"),
+                result.get("draw_pct"), result.get("fav_team"),
+            )
+            return result
+
+        except Exception:
+            self.logger.debug(
+                "Error fetching Kalshi World Cup odds for %s vs %s",
+                away_team, home_team, exc_info=True,
+            )
             return None
 
     # ------------------------------------------------------------------

@@ -505,6 +505,9 @@ class GameModeRenderer:
         data: Dict[str, Any],
     ) -> None:
         """Draw the proportional probability bar using team colors."""
+        if kalshi.get("is_three_way") and kalshi.get("draw_pct") is not None:
+            return self._render_three_way_bar(draw, x, y, width, kalshi, data)
+
         bar_h = 10
         fav_pct = kalshi.get("fav_pct", 50)
         dog_pct = kalshi.get("dog_pct", 50)
@@ -568,4 +571,97 @@ class GameModeRenderer:
                 fill=dog_text_color,
                 font=self.fonts["pct"],
             )
+
+    def _render_three_way_bar(
+        self,
+        draw: ImageDraw.Draw,
+        x: int,
+        y: int,
+        width: int,
+        kalshi: Dict[str, Any],
+        data: Dict[str, Any],
+    ) -> None:
+        """Draw a 3-segment probability bar for three-way (soccer) markets.
+
+        Segments left->right: AWAY win | DRAW | HOME win, matching the
+        scorebug convention (away on the top row, home below). Only the
+        ``is_three_way`` gate in _render_prob_bar routes here, so the 2-way
+        path is untouched.
+        """
+        bar_h = 10
+        away_pct = int(kalshi.get("away_pct", 0))
+        home_pct = int(kalshi.get("home_pct", 0))
+        draw_pct = int(kalshi.get("draw_pct", 0))
+
+        away_team = data.get("away_team", "")
+        home_team = data.get("home_team", "")
+        away_color = data.get("away_color", BAR_GREEN)
+        home_color = data.get("home_color", BAR_RED)
+        draw_color = COLOR_GRAY
+
+        # Proportional widths: each at least 1px, sum exactly == width.
+        # Give any rounding remainder to the largest segment.
+        total_pct = away_pct + home_pct + draw_pct
+        if total_pct <= 0:
+            total_pct = 1
+        away_w = max(1, int(width * away_pct / total_pct))
+        draw_w = max(1, int(width * draw_pct / total_pct))
+        home_w = max(1, width - away_w - draw_w)
+        # Reconcile to exactly width by adjusting the largest segment.
+        diff = width - (away_w + draw_w + home_w)
+        if diff != 0:
+            widths = [away_w, draw_w, home_w]
+            largest = widths.index(max(widths))
+            widths[largest] = max(1, widths[largest] + diff)
+            away_w, draw_w, home_w = widths
+
+        # Segment x-offsets
+        away_x = x
+        draw_x = x + away_w
+        home_x = x + away_w + draw_w
+
+        # Draw the three filled segments
+        draw.rectangle([away_x, y, away_x + away_w - 1, y + bar_h - 1], fill=away_color)
+        draw.rectangle([draw_x, y, draw_x + draw_w - 1, y + bar_h - 1], fill=draw_color)
+        draw.rectangle([home_x, y, x + width - 1, y + bar_h - 1], fill=home_color)
+
+        league = data.get("league", "")
+
+        def _text_color(bar_color, team):
+            if contrasting_text_color is not None:
+                return contrasting_text_color(bar_color, team, league)
+            return COLOR_WHITE
+
+        def _label_segment(seg_x, seg_w, full_label, short_label, color, team):
+            """Draw the widest label that fits; skip if even the short one won't."""
+            for label in (full_label, short_label):
+                if label is None:
+                    continue
+                bbox = self.fonts["pct"].getbbox(label)
+                label_w = bbox[2] - bbox[0]
+                label_h = bbox[3] - bbox[1]
+                if seg_w > label_w + 4:
+                    draw.text(
+                        (seg_x + (seg_w - label_w) // 2, y + (bar_h - label_h) // 2),
+                        label,
+                        fill=color,
+                        font=self.fonts["pct"],
+                    )
+                    return
+
+        _label_segment(
+            away_x, away_w,
+            f"{away_team} {away_pct}%", f"{away_pct}%",
+            _text_color(away_color, away_team), away_team,
+        )
+        _label_segment(
+            draw_x, draw_w,
+            f"{draw_pct}%", "TIE",
+            COLOR_WHITE, "",
+        )
+        _label_segment(
+            home_x, home_w,
+            f"{home_team} {home_pct}%", f"{home_pct}%",
+            _text_color(home_color, home_team), home_team,
+        )
 

@@ -246,6 +246,76 @@ NCAAFB_COLORS_SECONDARY = {
     "CLEM": (82, 45, 128),    # Purple
 }
 
+# World Cup national teams (league == "fifa.world") — primary.
+# Keyed by 3-letter FIFA country code. Kit primaries chosen for mutual
+# contrast on a 384x32 LED bar.
+FIFA_WORLD_COLORS = {
+    "BRA": (255, 221, 0),     # Yellow
+    "ARG": (108, 193, 228),   # Sky blue
+    "FRA": (0, 40, 135),      # Blue
+    "ESP": (198, 11, 30),     # Red
+    "ENG": (220, 220, 230),   # White-ish
+    "GER": (40, 40, 40),      # Dark grey/black
+    "POR": (200, 16, 46),     # Red
+    "NED": (255, 107, 0),     # Orange
+    "ITA": (0, 90, 170),      # Azzurri blue
+    "BEL": (220, 30, 40),     # Red
+    "CRO": (200, 20, 40),     # Red
+    "URU": (95, 160, 220),    # Light blue
+    "COL": (255, 205, 0),     # Yellow
+    "USA": (10, 30, 90),      # Navy
+    "MEX": (0, 104, 71),      # Green
+    "CAN": (255, 40, 40),     # Red
+    "JPN": (20, 30, 120),     # Blue
+    "KOR": (220, 30, 60),     # Red
+    "MAR": (193, 18, 49),     # Red
+    "SEN": (0, 135, 81),      # Green
+    "SUI": (213, 43, 30),     # Red
+    "DEN": (200, 30, 40),     # Red
+    "AUT": (220, 220, 225),   # White-ish
+    "JOR": (40, 40, 40),      # Black
+    "DZA": (0, 140, 72),      # Green
+    "AUS": (255, 205, 0),     # Gold
+    "NGA": (0, 135, 81),      # Green
+    "GHA": (0, 107, 63),      # Green
+    "CMR": (0, 135, 81),      # Green
+}
+
+# World Cup national teams — secondary (alternate kit / contrast color)
+# Used by the collision-swap path when two nations' primaries are too
+# similar (e.g. several green or red kits) to read on a 4mm LED panel.
+FIFA_WORLD_COLORS_SECONDARY = {
+    "BRA": (0, 90, 50),       # Green
+    "ARG": (0, 40, 104),      # Navy
+    "FRA": (220, 30, 40),     # Red
+    "ESP": (255, 205, 0),     # Gold
+    "ENG": (200, 16, 46),     # Red
+    "GER": (220, 220, 230),   # White
+    "POR": (0, 90, 50),       # Green
+    "NED": (0, 40, 135),      # Blue
+    "ITA": (255, 255, 255),   # White
+    "BEL": (255, 205, 0),     # Gold
+    "CRO": (0, 60, 160),      # Blue
+    "URU": (40, 40, 40),      # Black
+    "COL": (0, 60, 140),      # Blue
+    "USA": (200, 16, 46),     # Red
+    "MEX": (40, 40, 40),      # Black
+    "CAN": (255, 255, 255),   # White
+    "JPN": (255, 255, 255),   # White
+    "KOR": (0, 60, 140),      # Blue
+    "MAR": (0, 110, 60),      # Green
+    "SEN": (220, 30, 40),     # Red
+    "SUI": (255, 255, 255),   # White
+    "DEN": (255, 255, 255),   # White
+    "AUT": (200, 16, 46),     # Red
+    "JOR": (200, 16, 46),     # Red
+    "DZA": (255, 255, 255),   # White
+    "AUS": (0, 90, 50),       # Green
+    "NGA": (255, 255, 255),   # White
+    "GHA": (200, 16, 46),     # Red
+    "CMR": (200, 16, 46),     # Red
+}
+
 # Lookup by league then abbreviation — primary
 _LEAGUE_COLORS = {
     "mlb": MLB_COLORS,
@@ -253,6 +323,7 @@ _LEAGUE_COLORS = {
     "nba": NBA_COLORS,
     "ncaa_fb": NCAAFB_COLORS,
     "ncaa_football": NCAAFB_COLORS,
+    "fifa.world": FIFA_WORLD_COLORS,
 }
 
 # Lookup by league then abbreviation — secondary
@@ -262,6 +333,7 @@ _LEAGUE_COLORS_SECONDARY = {
     "nba": NBA_COLORS_SECONDARY,
     "ncaa_fb": NCAAFB_COLORS_SECONDARY,
     "ncaa_football": NCAAFB_COLORS_SECONDARY,
+    "fifa.world": FIFA_WORLD_COLORS_SECONDARY,
 }
 
 # Per-sport ESPN abbreviation aliases.
