@@ -1597,7 +1597,11 @@ class SoccerScoreboardPlugin(BasePlugin if BasePlugin else object):
             "away_color": _away_color, "home_color": _home_color,
             "away_score": int(game.get("away_score", 0) or 0),
             "home_score": int(game.get("home_score", 0) or 0),
-            "status_state": status_state, "game_clock": game.get("clock", ""),
+            # Soccer's running minute is the whole clock; period_label already
+            # carries it ("68'" / "HT"). Leaving game_clock empty avoids the
+            # scorebug rendering the minute twice joined by a U+00B7 the 4x6 LED
+            # font can't draw (shows as a tofu box).
+            "status_state": status_state, "game_clock": "",
             "period_label": period_label, "status_detail": game.get("status_text", ""),
             "away_logo": away_logo, "home_logo": home_logo,
             "kalshi": None, "espn_odds": None, "extras": None,
