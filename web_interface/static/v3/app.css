@@ -1150,7 +1150,11 @@ button.bg-white {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: var(--space-2);
+    margin-bottom: var(--space-3);
 }
+/* When the mode-button group is the only content in a section (e.g. Power),
+   the section padding already provides the bottom breathing room. */
+.btn-grid:last-child { margin-bottom: 0; }
 
 .btn-big {
     display: flex;
