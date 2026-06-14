@@ -460,7 +460,8 @@ def get_team_color(abbrev: str, league: str = "mlb") -> tuple:
     colors = _get_league_map(league, secondary=False)
     color = colors.get(key)
     if color:
-        return color
+        secondary = _get_league_map(league, secondary=True).get(key)
+        return _prefer_visible(color, secondary)
     # Try other leagues as fallback (same city teams share abbreviations)
     for lc in _LEAGUE_COLORS.values():
         color = lc.get(key)
@@ -501,6 +502,11 @@ def get_contrasting_pair(home_abbrev: str, away_abbrev: str, league: str) -> tup
     home_secondary = secondary_map.get(home_key, _DEFAULT_SECONDARY)
     away_secondary = secondary_map.get(away_key, _DEFAULT_SECONDARY)
 
+    # A near-black/grey primary (e.g. Germany 40,40,40) is invisible on the black
+    # LED panel — swap to the brighter secondary kit before collision detection.
+    home_primary = _prefer_visible(home_primary, home_secondary)
+    away_primary = _prefer_visible(away_primary, away_secondary)
+
     if _rgb_distance(home_primary, away_primary) >= _COLLISION_THRESHOLD:
         return home_primary, away_primary
 
@@ -517,6 +523,27 @@ def _luminance(rgb: tuple) -> float:
     """Perceived brightness (ITU-R BT.601). 0 = black, 255 = white."""
     r, g, b = rgb[0], rgb[1], rgb[2]
     return 0.299 * r + 0.587 * g + 0.114 * b
+
+
+# A near-black / dark-grey primary (e.g. Germany 40,40,40) disappears on a black
+# LED panel. Use max-channel ("value") not luminance, so a SATURATED dark colour
+# (Curacao navy 0,40,135 -> max 135, USA navy 10,30,90 -> max 90) is kept while a
+# truly near-black/grey one (max < 80) is swapped to its brighter secondary kit.
+_MIN_VISIBLE_VALUE = 80
+
+
+def _too_dark_on_black(rgb: tuple) -> bool:
+    """True if the colour is so close to black it won't read on a black panel."""
+    return max(rgb[0], rgb[1], rgb[2]) < _MIN_VISIBLE_VALUE
+
+
+def _prefer_visible(primary: tuple, secondary: tuple) -> tuple:
+    """Swap a near-black grey/black primary for the brighter secondary kit colour."""
+    if (secondary is not None
+            and _too_dark_on_black(primary)
+            and not _too_dark_on_black(secondary)):
+        return secondary
+    return primary
 
 
 def contrasting_text_color(bar_color: tuple, team_abbrev: str = "", league: str = "") -> tuple:
