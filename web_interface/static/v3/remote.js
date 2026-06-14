@@ -8,17 +8,21 @@
     // --- Sport styling: color-code + icon by league (game cards) or plugin
     // id (ticker toggles). Static + offline; logos layer on top separately. ---
     // Font Awesome 6 names (the app already loads FA; remote.html now does too).
+    // `logo` = slug under /static/v3/leagues/<slug>.png (real league mark);
+    // `chip` = render on a white rounded chip (dark/navy marks vanish on the
+    // dark bg). `icon` (Font Awesome) is kept as the fallback when the PNG
+    // fails to load or no `logo` slug exists. See leagueLogo().
     const SPORT_META = {
-        'fifa.world': { color: '#639922', icon: 'fa-futbol', label: 'World Cup' },
-        'mls':        { color: '#639922', icon: 'fa-futbol', label: 'MLS' },
-        'eng.1':      { color: '#3D195B', icon: 'fa-futbol', label: 'Premier League' },
-        'mlb':        { color: '#378ADD', icon: 'fa-baseball-ball', label: 'MLB' },
-        'nfl':        { color: '#D85A30', icon: 'fa-football-ball', label: 'NFL' },
-        'ncaa_fb':    { color: '#C8102E', icon: 'fa-football-ball', label: 'NCAA FB' },
-        'nba':        { color: '#BA7517', icon: 'fa-basketball-ball', label: 'NBA' },
-        'nhl':        { color: '#7F77DD', icon: 'fa-hockey-puck', label: 'NHL' },
-        'pga':        { color: '#1D9E75', icon: 'fa-golf-ball', label: 'PGA' },
-        'f1':         { color: '#E24B4A', icon: 'fa-flag-checkered', label: 'F1' },
+        'fifa.world': { color: '#639922', icon: 'fa-futbol', label: 'World Cup', logo: 'worldcup', chip: false },
+        'mls':        { color: '#639922', icon: 'fa-futbol', label: 'MLS', logo: 'mls', chip: false },
+        'eng.1':      { color: '#3D195B', icon: 'fa-futbol', label: 'Premier League', logo: 'epl', chip: false },
+        'mlb':        { color: '#378ADD', icon: 'fa-baseball-ball', label: 'MLB', logo: 'mlb', chip: false },
+        'nfl':        { color: '#D85A30', icon: 'fa-football-ball', label: 'NFL', logo: 'nfl', chip: false },
+        'ncaa_fb':    { color: '#C8102E', icon: 'fa-football-ball', label: 'NCAA FB', logo: 'ncaa_fb', chip: false },
+        'nba':        { color: '#BA7517', icon: 'fa-basketball-ball', label: 'NBA', logo: 'nba', chip: false },
+        'nhl':        { color: '#7F77DD', icon: 'fa-hockey-puck', label: 'NHL', logo: 'nhl', chip: false },
+        'pga':        { color: '#1D9E75', icon: 'fa-golf-ball', label: 'PGA', logo: 'pga', chip: true },
+        'f1':         { color: '#E24B4A', icon: 'fa-flag-checkered', label: 'F1', logo: 'f1', chip: false },
     };
     const PLUGIN_SPORT = {
         'soccer-scoreboard': 'fifa.world', 'baseball-scoreboard': 'mlb',
@@ -40,6 +44,22 @@
                 + `{className:'live-team-badge',textContent:'${a}',style:'background:${c}'}))">`;
         }
         return `<span class="live-team-badge" style="background:${c}">${a}</span>`;
+    }
+    // League/competition mark for a card (key=league) or toggle (key=plugin_id).
+    // Renders the local PNG; on load error or when the sport has no `logo`
+    // slug, falls back to the Font Awesome glyph (so nothing ever breaks).
+    function leagueLogo(key, color) {
+        const m = sportMeta(key);
+        const c = escAttr(color || (m && m.color) || '#888');
+        const fa = (m && m.icon) || 'fa-futbol';
+        if (m && m.logo) {
+            const chip = m.chip ? ' league-logo--chip' : '';
+            return `<img class="league-logo${chip}" src="/static/v3/leagues/${m.logo}.png"`
+                + ` alt="${escAttr((m && m.label) || key)}" loading="lazy"`
+                + ` onerror="this.replaceWith(Object.assign(document.createElement('i'),`
+                + `{className:'fas ${fa} sport-icon',style:'color:${c}'}))">`;
+        }
+        return `<i class="fas ${fa} sport-icon" style="color:${c}"></i>`;
     }
 
     // --- Utilities ---
@@ -553,7 +573,7 @@
                             <input type="checkbox" class="game-check"
                                    ${isSelected ? 'checked' : ''}
                                    onchange="toggleGameSelection('${gid}', this)">
-                            <i class="fas ${m ? m.icon : 'fa-futbol'} sport-icon" style="color:${accent}" aria-hidden="true"></i>
+                            ${leagueLogo(g.league, accent)}
                             ${cardInfo}
                         </div>
                         <button class="focus-btn" onclick="focusGame('${g.game_id}','${g.plugin_id || ''}','${g.league || ''}')"
@@ -651,9 +671,7 @@
                 const shown = pending ? pendingPluginChanges[p.id] : !!p.enabled;
                 const m = sportMeta(p.id);
                 const accentStyle = m ? ` sport-accent" style="border-left-color:${m.color}` : '';
-                const icon = m
-                    ? `<i class="fas ${m.icon} sport-icon" style="color:${m.color}" aria-hidden="true"></i>`
-                    : '';
+                const icon = m ? leagueLogo(p.id, m.color) : '';
                 return `
                     <div class="toggle-row ${pending ? 'pending' : ''}${accentStyle}" id="row-plugin-${p.id}">
                         <label for="plugin-toggle-${p.id}">${icon}${p.name || p.id}</label>

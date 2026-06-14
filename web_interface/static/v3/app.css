@@ -1234,6 +1234,18 @@ button.bg-white {
 }
 .toggle-row label .sport-icon { margin-right: 8px; vertical-align: -3px; }
 
+/* Real league logos (replace the FA sport glyphs). Inline-block so they sit
+   correctly in both the flex game card and the inline toggle-row label. */
+.league-logo {
+    width: 26px; height: 26px; object-fit: contain;
+    flex: none; display: inline-block; vertical-align: middle;
+}
+.league-logo--chip {
+    background: #fff; border-radius: 6px; padding: 3px;
+    box-sizing: border-box; width: 28px; height: 28px;
+}
+.toggle-row label .league-logo { margin-right: 8px; }
+
 .focus-btn {
     min-height: 44px;
     min-width: 72px;
