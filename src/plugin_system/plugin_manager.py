@@ -759,11 +759,20 @@ class PluginManager:
 
     def update_all_plugins(self) -> None:
         """
-        Update all enabled plugins.
-        Calls update() on each enabled plugin using PluginExecutor.
+        Update plugins' data.
+
+        The ``enabled`` flag is TICKER-SCROLL VISIBILITY ONLY. Any plugin that
+        feeds Game Mode (it exposes ``get_live_games``) must keep fetching even
+        when its Ticker Content toggle is off — otherwise its games are invisible
+        to Game Mode / the /v3/remote Live Games list, which is the opposite of
+        the documented design. Game plugins therefore always update; non-game
+        plugins (clock, weather, etc.) still honor the toggle to save work.
+        (Eric, 2026-06-14: "I should ALWAYS be able to see every game regardless
+        of the Ticker Content setting.")
         """
         for plugin_id, plugin_instance in list(self.plugins.items()):
-            if not getattr(plugin_instance, "enabled", True):
+            feeds_game_mode = hasattr(plugin_instance, "get_live_games")
+            if not feeds_game_mode and not getattr(plugin_instance, "enabled", True):
                 continue
             
             if not hasattr(plugin_instance, "update"):
