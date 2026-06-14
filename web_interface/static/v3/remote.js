@@ -505,13 +505,27 @@
                 const m = sportMeta(g.league);
                 const accent = m ? m.color : 'var(--color-border-secondary)';
                 const leagueLabel = (m && m.label) || g.league || '';
-                return `
-                    <div class="game-card sport-accent" data-focused="${isFocused}" style="border-left-color:${accent}">
-                        <div class="game-card-inner">
-                            <input type="checkbox" class="game-check"
-                                   ${isSelected ? 'checked' : ''}
-                                   onchange="toggleGameSelection('${gid}', this)">
-                            <i class="fas ${m ? m.icon : 'fa-futbol'} sport-icon" style="color:${accent}" aria-hidden="true"></i>
+                const isGolf = String(g.league || '').toLowerCase() === 'pga';
+
+                // Golf is a tournament, not a two-team matchup: get_live_games
+                // returns a single "LEADER" sentinel with 0–0 scores. Render a
+                // tournament card (name + round · league) instead of the team
+                // template, which would otherwise show "LEADER 0 – 0" with a
+                // stray "LEADER" badge. period_label is "<Tournament> · <Round>".
+                let cardInfo;
+                if (isGolf) {
+                    const parts = String(g.period_label || '').split(/\s*·\s*/).filter(Boolean);
+                    const title = parts[0] || 'Leaderboard';
+                    const sub = parts.slice(1).concat(leagueLabel).filter(Boolean).join(' · ');
+                    cardInfo = `
+                            <div>
+                                <div style="font-weight:600;">${title}</div>
+                                <div style="font-size:12px;color:var(--color-text-secondary);margin-top:2px;">
+                                    ${sub}
+                                </div>
+                            </div>`;
+                } else {
+                    cardInfo = `
                             <div class="game-logos">
                                 ${teamLogo(g.away_logo_url, g.away_team, accent)}
                                 ${teamLogo(g.home_logo_url, g.home_team, accent)}
@@ -523,7 +537,16 @@
                                 <div style="font-size:12px;color:var(--color-text-secondary);margin-top:2px;">
                                     ${g.period_label || ''} · ${leagueLabel}
                                 </div>
-                            </div>
+                            </div>`;
+                }
+                return `
+                    <div class="game-card sport-accent" data-focused="${isFocused}" style="border-left-color:${accent}">
+                        <div class="game-card-inner">
+                            <input type="checkbox" class="game-check"
+                                   ${isSelected ? 'checked' : ''}
+                                   onchange="toggleGameSelection('${gid}', this)">
+                            <i class="fas ${m ? m.icon : 'fa-futbol'} sport-icon" style="color:${accent}" aria-hidden="true"></i>
+                            ${cardInfo}
                         </div>
                         <button class="focus-btn" onclick="focusGame('${g.game_id}','${g.plugin_id || ''}','${g.league || ''}')"
                                 ${isFocused ? 'disabled' : ''}>
