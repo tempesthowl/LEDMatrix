@@ -506,6 +506,14 @@
                 const accent = m ? m.color : 'var(--color-border-secondary)';
                 const leagueLabel = (m && m.label) || g.league || '';
                 const isGolf = String(g.league || '').toLowerCase() === 'pga';
+                // Sport-tinted card background (single source of truth: the
+                // SPORT_META accent). A left-weighted color wash over the dark
+                // base + the 4px accent bar makes each sport scannable at a
+                // glance. Skip the tint on the focused card so its blue
+                // highlight still reads; unknown leagues stay un-tinted.
+                const cardStyle = (m && !isFocused)
+                    ? `border-left-color:${accent};background:linear-gradient(90deg, ${accent}40 0%, ${accent}14 50%, transparent 82%), var(--color-background)`
+                    : `border-left-color:${accent}`;
 
                 // Golf is a tournament, not a two-team matchup: get_live_games
                 // returns a single "LEADER" sentinel with 0–0 scores. Render a
@@ -540,7 +548,7 @@
                             </div>`;
                 }
                 return `
-                    <div class="game-card sport-accent" data-focused="${isFocused}" style="border-left-color:${accent}">
+                    <div class="game-card sport-accent" data-focused="${isFocused}" style="${cardStyle}">
                         <div class="game-card-inner">
                             <input type="checkbox" class="game-check"
                                    ${isSelected ? 'checked' : ''}
