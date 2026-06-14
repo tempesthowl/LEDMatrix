@@ -532,8 +532,12 @@
                 // glance. Skip the tint on the focused card so its blue
                 // highlight still reads; unknown leagues stay un-tinted.
                 const cardStyle = (m && !isFocused)
-                    ? `border-left-color:${accent};background:linear-gradient(90deg, ${accent}40 0%, ${accent}14 50%, transparent 82%), var(--color-background)`
+                    ? `border-left-color:${accent};background:linear-gradient(90deg, ${accent}38 0%, ${accent}12 48%, transparent 80%), var(--rmt-surface)`
                     : `border-left-color:${accent}`;
+
+                // Pulsing LIVE pill for in-progress games (ESPN status_state 'in').
+                const live = (g.status_state === 'in')
+                    ? '<span class="live-badge"><span class="live-dot"></span>LIVE</span>' : '';
 
                 // Golf is a tournament, not a two-team matchup: get_live_games
                 // returns a single "LEADER" sentinel with 0–0 scores. Render a
@@ -547,10 +551,8 @@
                     const sub = parts.slice(1).concat(leagueLabel).filter(Boolean).join(' · ');
                     cardInfo = `
                             <div>
-                                <div style="font-weight:600;">${title}</div>
-                                <div style="font-size:12px;color:var(--color-text-secondary);margin-top:2px;">
-                                    ${sub}
-                                </div>
+                                <div class="game-score-line">${title}</div>
+                                <div class="game-meta-line">${live}<span>${sub}</span></div>
                             </div>`;
                 } else {
                     cardInfo = `
@@ -559,12 +561,12 @@
                                 ${teamLogo(g.home_logo_url, g.home_team, accent)}
                             </div>
                             <div>
-                                <div style="font-weight:600;">
-                                    ${g.away_team} ${g.away_score ?? ''} – ${g.home_score ?? ''} ${g.home_team}
+                                <div class="game-score-line">
+                                    <span class="team">${g.away_team}</span> <span class="score">${g.away_score ?? ''}</span>
+                                    <span class="dash">–</span>
+                                    <span class="score">${g.home_score ?? ''}</span> <span class="team">${g.home_team}</span>
                                 </div>
-                                <div style="font-size:12px;color:var(--color-text-secondary);margin-top:2px;">
-                                    ${g.period_label || ''} · ${leagueLabel}
-                                </div>
+                                <div class="game-meta-line">${live}<span>${[g.period_label, leagueLabel].filter(Boolean).join(' · ')}</span></div>
                             </div>`;
                 }
                 return `
