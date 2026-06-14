@@ -1739,27 +1739,40 @@ class DisplayController:
                 # finishes.
                 self.force_change = True
                 return
-            # If the request carries an explicit game_id from a FOCUS tap,
-            # record it so auto-detect doesn't yank the user off later, AND
-            # propagate game_focus_game_id to the target plugin's config so
-            # its render path knows which game to display. Mirrors the pattern
-            # used by _activate_game_mode (line ~1882) and _rotate_game_mode
-            # (line ~1989).
-            if request.get('mode') == 'game_focus' and request.get('game_id'):
-                self._user_focused_game_id = str(request.get('game_id'))
+            # An explicit game_focus FOCUS tap targets a specific plugin. Remap
+            # the shared 'game_focus' meta-mode to that plugin so the render
+            # loop dispatches to it instead of whichever plugin registered
+            # 'game_focus' last (the flat mode->plugin map is last-write-wins,
+            # so without this golf focus rendered the last sport — soccer/
+            # baseball — instead of the leaderboard).
+            #
+            # Two request shapes reach here:
+            #   * a specific game carries a game_id (baseball/soccer FOCUS) —
+            #     record it so auto-detect doesn't yank the user off, and push
+            #     it into the target plugin's config so its render path knows
+            #     which game to show.
+            #   * a per-tournament plugin (golf's pga-tour-leaderboard) focuses
+            #     with a plugin_id but NO game_id. The remap must still fire;
+            #     its focus view ignores game_focus_game_id (it's per-tournament)
+            #     so we don't set it in that case.
+            # Mirrors _activate_game_mode (~1882) and _rotate_game_mode (~1989).
+            if request.get('mode') == 'game_focus' and request.get('plugin_id'):
+                req_game_id = request.get('game_id')
+                if req_game_id:
+                    self._user_focused_game_id = str(req_game_id)
                 target_pid = request.get('plugin_id')
-                if target_pid:
-                    target_plugin = None
-                    for _mn, pi in self.plugin_modes.items():
-                        if getattr(pi, 'plugin_id', '') == target_pid:
-                            pi.config["game_focus_game_id"] = str(request.get('game_id'))
-                            target_plugin = pi
-                            break
-                    # Remap the shared 'game_focus' meta-mode to the correct
-                    # plugin instance so the render loop dispatches to it.
-                    if target_plugin and self.plugin_modes.get("game_focus") is not target_plugin:
-                        self.plugin_modes["game_focus"] = target_plugin
-                        self.mode_to_plugin_id["game_focus"] = target_pid
+                target_plugin = None
+                for _mn, pi in self.plugin_modes.items():
+                    if getattr(pi, 'plugin_id', '') == target_pid:
+                        if req_game_id:
+                            pi.config["game_focus_game_id"] = str(req_game_id)
+                        target_plugin = pi
+                        break
+                # Remap the shared 'game_focus' meta-mode to the correct
+                # plugin instance so the render loop dispatches to it.
+                if target_plugin and self.plugin_modes.get("game_focus") is not target_plugin:
+                    self.plugin_modes["game_focus"] = target_plugin
+                    self.mode_to_plugin_id["game_focus"] = target_pid
             was_placeholder = self._game_select_placeholder
             self._game_select_placeholder = False
             if was_placeholder:
@@ -1769,13 +1782,20 @@ class DisplayController:
                 except Exception:
                     logger.exception('vegas_coordinator.resume() failed leaving placeholder')
             self._activate_on_demand(request)
-            # For explicit-FOCUS taps, pin to the game_focus mode only so the
-            # on-demand rotation doesn't drift into mlb_recent / mlb_upcoming.
+            # For explicit-FOCUS taps, pin to the focus mode only so the
+            # on-demand rotation doesn't drift into mlb_recent / mlb_upcoming
+            # (or, for golf, the unwanted pga_leaderboard scroll). An explicit
+            # focus is marked by a game_id (specific game) or a plugin_id
+            # (per-tournament golf focus with no game_id). We pin unconditionally
+            # rather than only when req_mode is already an available on-demand
+            # mode: golf's plugin does not register 'game_focus' among its
+            # display modes, so the old `req_mode in on_demand_modes` guard left
+            # golf stuck on pga_leaderboard. The remap above guarantees
+            # plugin_modes['game_focus'] dispatches to the focused plugin.
             # Mirrors _activate_game_mode (line ~1901) for the auto path.
             req_mode = request.get('mode')
             if (req_mode in ('game_focus', 'kalshi_draft_focus')
-                    and request.get('game_id')
-                    and req_mode in (self.on_demand_modes or [])):
+                    and (request.get('game_id') or request.get('plugin_id'))):
                 self.on_demand_modes = [req_mode]
                 self.on_demand_mode_index = 0
                 self.current_display_mode = req_mode

@@ -3,6 +3,19 @@ import time
 from unittest.mock import MagicMock, patch, ANY
 from src.display_controller import DisplayController
 
+
+@pytest.fixture(autouse=True)
+def _stub_boot_animation():
+    """Stub the boot animation during controller construction.
+
+    The shared mock_display_manager fixture doesn't stub get_text_width, so
+    StartupAnimation's centering math hits a MagicMock and raises during
+    DisplayController() init. The boot animation is irrelevant to these unit
+    tests, so replace it with a no-op so the fixture can construct.
+    """
+    with patch("src.startup_animation.StartupAnimation", return_value=MagicMock()):
+        yield
+
 class TestDisplayControllerInitialization:
     """Test DisplayController initialization and setup."""
     
@@ -200,6 +213,105 @@ class TestDisplayControllerOnDemand:
 
         assert controller._game_mode_active is False
         assert controller.on_demand_active is True
+
+    def _drive_on_demand_start(self, controller, request):
+        """Feed a single on-demand start request through the real poller.
+
+        Stubs the unrelated top-of-poll cache reads so the unit under test is
+        just the start-request handling (remap + activate + mode pin).
+        """
+        controller._read_game_selection_cache = MagicMock()
+        controller._poll_config_reload_ping = MagicMock()
+        controller.cache_manager.get_cached_data = MagicMock(return_value={"data": request})
+        controller.cache_manager.get = MagicMock(return_value=None)
+        controller.cache_manager.set = MagicMock()
+        controller._poll_on_demand_requests()
+
+    def test_golf_focus_without_game_id_remaps_and_pins_game_focus(self, test_display_controller):
+        """Regression for the 2026-06-14 golf-FOCUS bug.
+
+        Golf (pga-tour-leaderboard) is per-tournament — its FOCUS tap carries a
+        plugin_id but NO game_id. Reproduces the live-Pi state: 'game_focus' is
+        last-registered to the soccer plugin, and golf does NOT declare
+        'game_focus' among its display modes. The poller must still:
+          * remap the shared 'game_focus' meta-mode to golf, and
+          * pin on_demand_modes to ['game_focus'] (NOT pga_leaderboard),
+        so the render loop dispatches to golf's _display_game_focus instead of
+        rendering soccer (wrong sport) or the unwanted pga_leaderboard scroll.
+        """
+        controller = test_display_controller
+
+        soccer = MagicMock(); soccer.plugin_id = "soccer-scoreboard"; soccer.config = {}
+        golf = MagicMock(); golf.plugin_id = "pga-tour-leaderboard"; golf.config = {}
+
+        # Live-Pi state: game_focus last-registered to soccer; golf only
+        # declares pga_leaderboard (game_focus missing from its display modes).
+        controller.plugin_modes = {"game_focus": soccer, "pga_leaderboard": golf}
+        controller.mode_to_plugin_id = {
+            "game_focus": "soccer-scoreboard",
+            "pga_leaderboard": "pga-tour-leaderboard",
+        }
+        controller.plugin_display_modes = {
+            "soccer-scoreboard": ["game_focus"],
+            "pga-tour-leaderboard": ["pga_leaderboard"],
+        }
+        controller.available_modes = ["pga_leaderboard"]
+        controller.current_mode_index = 0
+        controller.plugin_manager.get_plugin = MagicMock(return_value=golf)
+
+        self._drive_on_demand_start(controller, {
+            "request_id": "golf-focus-1",
+            "action": "start",
+            "plugin_id": "pga-tour-leaderboard",
+            "mode": "game_focus",
+            "pinned": True,
+            # NO game_id — golf is per-tournament
+        })
+
+        assert controller.mode_to_plugin_id["game_focus"] == "pga-tour-leaderboard"
+        assert controller.plugin_modes["game_focus"] is golf
+        assert controller.on_demand_plugin_id == "pga-tour-leaderboard"
+        assert controller.on_demand_modes == ["game_focus"]
+        assert controller.current_display_mode == "game_focus"
+
+    def test_sport_focus_with_game_id_still_remaps_and_records_game(self, test_display_controller):
+        """Guard: the existing game_id FOCUS path (baseball/soccer) must keep
+        remapping game_focus to the focused plugin AND propagate the game_id
+        into the plugin config. Proves the golf fix didn't regress sport focus.
+        """
+        controller = test_display_controller
+
+        soccer = MagicMock(); soccer.plugin_id = "soccer-scoreboard"; soccer.config = {}
+        baseball = MagicMock(); baseball.plugin_id = "baseball-scoreboard"; baseball.config = {}
+
+        controller.plugin_modes = {"game_focus": soccer, "mlb_recent": baseball}
+        controller.mode_to_plugin_id = {
+            "game_focus": "soccer-scoreboard",
+            "mlb_recent": "baseball-scoreboard",
+        }
+        controller.plugin_display_modes = {
+            "soccer-scoreboard": ["game_focus"],
+            "baseball-scoreboard": ["game_focus", "mlb_recent"],
+        }
+        controller.available_modes = ["mlb_recent"]
+        controller.current_mode_index = 0
+        controller.plugin_manager.get_plugin = MagicMock(return_value=baseball)
+
+        self._drive_on_demand_start(controller, {
+            "request_id": "mlb-focus-1",
+            "action": "start",
+            "plugin_id": "baseball-scoreboard",
+            "mode": "game_focus",
+            "game_id": "401815757",
+            "pinned": True,
+        })
+
+        assert controller.mode_to_plugin_id["game_focus"] == "baseball-scoreboard"
+        assert controller.plugin_modes["game_focus"] is baseball
+        assert baseball.config["game_focus_game_id"] == "401815757"
+        assert controller._user_focused_game_id == "401815757"
+        assert controller.on_demand_plugin_id == "baseball-scoreboard"
+        assert controller.on_demand_modes == ["game_focus"]
 
 
 class TestDisplayControllerLivePriority:
