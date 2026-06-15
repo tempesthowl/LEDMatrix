@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#0B1220">
     <title>Outdoor Ticker — Remote</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <link rel="stylesheet" href="/static/v3/app.css?v=37">
+    <link rel="stylesheet" href="/static/v3/app.css?v=39">
 </head>
 <body class="remote-body">
     <header class="remote-header" role="banner">
@@ -74,36 +74,6 @@
         <h3>Kalshi Feed</h3>
         <div id="kalshi-collection-content" class="empty">Loading…</div>
     </section>
-
-    <section class="remote-section" id="nfl-draft-focus">
-        <h3>NFL Draft Focus</h3>
-        <button class="btn-big btn-full-width" id="btn-draft-focus" onclick="openDraftFocusModal()">OPEN DRAFT PICKER</button>
-    </section>
-
-    <div id="draft-focus-modal" class="draft-modal" role="dialog" aria-modal="true"
-         aria-labelledby="draft-modal-title" aria-hidden="true">
-        <div class="draft-modal-content">
-            <h3 id="draft-modal-title" class="draft-modal-title">Select Draft Pick</h3>
-            <div class="draft-pick-grid">
-                <button class="draft-pick-btn" data-pick="1">1</button>
-                <button class="draft-pick-btn" data-pick="2">2</button>
-                <button class="draft-pick-btn" data-pick="3">3</button>
-                <button class="draft-pick-btn" data-pick="4">4</button>
-                <button class="draft-pick-btn" data-pick="5">5</button>
-                <button class="draft-pick-btn" data-pick="6">6</button>
-                <button class="draft-pick-btn" data-pick="7">7</button>
-                <button class="draft-pick-btn" data-pick="8">8</button>
-                <button class="draft-pick-btn" data-pick="9">9</button>
-                <button class="draft-pick-btn" data-pick="10">10</button>
-                <button class="draft-pick-btn" data-pick="11">11</button>
-                <button class="draft-pick-btn" data-pick="12">12</button>
-                <button class="draft-pick-btn" data-pick="13">13</button>
-                <button class="draft-pick-btn" data-pick="14">14</button>
-                <button class="draft-pick-btn" data-pick="15">15</button>
-            </div>
-            <button class="draft-modal-cancel" onclick="closeDraftFocusModal()">Cancel</button>
-        </div>
-    </div>
 
     <section class="remote-section" id="brightness-control">
         <div class="control-header">
@@ -200,7 +170,7 @@
         <button type="button" class="pending-apply" onclick="applyPending()">Apply</button>
     </div>
 
-    <script src="/static/v3/remote.js?v=37" defer></script>
+    <script src="/static/v3/remote.js?v=39" defer></script>
 
     <style>
         .health-trend {

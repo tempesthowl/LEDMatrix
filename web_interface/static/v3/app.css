@@ -1594,46 +1594,6 @@ input[type="range"].remote-range::-moz-range-thumb {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.draft-modal {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, .6);
-    z-index: 150;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-}
-.draft-modal.show { display: flex; }
-.draft-modal-content {
-    background: var(--color-surface);
-    color: var(--color-text-primary);
-    border-radius: var(--radius-md);
-    padding: 20px;
-    max-width: 400px;
-    width: 100%;
-    box-shadow: var(--shadow-lg);
-    animation: modal-slide-in .2s ease-out;
-}
-@keyframes modal-slide-in {
-    from { opacity: 0; transform: translateY(8px) scale(.97); }
-    to   { opacity: 1; transform: translateY(0) scale(1); }
-}
-.draft-pick-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--space-2); }
-.draft-pick-btn {
-    min-height: 52px;
-    border: 2px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    background: var(--color-surface);
-    color: var(--color-text-primary);
-    font-size: 17px;
-    font-weight: var(--font-weight-bold);
-    cursor: pointer;
-    transition: all .15s;
-}
-.draft-pick-btn:hover  { background: var(--color-info-bg); border-color: var(--color-primary); }
-.draft-pick-btn:active { background: var(--color-primary); color: #fff; }
-
 /* Brightness/Stock-speed value badges next to controls (Workstream C5). */
 .control-value-pill {
     display: inline-flex;
@@ -1767,12 +1727,11 @@ input[type="range"].remote-range::-moz-range-thumb {
     100% { background-position:  100% 0; }
 }
 
-/* Workstream C4 — mobile breakpoint.  Portrait phones get 1-col big-button
-   grid and 3-col draft picker so nothing clips on a 360px viewport. */
+/* Workstream C4 — mobile breakpoint.  Portrait phones get a 1-col big-button
+   grid so nothing clips on a 360px viewport. */
 @media (max-width: 380px) {
-    .btn-grid        { grid-template-columns: 1fr; }
-    .draft-pick-grid { grid-template-columns: repeat(3, 1fr); }
-    .remote-body     { padding: var(--space-3); }
+    .btn-grid    { grid-template-columns: 1fr; }
+    .remote-body { padding: var(--space-3); }
 }
 
 /* Desktop layout — use the dead side gutters at ≥1024px by flowing sections
@@ -1808,7 +1767,7 @@ input[type="range"].remote-range::-moz-range-thumb {
     }
 }
 
-/* Remote-page chrome (header, control rows, draft modal helpers). */
+/* Remote-page chrome (header, control rows). */
 .remote-header {
     position: sticky;
     top: 0;
@@ -1843,25 +1802,6 @@ input[type="range"].remote-range::-moz-range-thumb {
     background: linear-gradient(180deg, var(--rmt-accent), var(--rmt-live));
 }
 .btn-full-width { width: 100%; }
-.draft-modal-title {
-    margin: 0 0 var(--space-4);
-    font-size: 16px;
-    font-weight: var(--font-weight-bold);
-    color: var(--color-text-primary);
-}
-.draft-modal-cancel {
-    width: 100%;
-    margin-top: var(--space-4);
-    padding: var(--space-3);
-    background: var(--color-border-light);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    font-size: 15px;
-    font-weight: var(--font-weight-semibold);
-    cursor: pointer;
-    color: var(--color-text-primary);
-    min-height: 44px;
-}
 .control-header {
     display: flex;
     align-items: center;

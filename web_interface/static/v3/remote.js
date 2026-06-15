@@ -24,6 +24,9 @@
         'pga':        { color: '#1D9E75', icon: 'fa-golf-ball', label: 'PGA', logo: 'pga', chip: true },
         'f1':         { color: '#E24B4A', icon: 'fa-flag-checkered', label: 'F1', logo: 'f1', chip: false },
     };
+    // Kalshi collections retired from the Feed picker (event is over). Kept
+    // out of the dropdown even if the entry lingers in config.
+    const RETIRED_KALSHI_COLLECTIONS = new Set(['nfl_draft_2026']);
     const PLUGIN_SPORT = {
         'soccer-scoreboard': 'fifa.world', 'baseball-scoreboard': 'mlb',
         'football-scoreboard': 'nfl', 'basketball-scoreboard': 'nba',
@@ -295,106 +298,6 @@
             showToast('Failed to switch mode');
         }
     };
-
-    // --- Zone: NFL Draft Focus modal (Workstream C6 — accessible) ---
-    let _draftModalReturnFocus = null;
-    let _draftModalKeyHandler = null;
-
-    function _draftModalFocusables() {
-        const modal = document.getElementById('draft-focus-modal');
-        if (!modal) return [];
-        return Array.from(modal.querySelectorAll(
-            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-        )).filter(el => !el.hasAttribute('disabled'));
-    }
-
-    window.openDraftFocusModal = function () {
-        const modal = document.getElementById('draft-focus-modal');
-        if (!modal) return;
-        _draftModalReturnFocus = document.activeElement;
-        modal.classList.add('show');
-        modal.setAttribute('aria-hidden', 'false');
-        // Focus the first interactive element so keyboard users land inside.
-        const focusables = _draftModalFocusables();
-        if (focusables.length) focusables[0].focus();
-        // Trap Tab/Shift+Tab to cycle within the modal; Esc closes.
-        _draftModalKeyHandler = (e) => {
-            if (e.key === 'Escape') {
-                closeDraftFocusModal();
-                return;
-            }
-            if (e.key !== 'Tab') return;
-            const list = _draftModalFocusables();
-            if (!list.length) return;
-            const first = list[0];
-            const last = list[list.length - 1];
-            if (e.shiftKey && document.activeElement === first) {
-                e.preventDefault();
-                last.focus();
-            } else if (!e.shiftKey && document.activeElement === last) {
-                e.preventDefault();
-                first.focus();
-            }
-        };
-        document.addEventListener('keydown', _draftModalKeyHandler);
-    };
-
-    window.closeDraftFocusModal = function () {
-        const modal = document.getElementById('draft-focus-modal');
-        if (!modal) return;
-        modal.classList.remove('show');
-        modal.setAttribute('aria-hidden', 'true');
-        if (_draftModalKeyHandler) {
-            document.removeEventListener('keydown', _draftModalKeyHandler);
-            _draftModalKeyHandler = null;
-        }
-        if (_draftModalReturnFocus && typeof _draftModalReturnFocus.focus === 'function') {
-            _draftModalReturnFocus.focus();
-        }
-        _draftModalReturnFocus = null;
-    };
-
-    async function activateDraftFocus(pickNum) {
-        closeDraftFocusModal();
-        try {
-            await api('/display/on-demand/start', {
-                method: 'POST',
-                body: {
-                    plugin_id: 'kalshi-markets',
-                    mode: 'kalshi_draft_focus',
-                    game_id: String(pickNum),
-                    start_service: false
-                }
-            });
-            showToast(`Focusing on pick #${pickNum}…`);
-            const outcome = await awaitOnDemandOutcome();
-            if (outcome.ok === false) {
-                const reason = outcome.state?.error || 'unavailable';
-                showToast(`Draft focus failed (${reason})`, 4000);
-                activeMode = 'ticker';
-            } else {
-                activeMode = 'draft';
-            }
-            await refreshAll();
-        } catch (e) {
-            showToast('Failed to activate draft focus');
-        }
-    }
-
-    document.addEventListener('DOMContentLoaded', () => {
-        document.querySelectorAll('.draft-pick-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const pick = parseInt(btn.dataset.pick, 10);
-                if (!Number.isNaN(pick)) activateDraftFocus(pick);
-            });
-        });
-        const modal = document.getElementById('draft-focus-modal');
-        if (modal) {
-            modal.addEventListener('click', (e) => {
-                if (e.target === modal) closeDraftFocusModal();
-            });
-        }
-    });
 
     // --- Zone: Auto-focus toggle ---
     let autoFocusEnabled = false;
@@ -700,7 +603,11 @@
             const active = (k.active_collection || '').trim();
             kalshiBaseline = active;
 
-            const entries = Object.entries(collections);
+            // Retired collections: hidden from the picker even if still in
+            // config (deep-merge config writes can't delete keys). NFL Draft
+            // 2026 is over — drop it so the feed isn't stale.
+            const entries = Object.entries(collections)
+                .filter(([id]) => !RETIRED_KALSHI_COLLECTIONS.has(id));
             if (entries.length === 0) {
                 el.classList.add('empty');
                 el.textContent = 'No collections configured.';
