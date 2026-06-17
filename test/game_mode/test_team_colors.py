@@ -57,3 +57,94 @@ def test_canonical_abbrevs_still_resolve():
     assert get_team_color("NYK", "nba") == NBA_COLORS["NYK"]
     assert get_team_color("HOU", "mlb") == MLB_COLORS["HOU"]
     assert get_team_color("HOU", "nba") == NBA_COLORS["HOU"]
+
+
+# --- Contrast guarantee (2026-06-16) ----------------------------------------
+# Pinned regression: ARG's sky-blue (108,193,228) World Cup bar rendered bright
+# white text. White-on-sky-blue is ~2:1 contrast — illegible. The old rule used
+# a single BT.601 luminance threshold (>180 -> dark text, else white); sky blue
+# scored 171.6 and fell into the white-default dead zone. Same dead zone hit
+# every light-blue/teal kit (URU, COD, Marlins, Honolulu-blue Lions...). The fix
+# is a provable guarantee, not another threshold.
+
+
+def _wcag_contrast(c1, c2):
+    """Independent WCAG 2.x contrast-ratio reference (1.0 .. 21.0).
+
+    Deliberately re-implemented here instead of importing the module's helper,
+    so the test pins the real perceptual guarantee rather than trusting the
+    implementation it's checking.
+    """
+    def _rl(rgb):
+        def _chan(v):
+            v /= 255.0
+            return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+        r, g, b = (_chan(x) for x in rgb)
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    l1, l2 = _rl(c1), _rl(c2)
+    hi, lo = (l1, l2) if l1 >= l2 else (l2, l1)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def test_arg_sky_blue_bar_gets_readable_text():
+    """ARG's sky-blue (108,193,228) Kalshi bar must NOT render white text."""
+    from src.game_mode.team_colors import contrasting_text_color
+
+    text = contrasting_text_color((108, 193, 228), "ARG", "fifa.world")
+    assert text != (255, 255, 255), "white text on sky-blue bar is unreadable"
+    assert _wcag_contrast((108, 193, 228), text) >= 4.5, "text must clear WCAG AA"
+
+
+def test_text_color_always_meets_AA_across_full_palette():
+    """The guarantee that ends the whack-a-mole: for EVERY brand color that can
+    fill a bar — in any league, primary or secondary — the chosen text color
+    clears WCAG AA (4.5:1). No background can produce unreadable text."""
+    from src.game_mode import team_colors as tc
+
+    palettes = [
+        tc.MLB_COLORS, tc.MLB_COLORS_SECONDARY,
+        tc.NFL_COLORS, tc.NFL_COLORS_SECONDARY,
+        tc.NBA_COLORS, tc.NBA_COLORS_SECONDARY,
+        tc.NCAAFB_COLORS, tc.NCAAFB_COLORS_SECONDARY,
+        tc.FIFA_WORLD_COLORS, tc.FIFA_WORLD_COLORS_SECONDARY,
+    ]
+    # Neutral fills the renderer paints directly (draw segment, grey fallback).
+    extra_bars = [(205, 205, 205), (196, 206, 211), (180, 180, 180),
+                  (255, 255, 255), (0, 0, 0)]
+
+    failures = []
+    for table in palettes:
+        for abbrev, color in table.items():
+            text = tc.contrasting_text_color(color, abbrev, "")
+            cr = _wcag_contrast(color, text)
+            if cr < 4.5:
+                failures.append((abbrev, color, text, round(cr, 2)))
+    for color in extra_bars:
+        text = tc.contrasting_text_color(color, "", "")
+        cr = _wcag_contrast(color, text)
+        if cr < 4.5:
+            failures.append(("(neutral)", color, text, round(cr, 2)))
+
+    assert not failures, (
+        f"{len(failures)} bar colors yield sub-AA text: {failures[:12]}"
+    )
+
+
+def test_dark_bars_still_use_white():
+    """Common case must not regress: dark team bars keep white text."""
+    from src.game_mode.team_colors import contrasting_text_color
+
+    for dark in [(0, 48, 135), (80, 0, 0), (11, 22, 42), (158, 27, 50)]:
+        assert contrasting_text_color(dark) == (255, 255, 255)
+
+
+def test_branded_dark_text_on_light_bar_preserved():
+    """The broadcast look Eric asked for — a team's dark brand color on a light
+    swapped bar (navy 'NYY' on silver) — still applies, because it clears AAA.
+    The guarantee gates the branded tint; it doesn't kill it."""
+    from src.game_mode.team_colors import contrasting_text_color, get_team_color
+
+    silver = (196, 206, 212)  # Yankees secondary fill after a navy collision
+    text = contrasting_text_color(silver, "NYY", "mlb")
+    assert text == get_team_color("NYY", "mlb"), "should be brand navy"
+    assert text != (0, 0, 0), "specifically the navy tint, not generic black"

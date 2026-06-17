@@ -519,10 +519,26 @@ def get_contrasting_pair(home_abbrev: str, away_abbrev: str, league: str) -> tup
     return home_primary, away_secondary
 
 
-def _luminance(rgb: tuple) -> float:
-    """Perceived brightness (ITU-R BT.601). 0 = black, 255 = white."""
-    r, g, b = rgb[0], rgb[1], rgb[2]
-    return 0.299 * r + 0.587 * g + 0.114 * b
+def _wcag_relative_luminance(rgb: tuple) -> float:
+    """WCAG 2.x relative luminance in [0.0, 1.0] (0 = black, 1 = white).
+
+    Linearizes each sRGB channel then applies the standard luma weights. This
+    is the perceptually-grounded basis for the contrast-ratio formula below —
+    unlike a plain weighted-average brightness, it predicts when black vs white
+    text will actually be readable on a given background.
+    """
+    def _lin(c: int) -> float:
+        s = c / 255.0
+        return s / 12.92 if s <= 0.03928 else ((s + 0.055) / 1.055) ** 2.4
+    return 0.2126 * _lin(rgb[0]) + 0.7152 * _lin(rgb[1]) + 0.0722 * _lin(rgb[2])
+
+
+def contrast_ratio(a: tuple, b: tuple) -> float:
+    """WCAG 2.x contrast ratio between two RGB colors, in [1.0, 21.0]."""
+    la = _wcag_relative_luminance(a)
+    lb = _wcag_relative_luminance(b)
+    lighter, darker = (la, lb) if la >= lb else (lb, la)
+    return (lighter + 0.05) / (darker + 0.05)
 
 
 # A near-black / dark-grey primary (e.g. Germany 40,40,40) disappears on a black
@@ -546,20 +562,37 @@ def _prefer_visible(primary: tuple, secondary: tuple) -> tuple:
     return primary
 
 
+# WCAG thresholds. AA (4.5:1) is the *proven floor*: for any RGB background,
+# max(black, white) contrast bottoms out at ~4.58:1 (at the mid-luminance point
+# where the two cross over), so one of black/white ALWAYS clears AA. AAA (7:1)
+# gates the optional brand tint — we only trade the crisp black/white pick for a
+# team's brand color when that color is itself high-contrast on the bar.
+_AAA_CONTRAST = 7.0
+_TEXT_WHITE = (255, 255, 255)
+_TEXT_BLACK = (0, 0, 0)
+
+
 def contrasting_text_color(bar_color: tuple, team_abbrev: str = "", league: str = "") -> tuple:
-    """Return a readable text color to draw on top of bar_color.
+    """Return a text color *guaranteed* readable on top of bar_color.
 
-    Rule: if the bar is light (luminance > 180, e.g. Yankees silver/white), use
-    the team's dark primary so the text stays readable (per Eric: "NYY 57%"
-    should be navy on a white bar). If the bar is dark, use white.
+    The guarantee (this is what ends the white-on-light-blue whack-a-mole):
+    choose whichever of black/white has the higher WCAG contrast ratio against
+    the bar. Because that maximum is >= ~4.58:1 for *every* possible RGB
+    background, the result always clears WCAG AA. No threshold to tune, and no
+    color — sky-blue ARG, gold OAK, orange HOU — can fall into a dead zone.
 
-    When team_abbrev/league aren't available (or the primary itself is light),
-    fall back to black on light, white on dark.
+    Branded enhancement, strictly subordinate to the guarantee: if a team's
+    brand primary is supplied and it ALSO clears AAA (7:1) on the bar, use it.
+    This keeps the broadcast look (navy "NYY 57%" on a silver bar) where it is
+    genuinely readable, and falls back to crisp black/white everywhere else.
     """
-    if _luminance(bar_color) > 180:
-        if team_abbrev:
-            primary = get_team_color(team_abbrev, league)
-            if _luminance(primary) < 140:
-                return primary
-        return (0, 0, 0)
-    return (255, 255, 255)
+    on_white = contrast_ratio(bar_color, _TEXT_WHITE)
+    on_black = contrast_ratio(bar_color, _TEXT_BLACK)
+    readable = _TEXT_WHITE if on_white >= on_black else _TEXT_BLACK
+
+    if team_abbrev:
+        primary = get_team_color(team_abbrev, league)
+        if tuple(primary) != tuple(bar_color) and contrast_ratio(bar_color, primary) >= _AAA_CONTRAST:
+            return primary
+
+    return readable
