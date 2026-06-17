@@ -1150,7 +1150,9 @@ button.bg-white {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: var(--space-2);
-    margin-bottom: var(--space-3);
+    /* space-4 (not space-3) so the active button's 16px-blur glow clears the
+       toggle row below instead of bleeding into it. */
+    margin-bottom: var(--space-4);
 }
 /* When the mode-button group is the only content in a section (e.g. Power),
    the section padding already provides the bottom breathing room. */
@@ -1189,7 +1191,7 @@ button.bg-white {
     gap: var(--space-3);
     flex-wrap: wrap;
     padding: 10px 12px;
-    margin-bottom: 8px;
+    margin-bottom: var(--space-2);
     background: var(--rmt-surface-2);
     border: 1px solid var(--rmt-border);
     border-radius: var(--rmt-radius-sm);
