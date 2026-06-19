@@ -496,6 +496,25 @@
         }
     }
 
+    window.manualRefreshGames = async function () {
+        const btn = document.getElementById('refresh-games-btn');
+        if (btn) { btn.disabled = true; btn.classList.add('spinning'); }
+        try {
+            await api('/games/refresh', { method: 'POST' });
+            // The controller forces a fresh ESPN fetch on its next tick; the
+            // soccer fetch can take a couple seconds. Poll a few times so a
+            // just-kicked-off game appears without a manual reload.
+            for (let i = 0; i < 5; i++) {
+                await new Promise(r => setTimeout(r, 1600));
+                await refreshLiveGames();
+            }
+        } catch (e) {
+            /* refreshLiveGames() renders its own error state */
+        } finally {
+            if (btn) { btn.disabled = false; btn.classList.remove('spinning'); }
+        }
+    };
+
     window.focusGame = async function (gameId, pluginId, league) {
         try {
             // Always use game_focus, including for golf. game_focus is the

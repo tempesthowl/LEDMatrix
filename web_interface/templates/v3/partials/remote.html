@@ -60,8 +60,21 @@
         </div>
     </section>
 
+    <style>
+      .refresh-btn { background:none; border:none; color:var(--rmt-accent,#4da3ff);
+        font-size:0.9em; cursor:pointer; padding:4px 8px; vertical-align:middle; float:right; }
+      .refresh-btn:disabled { opacity:0.5; cursor:default; }
+      .refresh-btn.spinning i { animation: rmt-spin 0.8s linear infinite; }
+      @keyframes rmt-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) { .refresh-btn.spinning i { animation: none; } }
+    </style>
     <section class="remote-section" id="live-games">
-        <h3>Live Games</h3>
+        <h3>Live Games
+            <button id="refresh-games-btn" class="refresh-btn" type="button"
+                    onclick="manualRefreshGames()" aria-label="Refresh live games">
+                <i class="fas fa-rotate-right"></i>
+            </button>
+        </h3>
         <div id="live-games-content" class="empty">Loading…</div>
     </section>
 
@@ -170,7 +183,7 @@
         <button type="button" class="pending-apply" onclick="applyPending()">Apply</button>
     </div>
 
-    <script src="/static/v3/remote.js?v=39" defer></script>
+    <script src="/static/v3/remote.js?v=40" defer></script>
 
     <style>
         .health-trend {
