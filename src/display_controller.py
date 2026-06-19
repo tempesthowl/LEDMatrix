@@ -1290,7 +1290,7 @@ class DisplayController:
         except (OSError, RuntimeError, ValueError, TypeError):
             logger.debug("Failed to read live-games refresh request", exc_info=True)
             return
-        if not req:
+        if not isinstance(req, dict):
             return
         nonce = req.get('nonce')
         if nonce is None or nonce == self._last_refresh_nonce:
@@ -1310,12 +1310,15 @@ class DisplayController:
                     plugin.force_refresh()
                 else:
                     self._force_refresh_registry(plugin)
+                # Zero the plugin-level update gate so run_scheduled_updates()
+                # calls update() next tick. Inside the try: only advance a plugin
+                # we actually refreshed.
+                pid = getattr(plugin, "plugin_id", None)
+                if (pid and self.plugin_manager
+                        and hasattr(self.plugin_manager, "plugin_last_update")):
+                    self.plugin_manager.plugin_last_update[pid] = 0.0
             except Exception:  # pylint: disable=broad-except
                 logger.warning("force_refresh failed for a plugin", exc_info=True)
-            pid = getattr(plugin, "plugin_id", None)
-            if (pid and self.plugin_manager
-                    and hasattr(self.plugin_manager, "plugin_last_update")):
-                self.plugin_manager.plugin_last_update[pid] = 0.0
 
     def _collect_live_games(self) -> List[Dict[str, Any]]:
         """Collect unique live games across all loaded sport plugins."""

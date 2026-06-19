@@ -491,3 +491,23 @@ class TestLiveGamesRefresh:
         controller._poll_live_games_refresh()
 
         plugin.force_refresh.assert_not_called()
+
+    def test_poll_live_games_refresh_uses_registry_when_no_force_refresh(self, test_display_controller):
+        controller = test_display_controller
+        live = MagicMock()
+        live.last_update = 999.0
+        live.sport_key = "mlb_mlb"
+        live.cache_manager = MagicMock()
+        plugin = MagicMock(spec=["get_live_games", "plugin_id", "_league_registry"])
+        plugin.plugin_id = "baseball-scoreboard"
+        plugin._league_registry = {"mlb": {"managers": {"live": live}}}
+        controller.plugin_modes = {"baseball_live": plugin}
+        controller.plugin_manager.plugin_last_update = {}
+        controller._last_refresh_nonce = None
+        controller.cache_manager.get_cached_data = MagicMock(return_value={"data": {"nonce": 222.0}})
+
+        controller._poll_live_games_refresh()
+
+        assert live.last_update == 0
+        live.cache_manager.delete.assert_called_once_with("mlb_mlb_scoreboard_current")
+        assert controller.plugin_manager.plugin_last_update["baseball-scoreboard"] == 0.0
