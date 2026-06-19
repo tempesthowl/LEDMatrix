@@ -148,3 +148,36 @@ def test_branded_dark_text_on_light_bar_preserved():
     text = contrasting_text_color(silver, "NYY", "mlb")
     assert text == get_team_color("NYY", "mlb"), "should be brand navy"
     assert text != (0, 0, 0), "specifically the navy tint, not generic black"
+
+
+def test_readable_label_color_swaps_dark_primary_to_secondary():
+    # USA World Cup primary is navy (10,30,90) — too dark for small text on
+    # the black panel. Its secondary is red (200,16,46), which is legible.
+    from src.game_mode.team_colors import readable_label_color, FIFA_WORLD_COLORS_SECONDARY
+    color = readable_label_color("USA", "fifa.world")
+    assert color == FIFA_WORLD_COLORS_SECONDARY["USA"]
+    assert max(color) >= 140
+
+
+def test_readable_label_color_keeps_bright_primary():
+    # Brazil primary is yellow (255,221,0) — already bright; keep it.
+    from src.game_mode.team_colors import readable_label_color, FIFA_WORLD_COLORS
+    assert readable_label_color("BRA", "fifa.world") == FIFA_WORLD_COLORS["BRA"]
+
+
+def test_readable_label_color_never_white_for_dark_team():
+    from src.game_mode.team_colors import readable_label_color
+    assert readable_label_color("USA", "fifa.world") != (255, 255, 255)
+
+
+def test_scale_to_value_brightens_dark_preserving_hue():
+    from src.game_mode.team_colors import _scale_to_value
+    out = _scale_to_value((10, 30, 90), 140)
+    assert max(out) == 140
+    # Blue stays dominant — hue preserved, not desaturated to grey/white.
+    assert out[2] == max(out) and out[2] > out[0] and out[2] > out[1]
+
+
+def test_scale_to_value_never_darkens_bright_color():
+    from src.game_mode.team_colors import _scale_to_value
+    assert _scale_to_value((255, 221, 0), 140) == (255, 221, 0)

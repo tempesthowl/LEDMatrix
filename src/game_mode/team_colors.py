@@ -596,3 +596,55 @@ def contrasting_text_color(bar_color: tuple, team_abbrev: str = "", league: str 
             return primary
 
     return readable
+
+
+# --- Payout-label legibility ---------------------------------------------
+# Kalshi payout labels (e.g. "USA 1.6x") are small text drawn directly on the
+# BLACK panel, not on a colored bar. A saturated-dark primary that is fine as a
+# bar FILL (cleared _MIN_VISIBLE_VALUE=80) — e.g. USA navy (10,30,90), max 90 —
+# is illegible as 4px text on black. For text we require a higher brightness
+# floor and, when the primary is too dark, swap to the team's lighter SECONDARY
+# (then TERTIARY) brand color before a hue-preserving brighten. Never white
+# (Eric keeps the color coding).
+_MIN_TEXT_VALUE = 140  # max-channel floor for small text on black; tuned on the emulator.
+
+# Sparse third-choice brand colors, keyed league -> canonical abbrev. Empty by
+# default; add an entry only when a team's primary AND secondary are both too
+# dark, or when a specific lighter tint is preferred (e.g. a USA light-blue).
+_LEAGUE_COLORS_TERTIARY: dict = {}
+
+
+def _scale_to_value(rgb: tuple, target: int) -> tuple:
+    """Brighten an RGB color so its max channel equals `target`, preserving hue.
+
+    Only brightens — a color already at/above `target` is returned unchanged
+    (we never darken). Scales all channels by one factor (keeps hue/saturation)
+    and clamps to 255. Pure black maps to neutral grey at `target`.
+    """
+    m = max(rgb)
+    if m >= target:
+        return tuple(rgb)
+    if m <= 0:
+        return (target, target, target)
+    factor = target / m
+    return tuple(min(255, round(c * factor)) for c in rgb)
+
+
+def readable_label_color(abbrev: str, league: str = "") -> tuple:
+    """Return a team-colored RGB legible as small text on the black panel.
+
+    Walks the team's [primary, secondary, tertiary] brand colors and returns
+    the first whose max channel clears `_MIN_TEXT_VALUE`. If none do (rare),
+    brightens the primary to the floor (hue preserved). Never returns white.
+    """
+    key = _canonicalize(abbrev, league)
+    primary = _get_league_map(league, secondary=False).get(key)
+    secondary = _get_league_map(league, secondary=True).get(key)
+    tertiary = _LEAGUE_COLORS_TERTIARY.get((league or "").lower(), {}).get(key)
+
+    for candidate in (primary, secondary, tertiary):
+        if candidate and max(candidate) >= _MIN_TEXT_VALUE:
+            return tuple(candidate)
+
+    base = primary or secondary or _DEFAULT_COLOR
+    return _scale_to_value(base, _MIN_TEXT_VALUE)
