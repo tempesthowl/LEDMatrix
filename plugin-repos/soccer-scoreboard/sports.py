@@ -2183,7 +2183,7 @@ class SportsLive(SportsCore):
     ):
         super().__init__(config, display_manager, cache_manager, logger, sport_key)
         self.update_interval = self.mode_config.get("live_update_interval", 15)
-        self.no_data_interval = 300
+        self.no_data_interval = 60  # match core sports; ~5x faster live-game auto-detect when idle
         # Log the configured interval for debugging
         self.logger.info(
             f"SportsLive initialized: live_update_interval={self.update_interval}s, "

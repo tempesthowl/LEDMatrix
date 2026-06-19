@@ -189,3 +189,15 @@ def test_renderer_imports_readable_label_color():
     import src.game_mode.renderer as r
     assert r.readable_label_color is not None
     assert r.readable_label_color("USA", "fifa.world") == (200, 16, 46)
+
+
+def test_soccer_live_no_data_interval_matches_core_sports():
+    # Soccer's idle live-poll backoff must be 60s like the core sports, not the
+    # old 300s, so a just-kicked-off game is auto-detected ~5x faster. (The
+    # soccer plugin lives in plugin-repos and isn't importable as a package, so
+    # this pins the source constant; the behavioral proof is the emulator.)
+    from pathlib import Path
+    src = (Path(__file__).resolve().parents[2]
+           / "plugin-repos" / "soccer-scoreboard" / "sports.py").read_text(encoding="utf-8")
+    assert "self.no_data_interval = 60" in src
+    assert "self.no_data_interval = 300" not in src
