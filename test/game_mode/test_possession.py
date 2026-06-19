@@ -78,3 +78,19 @@ def test_possession_bar_uses_raw_navy_not_label_red():
     ox = r.div1_x + 4
     navy = _scan(img, ox + 30, 320 - 30, 16, 21, _is_navy)
     assert navy > 0
+
+def test_possession_bar_full_home_when_home_100():
+    # USA 100 / AUS 0 -> bar is all USA navy, no AUS gold.
+    r, img = _soccer_frame(100, 0)
+    ox = r.div1_x + 4
+    navy = _scan(img, ox + 40, 320 - 30, 16, 21, _is_navy)
+    gold = _scan(img, ox + 40, 320 - 30, 16, 21, _is_gold)
+    assert navy > 0 and gold == 0
+
+def test_possession_bar_full_away_when_away_100():
+    # AUS 100 / USA 0 -> bar is all AUS gold, no USA navy.
+    r, img = _soccer_frame(0, 100)
+    ox = r.div1_x + 4
+    gold = _scan(img, ox + 40, 320 - 30, 16, 21, _is_gold)
+    navy = _scan(img, ox + 40, 320 - 30, 16, 21, _is_navy)
+    assert gold > 0 and navy == 0

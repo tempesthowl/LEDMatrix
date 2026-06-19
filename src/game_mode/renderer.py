@@ -550,10 +550,13 @@ class GameModeRenderer:
         if x1 - x0 < MIN_BAR_W:
             return
         total = away_pos + home_pos
-        aw = int(round((x1 - x0) * away_pos / total))
+        bar_w = x1 - x0
+        aw = max(0, min(int(round(bar_w * away_pos / total)), bar_w))
         h = 6
-        draw.rectangle([x0, y, x0 + aw - 1, y + h], fill=tuple(away_color))
-        draw.rectangle([x0 + aw, y, x1, y + h], fill=tuple(home_color))
+        if aw > 0:
+            draw.rectangle([x0, y, x0 + aw - 1, y + h], fill=tuple(away_color))
+        if aw < bar_w:
+            draw.rectangle([x0 + aw, y, x1, y + h], fill=tuple(home_color))
         draw.rectangle([x0 - 1, y - 1, x1 + 1, y + h + 1], outline=(210, 210, 210))
 
     def _render_prob_bar(
