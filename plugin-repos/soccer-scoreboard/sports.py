@@ -30,6 +30,17 @@ if str(project_root) not in sys.path:
 from src.logo_downloader import LogoDownloader, download_missing_logo
 
 
+def _possession_pct(competitor: dict) -> int:
+    """ESPN possessionPct for one competitor (0-100). 0 when absent (pre-match)."""
+    for s in (competitor.get("statistics") or []):
+        if s.get("name") == "possessionPct":
+            try:
+                return int(float(s.get("displayValue") or 0))
+            except (TypeError, ValueError):
+                return 0
+    return 0
+
+
 class SportsCore(ABC):
     def __init__(
         self,
@@ -956,6 +967,8 @@ class SportsCore(ABC):
                 "home_abbr": home_abbr,
                 "home_id": home_team["id"],
                 "home_score": home_score,
+                "home_possession": _possession_pct(home_team),
+                "away_possession": _possession_pct(away_team),
                 "home_logo_path": self.logo_dir
                 / Path(f"{LogoDownloader.normalize_abbreviation(home_abbr)}.png"),
                 "home_logo_url": home_logo_url,
