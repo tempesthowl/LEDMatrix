@@ -1874,6 +1874,30 @@ def set_game_selection():
         return jsonify({'status': 'error', 'message': 'Failed to update selection'}), 500
 
 
+@api_v3.route('/games/refresh', methods=['POST'])
+def refresh_live_games():
+    """Request an immediate live-games refresh (restart-equivalent fetch).
+
+    Writes a nonce to the shared cache. The display controller polls this key
+    each main-loop tick and, on a new nonce, zeroes every sport plugin's fetch
+    timers + drops its ESPN HTTP cache so a just-kicked-off game appears
+    without restarting the Pi. Async: the caller polls GET /games/live for the
+    refreshed list.
+    """
+    try:
+        cache = _ensure_cache_manager()
+        nonce = time.time()
+        cache.set('live_games_refresh_request', {
+            'nonce': nonce,
+            'requested_at': nonce,
+        })
+        logger.info("[Games] live-games refresh requested (nonce=%s)", nonce)
+        return jsonify({'status': 'accepted', 'nonce': nonce}), 202
+    except Exception:
+        logger.exception("[Games] refresh_live_games failed")
+        return jsonify({'status': 'error', 'message': 'Failed to request refresh'}), 500
+
+
 @api_v3.route('/display/on-demand/status', methods=['GET'])
 def get_on_demand_status():
     """Return the current on-demand display state."""

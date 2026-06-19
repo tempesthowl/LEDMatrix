@@ -764,3 +764,25 @@ def test_index_desktop_override_on_mobile_ua(client):
     ua = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15'
     response = client.get('/?desktop=1', headers={'User-Agent': ua})
     assert response.status_code == 200
+
+
+def test_games_refresh_writes_nonce_and_returns_202():
+    from unittest.mock import MagicMock, patch
+    from flask import Flask
+    from web_interface.blueprints.api_v3 import api_v3
+
+    app = Flask(__name__)
+    app.register_blueprint(api_v3, url_prefix="/api/v3")
+    fake_cache = MagicMock()
+    with patch("web_interface.blueprints.api_v3._ensure_cache_manager", return_value=fake_cache):
+        resp = app.test_client().post("/api/v3/games/refresh")
+
+    assert resp.status_code == 202
+    body = resp.get_json()
+    assert body["status"] == "accepted"
+    assert "nonce" in body
+    fake_cache.set.assert_called_once()
+    key = fake_cache.set.call_args[0][0]
+    payload = fake_cache.set.call_args[0][1]
+    assert key == "live_games_refresh_request"
+    assert "nonce" in payload
