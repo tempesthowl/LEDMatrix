@@ -17,10 +17,11 @@ from typing import Any, Dict, Optional, Tuple
 from PIL import Image, ImageDraw, ImageFont
 
 try:
-    from src.game_mode.team_colors import get_contrasting_pair, contrasting_text_color
+    from src.game_mode.team_colors import get_contrasting_pair, contrasting_text_color, readable_label_color
 except ImportError:  # pragma: no cover — fallback when used outside src tree
     get_contrasting_pair = None
     contrasting_text_color = None
+    readable_label_color = None
 
 logger = logging.getLogger(__name__)
 
@@ -429,12 +430,20 @@ class GameModeRenderer:
         if kalshi:
             self._render_prob_bar(draw, right_x, row1_y, right_w, kalshi, data)
 
-        # --- Row 2: Payout multiples (team colors matching bar above) ---
+        # --- Row 2: Payout multiples (team colors, brightened for legibility) ---
         if kalshi:
             away = data.get("away_team", "")
             home = data.get("home_team", "")
+            league = data.get("league", "")
             away_color = data.get("away_color", COLOR_GREEN)
             home_color = data.get("home_color", COLOR_RED)
+            # Payout labels sit on the BLACK panel (not on the colored bar), so a
+            # dark primary like USA navy is illegible. Swap to the team's lighter
+            # secondary/tertiary. Both payout branches below derive left/right
+            # from these two, so reassigning here covers 3-way and 2-way.
+            if readable_label_color is not None:
+                away_color = readable_label_color(away, league)
+                home_color = readable_label_color(home, league)
 
             if kalshi.get("is_three_way") and kalshi.get("draw_pct") is not None:
                 # Align with the 3-way bar above (away | draw | home). The old

@@ -181,3 +181,11 @@ def test_scale_to_value_brightens_dark_preserving_hue():
 def test_scale_to_value_never_darkens_bright_color():
     from src.game_mode.team_colors import _scale_to_value
     assert _scale_to_value((255, 221, 0), 140) == (255, 221, 0)
+
+
+def test_renderer_imports_readable_label_color():
+    # The renderer must expose the resolver it uses for payout labels, so a
+    # dark team (USA navy) renders its legible secondary, not the navy primary.
+    import src.game_mode.renderer as r
+    assert r.readable_label_color is not None
+    assert r.readable_label_color("USA", "fifa.world") == (200, 16, 46)
