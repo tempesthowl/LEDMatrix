@@ -423,6 +423,9 @@ class GameModeRenderer:
         row2_y = 15  # Payout multiples
         row3_y = 25  # ESPN lines
 
+        payout_left_end = None
+        payout_right_start = None
+
         # --- Row 1: Probability Bar (Kalshi). If Kalshi is absent the
         # middle extras zone already shows baseball bases/outs/count; we
         # must NOT redraw them here or they render twice (Eric: "baseball
@@ -484,6 +487,20 @@ class GameModeRenderer:
                 font=self.fonts["payout"],
             )
 
+            left_bbox = self.fonts["payout"].getbbox(left_text)
+            payout_left_end = right_x + (left_bbox[2] - left_bbox[0])
+            payout_right_start = right_x + right_w - right_w_px
+
+        # --- Possession bar (soccer): inline in the row-2 gap between payouts ---
+        home_pos = data.get("home_possession")
+        away_pos = data.get("away_possession")
+        if home_pos is not None and away_pos is not None and (home_pos + away_pos) > 0:
+            self._render_possession_bar(
+                draw, right_x, row2_y, right_w, away_pos, home_pos,
+                data.get("away_color", COLOR_GREEN), data.get("home_color", COLOR_RED),
+                payout_left_end, payout_right_start,
+            )
+
         # --- Row 3: ESPN traditional lines (WHITE font per Eric's feedback) ---
         if espn_odds:
             spread = espn_odds.get("spread")
@@ -517,6 +534,27 @@ class GameModeRenderer:
                 draw.text((cursor_x, row3_y), text, fill=color, font=self.fonts["odds_detail"])
                 bbox = self.fonts["odds_detail"].getbbox(text)
                 cursor_x += bbox[2] - bbox[0]
+
+    def _render_possession_bar(self, draw, right_x, y, right_w, away_pos, home_pos,
+                               away_color, home_color, left_end, right_start) -> None:
+        """2-segment possession bar (away|home) in the payout-row gap. Raw brand
+        colors so it matches the Kalshi bar; light outline; no numbers."""
+        PAD = 6
+        MIN_BAR_W = 16
+        if left_end is not None and right_start is not None:
+            x0, x1 = left_end + PAD, right_start - PAD
+        else:
+            span = int(right_w * 0.6)            # no Kalshi labels -> center it
+            x0 = right_x + (right_w - span) // 2
+            x1 = x0 + span
+        if x1 - x0 < MIN_BAR_W:
+            return
+        total = away_pos + home_pos
+        aw = int(round((x1 - x0) * away_pos / total))
+        h = 6
+        draw.rectangle([x0, y, x0 + aw - 1, y + h], fill=tuple(away_color))
+        draw.rectangle([x0 + aw, y, x1, y + h], fill=tuple(home_color))
+        draw.rectangle([x0 - 1, y - 1, x1 + 1, y + h + 1], outline=(210, 210, 210))
 
     def _render_prob_bar(
         self,
