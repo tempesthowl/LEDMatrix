@@ -498,7 +498,7 @@
 
     window.manualRefreshGames = async function () {
         const btn = document.getElementById('refresh-games-btn');
-        if (btn) { btn.disabled = true; btn.classList.add('spinning'); }
+        if (btn) { btn.disabled = true; btn.classList.add('spinning'); btn.title = ''; }
         try {
             await api('/games/refresh', { method: 'POST' });
             // The controller forces a fresh ESPN fetch on its next tick; the
@@ -509,7 +509,12 @@
                 await refreshLiveGames();
             }
         } catch (e) {
-            /* refreshLiveGames() renders its own error state */
+            // POST/refresh failed (network or server). Surface it: re-render the
+            // list so it shows its own "Could not load live games" state, and
+            // mark the button so the tap isn't a silent no-op.
+            try { await refreshLiveGames(); } catch (_) { /* list shows its own error */ }
+            showToast('Refresh failed — tap to retry');
+            if (btn) { btn.title = 'Refresh failed — tap to retry'; }
         } finally {
             if (btn) { btn.disabled = false; btn.classList.remove('spinning'); }
         }
