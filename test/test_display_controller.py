@@ -442,5 +442,52 @@ class TestDisplayControllerSchedule:
             with patch.object(controller.config_service, 'get_config', return_value=schedule_config):
                 controller._check_schedule()
                 assert controller.is_display_active is False
-            
+
 from datetime import datetime
+
+
+class TestLiveGamesRefresh:
+    """Manual /v3/remote 'refresh live games' handling."""
+
+    def test_force_refresh_registry_zeros_timers_and_clears_cache(self, test_display_controller):
+        controller = test_display_controller
+        live = MagicMock()
+        live.last_update = 12345.0
+        live.sport_key = "soccer_fifa.world"
+        live.cache_manager = MagicMock()
+        plugin = MagicMock()
+        plugin._league_registry = {"fifa.world": {"managers": {"live": live}}}
+
+        controller._force_refresh_registry(plugin)
+
+        assert live.last_update == 0
+        live.cache_manager.delete.assert_called_once_with("soccer_fifa.world_scoreboard_current")
+
+    def test_poll_live_games_refresh_fires_once_per_nonce(self, test_display_controller):
+        controller = test_display_controller
+        plugin = MagicMock()
+        plugin.plugin_id = "soccer-scoreboard"
+        controller.plugin_modes = {"soccer_live": plugin}
+        controller.plugin_manager.plugin_last_update = {}
+        controller._last_refresh_nonce = None
+        controller.cache_manager.get_cached_data = MagicMock(
+            return_value={"data": {"nonce": 111.0}})
+
+        controller._poll_live_games_refresh()
+        controller._poll_live_games_refresh()  # same nonce -> must NOT re-fire
+
+        assert plugin.force_refresh.call_count == 1
+        assert controller.plugin_manager.plugin_last_update["soccer-scoreboard"] == 0.0
+
+    def test_poll_live_games_refresh_noop_without_request(self, test_display_controller):
+        controller = test_display_controller
+        plugin = MagicMock()
+        plugin.plugin_id = "soccer-scoreboard"
+        controller.plugin_modes = {"soccer_live": plugin}
+        controller.plugin_manager.plugin_last_update = {}
+        controller._last_refresh_nonce = None
+        controller.cache_manager.get_cached_data = MagicMock(return_value=None)
+
+        controller._poll_live_games_refresh()
+
+        plugin.force_refresh.assert_not_called()

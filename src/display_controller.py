@@ -305,6 +305,10 @@ class DisplayController:
         # remote UI stays in sync with the emulator's plugin state.
         self._last_live_games_publish = 0.0
         self._live_games_publish_min_interval = 5.0
+        # Last handled manual-refresh nonce (POST /api/v3/games/refresh). A new
+        # nonce => force a restart-equivalent live-games fetch. See
+        # _poll_live_games_refresh().
+        self._last_refresh_nonce = None
         # Placeholder: set True when the remote asked for game_focus with no
         # specific game. The main loop renders a "SELECT A GAME" screen until
         # the user taps FOCUS or auto-detect picks a favorite.
@@ -1237,6 +1241,81 @@ class DisplayController:
             # the tick-frequent calls safe.
             if any_updated or self._game_mode_active:
                 self._publish_live_games_cache()
+
+    def _force_refresh_registry(self, plugin) -> None:
+        """Zero a sport plugin's live-manager fetch timers + drop its ESPN
+        scoreboard HTTP cache, so the next update() does a genuinely fresh
+        fetch (restart-equivalent). Generic over the shared
+        _league_registry[...]["managers"]["live"] structure used by the soccer
+        and core sport plugins; a no-op for plugins without it.
+        """
+        registry = getattr(plugin, "_league_registry", None)
+        if not registry:
+            return
+        try:
+            entries = list(registry.values())
+        except AttributeError:
+            return
+        for entry in entries:
+            managers = entry.get("managers", {}) if isinstance(entry, dict) else {}
+            live_mgr = managers.get("live") if isinstance(managers, dict) else None
+            if live_mgr is None:
+                continue
+            try:
+                live_mgr.last_update = 0
+            except Exception:  # pylint: disable=broad-except
+                logger.debug("force_refresh: could not reset last_update", exc_info=True)
+            try:
+                sport_key = getattr(live_mgr, "sport_key", "")
+                cm = getattr(live_mgr, "cache_manager", None)
+                if cm and sport_key:
+                    cm.delete(f"{sport_key}_scoreboard_current")
+            except Exception:  # pylint: disable=broad-except
+                logger.debug("force_refresh: could not clear scoreboard cache", exc_info=True)
+
+    def _poll_live_games_refresh(self) -> None:
+        """Handle a manual 'refresh live games' request from /v3/remote.
+
+        Reads the nonce written by POST /api/v3/games/refresh. On a NEW nonce,
+        force-refreshes every live-game plugin (restart-equivalent fetch) and
+        zeroes its plugin-level update gate, so a just-kicked-off game appears
+        on the next tick without restarting the Pi.
+        """
+        if not self.cache_manager:
+            return
+        try:
+            rec = self.cache_manager.get_cached_data(
+                'live_games_refresh_request', max_age=120, memory_ttl=0.05)
+            req = rec.get('data') if isinstance(rec, dict) and 'data' in rec else rec
+        except (OSError, RuntimeError, ValueError, TypeError):
+            logger.debug("Failed to read live-games refresh request", exc_info=True)
+            return
+        if not req:
+            return
+        nonce = req.get('nonce')
+        if nonce is None or nonce == self._last_refresh_nonce:
+            return
+        self._last_refresh_nonce = nonce
+        logger.info("Live-games refresh requested (nonce=%s) — forcing fresh fetch", nonce)
+
+        checked = set()
+        for _mode, plugin in list(self.plugin_modes.items()):
+            if id(plugin) in checked:
+                continue
+            checked.add(id(plugin))
+            if not hasattr(plugin, "get_live_games"):
+                continue
+            try:
+                if hasattr(plugin, "force_refresh"):
+                    plugin.force_refresh()
+                else:
+                    self._force_refresh_registry(plugin)
+            except Exception:  # pylint: disable=broad-except
+                logger.warning("force_refresh failed for a plugin", exc_info=True)
+            pid = getattr(plugin, "plugin_id", None)
+            if (pid and self.plugin_manager
+                    and hasattr(self.plugin_manager, "plugin_last_update")):
+                self.plugin_manager.plugin_last_update[pid] = 0.0
 
     def _collect_live_games(self) -> List[Dict[str, Any]]:
         """Collect unique live games across all loaded sport plugins."""
@@ -2746,6 +2825,7 @@ class DisplayController:
             while True:
                 # Handle on-demand commands before rendering
                 self._poll_on_demand_requests()
+                self._poll_live_games_refresh()
                 self._check_on_demand_expiration()
                 self._tick_plugin_updates()
 
