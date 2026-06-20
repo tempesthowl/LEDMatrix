@@ -559,6 +559,16 @@ class GameModeRenderer:
             draw.rectangle([x0 + aw, y, x1, y + h], fill=tuple(home_color))
         draw.rectangle([x0 - 1, y - 1, x1 + 1, y + h + 1], outline=(210, 210, 210))
 
+    def _draw_bar_label(self, draw, pos, text, fill, font) -> None:
+        """Draw a bar % label; halo LIGHT (white) text with a 1px black cross so
+        it stays legible on mid-saturation segment fills. Dark/branded labels
+        (already on light bars) draw unchanged."""
+        if (fill[0] + fill[1] + fill[2]) >= 384:
+            x, y = pos
+            for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                draw.text((x + dx, y + dy), text, fill=COLOR_BLACK, font=font)
+        draw.text(pos, text, fill=fill, font=font)
+
     def _render_prob_bar(
         self,
         draw: ImageDraw.Draw,
@@ -621,19 +631,17 @@ class GameModeRenderer:
 
         # Center labels in their respective bars
         if fav_w > fav_label_w + 4:
-            draw.text(
+            self._draw_bar_label(
+                draw,
                 (x + (fav_w - fav_label_w) // 2, y + (bar_h - fav_label_h) // 2),
-                fav_label,
-                fill=fav_text_color,
-                font=self.fonts["pct"],
+                fav_label, fav_text_color, self.fonts["pct"],
             )
 
         if dog_w > dog_label_w + 4:
-            draw.text(
+            self._draw_bar_label(
+                draw,
                 (x + fav_w + (dog_w - dog_label_w) // 2, y + (bar_h - fav_label_h) // 2),
-                dog_label,
-                fill=dog_text_color,
-                font=self.fonts["pct"],
+                dog_label, dog_text_color, self.fonts["pct"],
             )
 
     def _render_three_way_bar(
@@ -711,11 +719,10 @@ class GameModeRenderer:
                 label_w = bbox[2] - bbox[0]
                 label_h = bbox[3] - bbox[1]
                 if seg_w > label_w + 4:
-                    draw.text(
+                    self._draw_bar_label(
+                        draw,
                         (seg_x + (seg_w - label_w) // 2, y + (bar_h - label_h) // 2),
-                        label,
-                        fill=color,
-                        font=self.fonts["pct"],
+                        label, color, self.fonts["pct"],
                     )
                     return
 
