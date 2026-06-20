@@ -27,11 +27,12 @@ logger = logging.getLogger(__name__)
 
 
 def wc_display_name(abbrev: str, full_name: str, league: str, max_chars: int = 8) -> str:
-    """Full World Cup country name if short + ASCII-renderable, else the abbrev.
-    (Pixel-fit is applied separately at each render site.)"""
+    """Full World Cup country name (UPPERCASED to match the abbrevs/scores) if
+    short + ASCII-renderable, else the abbrev. (Pixel-fit is applied separately
+    at each render site.)"""
     if (league or "").lower() == "fifa.world" and full_name \
             and len(full_name) <= max_chars and full_name.isascii():
-        return full_name
+        return full_name.upper()
     return abbrev
 
 

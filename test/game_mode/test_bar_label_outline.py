@@ -61,8 +61,8 @@ def test_get_game_focus_data_carries_name_keys():
 
 def test_wc_display_name_rule():
     from src.game_mode.renderer import wc_display_name
-    assert wc_display_name("MAR", "Morocco", "fifa.world") == "Morocco"      # 7 <= 8, ASCII, WC
-    assert wc_display_name("SCO", "Scotland", "fifa.world") == "Scotland"    # 8 <= 8
+    assert wc_display_name("MAR", "Morocco", "fifa.world") == "MOROCCO"      # 7 <= 8, ASCII, WC -> UPPERCASED
+    assert wc_display_name("SCO", "Scotland", "fifa.world") == "SCOTLAND"    # 8 <= 8 -> UPPERCASED
     assert wc_display_name("AUS", "Australia", "fifa.world") == "AUS"        # 9 > 8
     assert wc_display_name("USA", "United States", "fifa.world") == "USA"    # 13 > 8
     assert wc_display_name("TUR", "Türkiye", "fifa.world") == "TUR"     # non-ASCII (u-umlaut)
