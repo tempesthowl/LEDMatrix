@@ -629,6 +629,8 @@ class GameModeRenderer:
         # Draw filled bars with team colors
         draw.rectangle([x, y, x + fav_w - 1, y + bar_h - 1], fill=fav_bar_color)
         draw.rectangle([x + fav_w, y, x + width - 1, y + bar_h - 1], fill=dog_bar_color)
+        # White-ish border framing the whole bar (matches the possession bar).
+        draw.rectangle([x - 1, y - 1, x + width, y + bar_h], outline=(210, 210, 210))
 
         # Labels inside bars
         dog_label = f"{dog_pct}%"
@@ -731,6 +733,8 @@ class GameModeRenderer:
         # visually distinct on the LED panel instead of merging into one blob.
         draw.line([(draw_x, y), (draw_x, y + bar_h - 1)], fill=COLOR_BLACK, width=1)
         draw.line([(home_x, y), (home_x, y + bar_h - 1)], fill=COLOR_BLACK, width=1)
+        # White-ish border framing the whole bar (matches the possession bar).
+        draw.rectangle([x - 1, y - 1, x + width, y + bar_h], outline=(210, 210, 210))
 
         league = data.get("league", "")
 

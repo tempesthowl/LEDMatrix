@@ -90,3 +90,20 @@ def test_wide_segment_shows_full_name_glyphs():
         return sum(1 for x in range(int(320 * 0.45), 316) for yy in range(2, 12)
                    if px[x, yy][0] > 180 and px[x, yy][1] > 180 and px[x, yy][2] > 180)
     assert label_ink(with_name) > label_ink(without)
+
+
+def test_kalshi_bar_has_light_border():
+    # The Kalshi probability bar gets the same light (210,210,210) frame as the
+    # possession bar. The bar sits at row1_y=2, so its 1px top border is at y=1.
+    from src.game_mode.renderer import GameModeRenderer
+    from src.game_mode.team_colors import FIFA_WORLD_COLORS
+    r = GameModeRenderer(320, 32)
+    img = r.render({
+        "away_team": "JOR", "home_team": "MAR", "away_score": 0, "home_score": 1,
+        "league": "fifa.world", "status_state": "in",
+        "away_color": FIFA_WORLD_COLORS["JOR"], "home_color": FIFA_WORLD_COLORS["MAR"],
+        "kalshi": {"is_three_way": True, "away_pct": 10, "home_pct": 78, "draw_pct": 12},
+    }).convert("RGB")
+    px = img.load()
+    border = sum(1 for x in range(92, 317) if px[x, 1] == (210, 210, 210))
+    assert border > 20  # a continuous top frame, not a stray pixel
