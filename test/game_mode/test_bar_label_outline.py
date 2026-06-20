@@ -92,9 +92,9 @@ def test_wide_segment_shows_full_name_glyphs():
     assert label_ink(with_name) > label_ink(without)
 
 
-def test_kalshi_bar_has_light_border():
-    # The Kalshi probability bar gets the same light (210,210,210) frame as the
-    # possession bar. The bar sits at row1_y=2, so its 1px top border is at y=1.
+def test_kalshi_three_way_bar_has_no_light_frame():
+    # Eric rejected the (210,210,210) frame: against the light TIE + near-white
+    # team kits it read as one muddy grey blob. The bar is now frameless.
     from src.game_mode.renderer import GameModeRenderer
     from src.game_mode.team_colors import FIFA_WORLD_COLORS
     r = GameModeRenderer(320, 32)
@@ -104,6 +104,38 @@ def test_kalshi_bar_has_light_border():
         "away_color": FIFA_WORLD_COLORS["JOR"], "home_color": FIFA_WORLD_COLORS["MAR"],
         "kalshi": {"is_three_way": True, "away_pct": 10, "home_pct": 78, "draw_pct": 12},
     }).convert("RGB")
-    px = img.load()
-    border = sum(1 for x in range(92, 317) if px[x, 1] == (210, 210, 210))
-    assert border > 20  # a continuous top frame, not a stray pixel
+    assert (210, 210, 210) not in list(img.getdata())
+
+
+def test_light_label_halo_is_drop_shadow_not_cross():
+    # The light-label halo is a single 1px drop-shadow (down-right), NOT a
+    # 4-directional black cross (which read chunky/dirty). So the added dark
+    # ink lands to the RIGHT of the glyph but never to its LEFT.
+    from PIL import Image, ImageDraw
+    from src.game_mode.renderer import GameModeRenderer
+    r = GameModeRenderer(320, 32)
+    font = r.fonts["pct"]
+    bg = (193, 18, 49)
+    pos = (10, 3)
+    W, H = 72, 16
+
+    def mk(use_helper):
+        img = Image.new("RGB", (W, H), bg)
+        d = ImageDraw.Draw(img)
+        if use_helper:
+            r._draw_bar_label(d, pos, "8", (255, 255, 255), font)
+        else:
+            d.text(pos, "8", fill=(255, 255, 255), font=font)
+        return img.load()
+
+    helper, plain = mk(True), mk(False)
+    gx = [x for x in range(W) for y in range(H) if min(plain[x, y]) > 150]
+    gx0, gx1 = min(gx), max(gx)
+
+    def added_dark(x, y):  # helper notably darker than the clean glyph render
+        return (sum(plain[x, y]) - sum(helper[x, y])) > 120
+
+    left = sum(1 for y in range(H) for x in range(0, gx0) if added_dark(x, y))
+    right = sum(1 for y in range(H) for x in range(gx1 + 1, W) if added_dark(x, y))
+    assert right > 0, "drop shadow should add ink to the right of the glyph"
+    assert left == 0, "a left-side halo means it's still a cross, not a drop shadow"

@@ -79,6 +79,12 @@ def test_possession_bar_uses_raw_navy_not_label_red():
     navy = _scan(img, ox + 30, 320 - 30, 16, 21, _is_navy)
     assert navy > 0
 
+def test_possession_bar_has_no_light_frame():
+    # Frame removed everywhere (Eric rejected the (210,210,210) edge). This
+    # frame carries both the Kalshi 3-way bar and the possession bar.
+    r, img = _soccer_frame(62, 38)
+    assert (210, 210, 210) not in list(img.getdata())
+
 def test_possession_bar_full_home_when_home_100():
     # USA 100 / AUS 0 -> bar is all USA navy, no AUS gold.
     r, img = _soccer_frame(100, 0)

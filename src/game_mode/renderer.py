@@ -562,7 +562,7 @@ class GameModeRenderer:
     def _render_possession_bar(self, draw, right_x, y, right_w, away_pos, home_pos,
                                away_color, home_color, left_end, right_start) -> None:
         """2-segment possession bar (away|home) in the payout-row gap. Raw brand
-        colors so it matches the Kalshi bar; light outline; no numbers."""
+        colors so it matches the Kalshi bar; frameless; no numbers."""
         PAD = 6
         MIN_BAR_W = 16
         if left_end is not None and right_start is not None:
@@ -581,16 +581,14 @@ class GameModeRenderer:
             draw.rectangle([x0, y, x0 + aw - 1, y + h], fill=tuple(away_color))
         if aw < bar_w:
             draw.rectangle([x0 + aw, y, x1, y + h], fill=tuple(home_color))
-        draw.rectangle([x0 - 1, y - 1, x1 + 1, y + h + 1], outline=(210, 210, 210))
 
     def _draw_bar_label(self, draw, pos, text, fill, font) -> None:
-        """Draw a bar % label; halo LIGHT (white) text with a 1px black cross so
-        it stays legible on mid-saturation segment fills. Dark/branded labels
-        (already on light bars) draw unchanged."""
+        """Draw a bar % label; LIGHT (white) text gets a single 1px drop-shadow
+        (down-right) so it stays legible on mid-saturation segment fills without
+        the chunky look of a full outline. Dark/branded labels draw unchanged."""
         if (fill[0] + fill[1] + fill[2]) >= 384:
             x, y = pos
-            for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-                draw.text((x + dx, y + dy), text, fill=COLOR_BLACK, font=font)
+            draw.text((x + 1, y + 1), text, fill=COLOR_BLACK, font=font)
         draw.text(pos, text, fill=fill, font=font)
 
     def _render_prob_bar(
@@ -629,8 +627,6 @@ class GameModeRenderer:
         # Draw filled bars with team colors
         draw.rectangle([x, y, x + fav_w - 1, y + bar_h - 1], fill=fav_bar_color)
         draw.rectangle([x + fav_w, y, x + width - 1, y + bar_h - 1], fill=dog_bar_color)
-        # White-ish border framing the whole bar (matches the possession bar).
-        draw.rectangle([x - 1, y - 1, x + width, y + bar_h], outline=(210, 210, 210))
 
         # Labels inside bars
         dog_label = f"{dog_pct}%"
@@ -700,7 +696,7 @@ class GameModeRenderer:
         home_team = data.get("home_team", "")
         away_color = data.get("away_color", BAR_GREEN)
         home_color = data.get("home_color", BAR_RED)
-        draw_color = (205, 205, 205)  # bright neutral — reads as "draw", not a team
+        draw_color = (90, 90, 90)  # medium-dark neutral — distinct from near-white kits
 
         # Proportional widths: each at least 1px, sum exactly == width.
         # Give any rounding remainder to the largest segment.
@@ -733,8 +729,6 @@ class GameModeRenderer:
         # visually distinct on the LED panel instead of merging into one blob.
         draw.line([(draw_x, y), (draw_x, y + bar_h - 1)], fill=COLOR_BLACK, width=1)
         draw.line([(home_x, y), (home_x, y + bar_h - 1)], fill=COLOR_BLACK, width=1)
-        # White-ish border framing the whole bar (matches the possession bar).
-        draw.rectangle([x - 1, y - 1, x + width, y + bar_h], outline=(210, 210, 210))
 
         league = data.get("league", "")
 
@@ -763,7 +757,7 @@ class GameModeRenderer:
         _label_segment(away_x, away_w,
                        [f"{away_disp} {away_pct}%", f"{away_team} {away_pct}%", f"{away_pct}%"],
                        _text_color(away_color, away_team))
-        _label_segment(draw_x, draw_w, [f"TIE {draw_pct}%", "TIE"], COLOR_BLACK)
+        _label_segment(draw_x, draw_w, [f"TIE {draw_pct}%", "TIE"], COLOR_WHITE)
         _label_segment(home_x, home_w,
                        [f"{home_disp} {home_pct}%", f"{home_team} {home_pct}%", f"{home_pct}%"],
                        _text_color(home_color, home_team))
