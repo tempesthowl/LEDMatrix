@@ -25,6 +25,16 @@ except ImportError:  # pragma: no cover — fallback when used outside src tree
 
 logger = logging.getLogger(__name__)
 
+
+def wc_display_name(abbrev: str, full_name: str, league: str, max_chars: int = 8) -> str:
+    """Full World Cup country name if short + ASCII-renderable, else the abbrev.
+    (Pixel-fit is applied separately at each render site.)"""
+    if (league or "").lower() == "fifa.world" and full_name \
+            and len(full_name) <= max_chars and full_name.isascii():
+        return full_name
+    return abbrev
+
+
 # --- Colors ---
 COLOR_WHITE = (255, 255, 255)
 COLOR_BLACK = (0, 0, 0)
@@ -174,12 +184,25 @@ class GameModeRenderer:
         # If no logos, shift text left
         text_x = text_x_after_logo if (away_logo or home_logo) else 4
 
-        # --- Team abbreviations ---
-        draw.text((text_x, row1_y), away_team, fill=away_color, font=self.fonts["team"])
-        draw.text((text_x, row2_y), home_team, fill=home_color, font=self.fonts["team"])
+        # --- Team abbreviations (WC: full name when short + ASCII + fits) ---
+        league = data.get("league", "")
+        score_x = left_w - 4
+
+        def _fit_name(abbrev, full_name, score_str):
+            disp = wc_display_name(abbrev, full_name, league)
+            if disp == abbrev:
+                return abbrev
+            disp_w = self.fonts["team"].getbbox(disp)[2] - self.fonts["team"].getbbox(disp)[0]
+            score_w = self.fonts["score"].getbbox(score_str)[2] - self.fonts["score"].getbbox(score_str)[0]
+            avail = (score_x - score_w) - text_x - 2
+            return disp if disp_w <= avail else abbrev
+
+        away_disp = _fit_name(away_team, data.get("away_name", ""), str(away_score))
+        home_disp = _fit_name(home_team, data.get("home_name", ""), str(home_score))
+        draw.text((text_x, row1_y), away_disp, fill=away_color, font=self.fonts["team"])
+        draw.text((text_x, row2_y), home_disp, fill=home_color, font=self.fonts["team"])
 
         # --- Scores (right-aligned in left panel) ---
-        score_x = left_w - 4
         away_score_str = str(away_score)
         home_score_str = str(home_score)
 
@@ -607,15 +630,11 @@ class GameModeRenderer:
         draw.rectangle([x + fav_w, y, x + width - 1, y + bar_h - 1], fill=dog_bar_color)
 
         # Labels inside bars
-        fav_label = f"{fav_team} {fav_pct}%"
         dog_label = f"{dog_pct}%"
-
-        fav_bbox = self.fonts["pct"].getbbox(fav_label)
-        fav_label_w = fav_bbox[2] - fav_bbox[0]
-        fav_label_h = fav_bbox[3] - fav_bbox[1]
 
         dog_bbox = self.fonts["pct"].getbbox(dog_label)
         dog_label_w = dog_bbox[2] - dog_bbox[0]
+        dog_label_h = dog_bbox[3] - dog_bbox[1]
 
         # Pick label colors that contrast against the bar. Without this, a
         # team whose bar color ended up near-white (e.g. Yankees swapped to
@@ -629,18 +648,27 @@ class GameModeRenderer:
             fav_text_color = COLOR_WHITE
             dog_text_color = COLOR_WHITE
 
-        # Center labels in their respective bars
-        if fav_w > fav_label_w + 4:
-            self._draw_bar_label(
-                draw,
-                (x + (fav_w - fav_label_w) // 2, y + (bar_h - fav_label_h) // 2),
-                fav_label, fav_text_color, self.fonts["pct"],
-            )
+        # Fav label: try full WC name first, fall back to abbrev
+        fav_full = data.get("home_name", "") if fav_team == home else data.get("away_name", "")
+        fav_disp = wc_display_name(fav_team, fav_full, data.get("league", ""))
+        fav_candidates = [f"{fav_disp} {fav_pct}%", f"{fav_team} {fav_pct}%"]
+
+        for fav_label in fav_candidates:
+            fb = self.fonts["pct"].getbbox(fav_label)
+            fav_label_w = fb[2] - fb[0]
+            fav_label_h = fb[3] - fb[1]
+            if fav_w > fav_label_w + 4:
+                self._draw_bar_label(
+                    draw,
+                    (x + (fav_w - fav_label_w) // 2, y + (bar_h - fav_label_h) // 2),
+                    fav_label, fav_text_color, self.fonts["pct"],
+                )
+                break
 
         if dog_w > dog_label_w + 4:
             self._draw_bar_label(
                 draw,
-                (x + fav_w + (dog_w - dog_label_w) // 2, y + (bar_h - fav_label_h) // 2),
+                (x + fav_w + (dog_w - dog_label_w) // 2, y + (bar_h - dog_label_h) // 2),
                 dog_label, dog_text_color, self.fonts["pct"],
             )
 
@@ -710,10 +738,9 @@ class GameModeRenderer:
                 return contrasting_text_color(bar_color, team, league)
             return COLOR_WHITE
 
-        def _label_segment(seg_x, seg_w, full_label, short_label, color, team):
-            """Draw the widest label that fits; skip if even the short one won't."""
-            for label in (full_label, short_label):
-                if label is None:
+        def _label_segment(seg_x, seg_w, labels, color):
+            for label in labels:
+                if not label:
                     continue
                 bbox = self.fonts["pct"].getbbox(label)
                 label_w = bbox[2] - bbox[0]
@@ -726,19 +753,13 @@ class GameModeRenderer:
                     )
                     return
 
-        _label_segment(
-            away_x, away_w,
-            f"{away_team} {away_pct}%", f"{away_pct}%",
-            _text_color(away_color, away_team), away_team,
-        )
-        _label_segment(
-            draw_x, draw_w,
-            f"TIE {draw_pct}%", "TIE",
-            COLOR_BLACK, "",
-        )
-        _label_segment(
-            home_x, home_w,
-            f"{home_team} {home_pct}%", f"{home_pct}%",
-            _text_color(home_color, home_team), home_team,
-        )
+        away_disp = wc_display_name(away_team, data.get("away_name", ""), league)
+        home_disp = wc_display_name(home_team, data.get("home_name", ""), league)
+        _label_segment(away_x, away_w,
+                       [f"{away_disp} {away_pct}%", f"{away_team} {away_pct}%", f"{away_pct}%"],
+                       _text_color(away_color, away_team))
+        _label_segment(draw_x, draw_w, [f"TIE {draw_pct}%", "TIE"], COLOR_BLACK)
+        _label_segment(home_x, home_w,
+                       [f"{home_disp} {home_pct}%", f"{home_team} {home_pct}%", f"{home_pct}%"],
+                       _text_color(home_color, home_team))
 

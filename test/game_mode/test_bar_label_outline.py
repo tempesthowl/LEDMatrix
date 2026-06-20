@@ -57,3 +57,36 @@ def test_get_game_focus_data_carries_name_keys():
     src = open(os.path.join(root, "plugin-repos", "soccer-scoreboard", "manager.py"), encoding="utf-8").read()
     assert '"home_name"' in src and '"away_name"' in src
     assert 'game.get("home_name"' in src and 'game.get("away_name"' in src
+
+
+def test_wc_display_name_rule():
+    from src.game_mode.renderer import wc_display_name
+    assert wc_display_name("MAR", "Morocco", "fifa.world") == "Morocco"      # 7 <= 8, ASCII, WC
+    assert wc_display_name("SCO", "Scotland", "fifa.world") == "Scotland"    # 8 <= 8
+    assert wc_display_name("AUS", "Australia", "fifa.world") == "AUS"        # 9 > 8
+    assert wc_display_name("USA", "United States", "fifa.world") == "USA"    # 13 > 8
+    assert wc_display_name("TUR", "Türkiye", "fifa.world") == "TUR"     # non-ASCII (u-umlaut)
+    assert wc_display_name("HOU", "Houston", "mlb") == "HOU"                 # not World Cup
+    assert wc_display_name("MAR", "", "fifa.world") == "MAR"                 # no full name
+
+
+def test_wide_segment_shows_full_name_glyphs():
+    # A wide MAR home segment should render more label ink with the full name
+    # ('Morocco 78%') than the abbrev-only render ('MAR 78%'). Sanity check the
+    # name path reaches the bar. Compare near-white glyph pixel counts.
+    from src.game_mode.renderer import GameModeRenderer
+    from src.game_mode.team_colors import FIFA_WORLD_COLORS
+    r = GameModeRenderer(320, 32)
+    base = {
+        "away_team": "JOR", "home_team": "MAR", "away_score": 0, "home_score": 1,
+        "league": "fifa.world", "status_state": "in",
+        "away_color": FIFA_WORLD_COLORS["JOR"], "home_color": FIFA_WORLD_COLORS["MAR"],
+        "kalshi": {"is_three_way": True, "away_pct": 10, "home_pct": 78, "draw_pct": 12},
+    }
+    with_name = dict(base, home_name="Morocco", away_name="Jordan")
+    without = dict(base)  # no name keys -> abbrev path
+    def label_ink(d):
+        img = r.render(d).convert("RGB"); px = img.load()
+        return sum(1 for x in range(int(320 * 0.45), 316) for yy in range(2, 12)
+                   if px[x, yy][0] > 180 and px[x, yy][1] > 180 and px[x, yy][2] > 180)
+    assert label_ink(with_name) > label_ink(without)
