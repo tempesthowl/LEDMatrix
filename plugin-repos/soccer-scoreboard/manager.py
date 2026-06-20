@@ -1599,6 +1599,8 @@ class SoccerScoreboardPlugin(BasePlugin if BasePlugin else object):
             "home_score": int(game.get("home_score", 0) or 0),
             "home_possession": int(game.get("home_possession", 0) or 0),
             "away_possession": int(game.get("away_possession", 0) or 0),
+            "home_name": game.get("home_name", "") or "",
+            "away_name": game.get("away_name", "") or "",
             # Soccer's running minute is the whole clock; period_label already
             # carries it ("68'" / "HT"). Leaving game_clock empty avoids the
             # scorebug rendering the minute twice joined by a U+00B7 the 4x6 LED

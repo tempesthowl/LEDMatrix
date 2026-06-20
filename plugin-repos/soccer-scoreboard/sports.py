@@ -41,6 +41,12 @@ def _possession_pct(competitor: dict) -> int:
     return 0
 
 
+def _full_name(competitor: dict) -> str:
+    """ESPN full team/country name for a competitor (e.g. 'Morocco'); '' if absent."""
+    team = competitor.get("team") or {}
+    return team.get("displayName") or team.get("name") or ""
+
+
 class SportsCore(ABC):
     def __init__(
         self,
@@ -969,6 +975,8 @@ class SportsCore(ABC):
                 "home_score": home_score,
                 "home_possession": _possession_pct(home_team),
                 "away_possession": _possession_pct(away_team),
+                "home_name": _full_name(home_team),
+                "away_name": _full_name(away_team),
                 "home_logo_path": self.logo_dir
                 / Path(f"{LogoDownloader.normalize_abbreviation(home_abbr)}.png"),
                 "home_logo_url": home_logo_url,
