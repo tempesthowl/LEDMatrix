@@ -21,6 +21,8 @@ try:
 except AttributeError:
     RESAMPLE_FILTER = Image.LANCZOS
 
+from src.common.text_helper import draw_emboss
+
 
 class GameRenderer:
     """Renders individual baseball game cards as PIL Images."""
@@ -186,11 +188,9 @@ class GameRenderer:
 
     def _draw_text_with_outline(self, draw, text, position, font,
                                fill=(255, 255, 255), outline_color=(0, 0, 0)):
-        """Draw text with a black outline for better readability."""
-        x, y = position
-        for dx, dy in [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]:
-            draw.text((x + dx, y + dy), text, font=font, fill=outline_color)
-        draw.text((x, y), text, font=font, fill=fill)
+        """Emboss: 1px down-right white drop-shadow (was an 8-dir black outline).
+        BDF fonts are guarded inside draw_emboss."""
+        draw_emboss(draw, position, text, font, fill, shadow=(255, 255, 255))
 
     def set_rankings_cache(self, rankings: Dict[str, int]) -> None:
         """Set the team rankings cache for display."""
@@ -505,9 +505,9 @@ class GameRenderer:
         total_w = away_w + gap + sep_w + gap + home_w
         start_x = center_x - total_w // 2
 
-        draw.text((start_x, prob_y), away_text, fill=away_color, font=prob_font)
-        draw.text((start_x + away_w + gap, prob_y), sep_text, fill=(68, 68, 68), font=prob_font)
-        draw.text((start_x + away_w + gap + sep_w + gap, prob_y), home_text, fill=home_color, font=prob_font)
+        draw_emboss(draw, (start_x, prob_y), away_text, prob_font, away_color, shadow=(255, 255, 255))
+        draw_emboss(draw, (start_x + away_w + gap, prob_y), sep_text, prob_font, (68, 68, 68), shadow=(255, 255, 255))
+        draw_emboss(draw, (start_x + away_w + gap + sep_w + gap, prob_y), home_text, prob_font, home_color, shadow=(255, 255, 255))
 
     def _get_layout_offset(self, element: str, axis: str, default: int = 0) -> int:
         """Get layout offset for a specific element and axis from config."""
