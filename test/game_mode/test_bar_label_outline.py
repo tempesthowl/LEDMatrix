@@ -176,3 +176,36 @@ def test_light_label_halo_is_drop_shadow_not_cross():
     right = sum(1 for y in range(H) for x in range(gx1 + 1, W) if added_dark(x, y))
     assert right > 0, "drop shadow should add ink to the right of the glyph"
     assert left == 0, "a left-side halo means it's still a cross, not a drop shadow"
+
+
+def test_draw_shadowed_is_downright_light_drop_shadow():
+    # Scorebug glyphs on the black panel get a 1px down-right drop-shadow in an
+    # explicit (light) color — added ink lands to the RIGHT of the glyph, never
+    # LEFT (one-sided shadow, NOT a full ring).
+    from PIL import Image, ImageDraw
+    from src.game_mode.renderer import GameModeRenderer
+    r = GameModeRenderer(320, 32)
+    font = r.fonts["team"]
+    pos = (10, 3)
+    W, H = 80, 16
+
+    def mk(use_helper):
+        img = Image.new("RGB", (W, H), (0, 0, 0))  # black panel
+        d = ImageDraw.Draw(img)
+        if use_helper:
+            r._draw_shadowed(d, pos, "8", (0, 40, 135), font, (255, 255, 255))
+        else:
+            d.text(pos, "8", fill=(0, 40, 135), font=font)
+        return img.load()
+
+    helper, plain = mk(True), mk(False)
+    gx = [x for x in range(W) for y in range(H) if plain[x, y] != (0, 0, 0)]
+    gx0, gx1 = min(gx), max(gx)
+
+    def added_light(x, y):
+        return (sum(helper[x, y]) - sum(plain[x, y])) > 120
+
+    left = sum(1 for y in range(H) for x in range(0, gx0) if added_light(x, y))
+    right = sum(1 for y in range(H) for x in range(gx1 + 1, W) if added_light(x, y))
+    assert right > 0, "should add a light shadow to the right of the glyph"
+    assert left == 0, "one-sided shadow: no ink to the left (not a full ring)"

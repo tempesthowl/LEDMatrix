@@ -200,8 +200,8 @@ class GameModeRenderer:
 
         away_disp = _fit_name(away_team, data.get("away_name", ""), str(away_score))
         home_disp = _fit_name(home_team, data.get("home_name", ""), str(home_score))
-        draw.text((text_x, row1_y), away_disp, fill=away_color, font=self.fonts["team"])
-        draw.text((text_x, row2_y), home_disp, fill=home_color, font=self.fonts["team"])
+        self._draw_shadowed(draw, (text_x, row1_y), away_disp, away_color, self.fonts["team"], COLOR_WHITE)
+        self._draw_shadowed(draw, (text_x, row2_y), home_disp, home_color, self.fonts["team"], COLOR_WHITE)
 
         # --- Scores (right-aligned in left panel) ---
         away_score_str = str(away_score)
@@ -210,17 +210,15 @@ class GameModeRenderer:
         away_bbox = self.fonts["score"].getbbox(away_score_str)
         home_bbox = self.fonts["score"].getbbox(home_score_str)
 
-        draw.text(
+        self._draw_shadowed(
+            draw,
             (score_x - (away_bbox[2] - away_bbox[0]), row1_y),
-            away_score_str,
-            fill=away_score_color,
-            font=self.fonts["score"],
+            away_score_str, away_score_color, self.fonts["score"], COLOR_WHITE,
         )
-        draw.text(
+        self._draw_shadowed(
+            draw,
             (score_x - (home_bbox[2] - home_bbox[0]), row2_y),
-            home_score_str,
-            fill=home_score_color,
-            font=self.fonts["score"],
+            home_score_str, home_score_color, self.fonts["score"], COLOR_WHITE,
         )
 
         # --- Game state (period + clock) ---
@@ -428,6 +426,21 @@ class GameModeRenderer:
     # Right Panel — Odds
     # ------------------------------------------------------------------
 
+    def _payout_labels(self, kalshi: Dict[str, Any], away: str, home: str) -> Tuple[str, str]:
+        """(left_text, right_text) for the payout row.
+
+        3-way (soccer) shows just the multiple — team identity is carried by the
+        label's position (left=away, right=home) and color, so the abbrev is
+        redundant. 2-way keeps the "{mult}x payout" form.
+        """
+        if kalshi.get("is_three_way") and kalshi.get("draw_pct") is not None:
+            away_pct = max(int(kalshi.get("away_pct", 0)), 1)
+            home_pct = max(int(kalshi.get("home_pct", 0)), 1)
+            return f"{100 / away_pct:.1f}x", f"{100 / home_pct:.1f}x"
+        fav_payout = kalshi.get("fav_payout", 0)
+        dog_payout = kalshi.get("dog_payout", 0)
+        return f"{fav_payout:.1f}x payout", f"{dog_payout:.1f}x payout"
+
     def _render_odds_panel(
         self, img: Image.Image, draw: ImageDraw.Draw, data: Dict[str, Any]
     ) -> None:
@@ -472,46 +485,33 @@ class GameModeRenderer:
                 away_color = readable_label_color(away, league)
                 home_color = readable_label_color(home, league)
 
+            left_text, right_text = self._payout_labels(kalshi, away, home)
             if kalshi.get("is_three_way") and kalshi.get("draw_pct") is not None:
-                # Align with the 3-way bar above (away | draw | home). The old
-                # fav/dog ordering put the FAVOURITE's payout on the left, but
-                # the 3-way bar puts the AWAY team on the left — so a home
-                # favourite's payout landed under the away segment ("USA 74%"
-                # sitting over Paraguay's 11x). Derive each payout from the same
-                # pct the bar uses, and label it with the team so it can't be
-                # misread regardless of position.
-                away_pct = max(int(kalshi.get("away_pct", 0)), 1)
-                home_pct = max(int(kalshi.get("home_pct", 0)), 1)
-                left_text = f"{away} {100 / away_pct:.1f}x"
-                right_text = f"{home} {100 / home_pct:.1f}x"
+                # 3-way bar is ordered away | draw | home, so payouts follow:
+                # away on the left, home on the right. Color carries the team
+                # identity now that the abbrev is gone. Use the bar-label font
+                # (pct) so the multiples match the "TIE"/"ECUADOR 79%" glyphs.
                 left_color, right_color = away_color, home_color
+                payout_font = self.fonts["pct"]
             else:
-                fav_payout = kalshi.get("fav_payout", 0)
-                dog_payout = kalshi.get("dog_payout", 0)
                 fav_team = kalshi.get("fav_team", "")
-                left_text = f"{fav_payout:.1f}x payout"
-                right_text = f"{dog_payout:.1f}x payout"
                 left_color = home_color if fav_team == home else away_color
                 right_color = away_color if fav_team == home else home_color
+                payout_font = self.fonts["payout"]
 
-            draw.text(
-                (right_x, row2_y),
-                left_text,
-                fill=left_color,
-                font=self.fonts["payout"],
-            )
+            draw.text((right_x, row2_y), left_text, fill=left_color, font=payout_font)
 
             # Right-align the right-hand payout
-            right_bbox = self.fonts["payout"].getbbox(right_text)
+            right_bbox = payout_font.getbbox(right_text)
             right_w_px = right_bbox[2] - right_bbox[0]
             draw.text(
                 (right_x + right_w - right_w_px, row2_y),
                 right_text,
                 fill=right_color,
-                font=self.fonts["payout"],
+                font=payout_font,
             )
 
-            left_bbox = self.fonts["payout"].getbbox(left_text)
+            left_bbox = payout_font.getbbox(left_text)
             payout_left_end = right_x + (left_bbox[2] - left_bbox[0])
             payout_right_start = right_x + right_w - right_w_px
 
@@ -590,6 +590,16 @@ class GameModeRenderer:
         blue and black "HOU 62%" on orange) get the same crisp embossed look."""
         x, y = pos
         shadow = COLOR_BLACK if (fill[0] + fill[1] + fill[2]) >= 384 else COLOR_WHITE
+        draw.text((x + 1, y + 1), text, fill=shadow, font=font)
+        draw.text(pos, text, fill=fill, font=font)
+
+    def _draw_shadowed(self, draw, pos, text, fill, font, shadow) -> None:
+        """1px down-right drop-shadow then the text, with an explicit shadow
+        color. Used by the scorebug, which sits on the black panel: a light
+        shadow stays visible there (and adds visual weight), where the bar's
+        opposite-luminance rule would draw an invisible black shadow behind
+        light team colors."""
+        x, y = pos
         draw.text((x + 1, y + 1), text, fill=shadow, font=font)
         draw.text(pos, text, fill=fill, font=font)
 
