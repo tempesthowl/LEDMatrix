@@ -11,6 +11,11 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 from PIL import Image, ImageDraw, ImageFont
 
+try:
+    from src.common.text_helper import draw_emboss
+except ImportError:
+    draw_emboss = None
+
 logger = logging.getLogger(__name__)
 
 # Pillow compatibility: Image.Resampling.LANCZOS is available in Pillow >= 9.1
@@ -269,19 +274,17 @@ class GameRenderer:
             return None
     
     def _draw_text_with_outline(
-        self, 
-        draw: ImageDraw.Draw, 
-        text: str, 
-        position: Tuple[int, int], 
-        font: ImageFont.FreeTypeFont, 
-        fill: Tuple[int, int, int] = (255, 255, 255), 
+        self,
+        draw: ImageDraw.Draw,
+        text: str,
+        position: Tuple[int, int],
+        font: ImageFont.FreeTypeFont,
+        fill: Tuple[int, int, int] = (255, 255, 255),
         outline_color: Tuple[int, int, int] = (0, 0, 0)
     ) -> None:
-        """Draw text with a black outline for better readability."""
-        x, y = position
-        for dx, dy in [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]:
-            draw.text((x + dx, y + dy), text, font=font, fill=outline_color)
-        draw.text((x, y), text, font=font, fill=fill)
+        """Draw text with drop-shadow emboss for readability on dark panels.
+        BDF fonts are guarded inside draw_emboss."""
+        draw_emboss(draw, position, text, font, fill, shadow=(255, 255, 255))
     
     def render_game_card(
         self, 
@@ -642,9 +645,9 @@ class GameRenderer:
         total_w = away_w + gap + sep_w + gap + home_w
         start_x = center_x - total_w // 2
 
-        draw.text((start_x, prob_y), away_text, fill=away_color, font=prob_font)
-        draw.text((start_x + away_w + gap, prob_y), sep_text, fill=(68, 68, 68), font=prob_font)
-        draw.text((start_x + away_w + gap + sep_w + gap, prob_y), home_text, fill=home_color, font=prob_font)
+        draw_emboss(draw, (start_x, prob_y), away_text, prob_font, away_color, shadow=(255, 255, 255))
+        draw_emboss(draw, (start_x + away_w + gap, prob_y), sep_text, prob_font, (68, 68, 68), shadow=(255, 255, 255))
+        draw_emboss(draw, (start_x + away_w + gap + sep_w + gap, prob_y), home_text, prob_font, home_color, shadow=(255, 255, 255))
 
     def _get_team_display_text(self, abbr: str, record: str, game: Optional[Dict] = None, side: str = "") -> str:
         """Get the display text for a team (seed, ranking, or record)."""
