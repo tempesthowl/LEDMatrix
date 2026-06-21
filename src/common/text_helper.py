@@ -24,6 +24,7 @@ def draw_emboss(draw, pos, text, font, fill, shadow=None, offset=(1, 1)):
     BDF fonts (freetype.Face) can't be drawn by PIL ImageDraw.text; if one is
     passed, just return (callers handle BDF emboss separately).
     """
+    # BDF/freetype.Face fonts are rendered via display_manager._draw_bdf_text upstream (configured BDF is pre-converted to PIL bitmap), so this guard is defensive and never fires in practice.
     if hasattr(font, "set_char_size"):           # freetype.Face (BDF) guard
         return
     if shadow is None:

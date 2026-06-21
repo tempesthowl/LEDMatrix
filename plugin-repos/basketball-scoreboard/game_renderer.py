@@ -11,10 +11,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 from PIL import Image, ImageDraw, ImageFont
 
-try:
-    from src.common.text_helper import draw_emboss
-except ImportError:
-    draw_emboss = None
+from src.common.text_helper import draw_emboss
 
 logger = logging.getLogger(__name__)
 

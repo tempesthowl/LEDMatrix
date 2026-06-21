@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "webui", "runtimeExecutable": "bash", "runtimeArgs": ["scripts/dev-webui.sh"], "port": 5000 }
+  ]
+}
