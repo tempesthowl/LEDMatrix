@@ -19,6 +19,8 @@ from typing import Any, Dict, Tuple
 
 from PIL import Image, ImageDraw, ImageFont
 
+from src.common.text_helper import draw_emboss
+
 logger = logging.getLogger(__name__)
 
 COLOR_WHITE = (255, 255, 255)
@@ -130,15 +132,15 @@ class KalshiDraftFocusRenderer:
         name = str(candidate.get("display_name", ""))
         pct = max(0, min(int(candidate.get("kalshi_pct", 0)), 99))
 
-        draw.text((self.COL_RANK_X, y), str(rank), fill=COLOR_WHITE, font=row_font)
+        draw_emboss(draw, (self.COL_RANK_X, y), str(rank), row_font, COLOR_WHITE, shadow=(255, 255, 255))
 
         name_fit = self._fit_text(
             name[:20], row_font, self.COL_NAME_END - self.COL_NAME_X
         )
-        draw.text((self.COL_NAME_X, y), name_fit, fill=COLOR_WHITE, font=row_font)
+        draw_emboss(draw, (self.COL_NAME_X, y), name_fit, row_font, COLOR_WHITE, shadow=(255, 255, 255))
 
         pct_text = f"{pct}%"
-        draw.text((self.COL_PCT_X, y), pct_text, fill=COLOR_GOLD, font=row_font)
+        draw_emboss(draw, (self.COL_PCT_X, y), pct_text, row_font, COLOR_GOLD, shadow=(255, 255, 255))
 
         self._render_prob_bar(draw, y, pct)
 
@@ -148,12 +150,7 @@ class KalshiDraftFocusRenderer:
             payout_int = 99
         payout_text = f"{payout_int}x"
         payout_w = self._text_width(payout_text, row_font)
-        draw.text(
-            (self.COL_PAYOUT_END - payout_w, y),
-            payout_text,
-            fill=COLOR_GOLD,
-            font=row_font,
-        )
+        draw_emboss(draw, (self.COL_PAYOUT_END - payout_w, y), payout_text, row_font, COLOR_GOLD, shadow=(255, 255, 255))
 
     def _render_prob_bar(self, draw: ImageDraw.Draw, y: int, pct: int) -> None:
         bar_top = y + 1
