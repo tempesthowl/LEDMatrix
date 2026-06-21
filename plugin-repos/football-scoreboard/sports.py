@@ -18,6 +18,7 @@ from dynamic_team_resolver import DynamicTeamResolver
 from logo_downloader import LogoDownloader, download_missing_logo
 from base_odds_manager import BaseOddsManager
 from data_sources import ESPNDataSource
+from src.common.text_helper import draw_emboss
 
 
 class SportsCore(ABC):
@@ -466,20 +467,9 @@ class SportsCore(ABC):
     def _draw_text_with_outline(
         self, draw, text, position, font, fill=(255, 255, 255), outline_color=(0, 0, 0)
     ):
-        """Draw text with a black outline for better readability."""
-        x, y = position
-        for dx, dy in [
-            (-1, -1),
-            (-1, 0),
-            (-1, 1),
-            (0, -1),
-            (0, 1),
-            (1, -1),
-            (1, 0),
-            (1, 1),
-        ]:
-            draw.text((x + dx, y + dy), text, font=font, fill=outline_color)
-        draw.text((x, y), text, font=font, fill=fill)
+        """Emboss: 1px down-right white drop-shadow (was an 8-dir black outline).
+        BDF fonts are guarded inside draw_emboss."""
+        draw_emboss(draw, position, text, font, fill, shadow=(255, 255, 255))
 
     def _load_and_resize_logo(
         self, team_id: str, team_abbrev: str, logo_path: Path, logo_url: str | None
