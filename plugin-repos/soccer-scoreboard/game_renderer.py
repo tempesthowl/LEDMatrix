@@ -17,6 +17,11 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 from PIL import Image, ImageDraw, ImageFont
 
+try:
+    from src.common.text_helper import draw_emboss
+except ImportError:
+    draw_emboss = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -264,19 +269,17 @@ class GameRenderer:
         return (available_width, max_height)
     
     def _draw_text_with_outline(
-        self, 
-        draw: ImageDraw.Draw, 
-        text: str, 
-        position: Tuple[int, int], 
-        font: ImageFont.FreeTypeFont, 
-        fill: Tuple[int, int, int] = (255, 255, 255), 
+        self,
+        draw: ImageDraw.Draw,
+        text: str,
+        position: Tuple[int, int],
+        font: ImageFont.FreeTypeFont,
+        fill: Tuple[int, int, int] = (255, 255, 255),
         outline_color: Tuple[int, int, int] = (0, 0, 0)
     ) -> None:
-        """Draw text with a black outline for better readability."""
-        x, y = position
-        for dx, dy in [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]:
-            draw.text((x + dx, y + dy), text, font=font, fill=outline_color)
-        draw.text((x, y), text, font=font, fill=fill)
+        """Emboss: 1px down-right white drop-shadow (was an 8-dir black outline).
+        BDF fonts are guarded inside draw_emboss."""
+        draw_emboss(draw, position, text, font, fill, shadow=(255, 255, 255))
     
     def render_game_card(
         self, 
