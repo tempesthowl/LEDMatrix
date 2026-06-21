@@ -36,11 +36,28 @@ def test_auto_shadow_is_white_behind_dark_text():
         "auto shadow behind dark text must be bright (close to white)"
 
 
-def test_bdf_font_draws_once_without_crashing():
+def test_bdf_font_guard_is_a_noop():
+    """BDF guard (freetype.Face) returns early, leaving image unchanged."""
     class FakeBDF:                       # mimics freetype.Face duck-type
         def set_char_size(self, *a, **k): ...
         def getbbox(self, *a, **k): return (0, 0, 4, 6)
-    img = Image.new("RGB", (40, 16), (0, 0, 0))
-    # Should hit the guard and return; must not raise.
-    draw_emboss(ImageDraw.Draw(img), (4, 3), "8", _FONT, (255, 255, 255))  # sanity
-    draw_emboss(ImageDraw.Draw(img), (4, 3), "8", FakeBDF(), (255, 255, 255))
+
+    # Blank image (baseline)
+    blank = Image.new("RGB", (40, 16), (0, 0, 0))
+    blank_pixels = list(blank.getdata())
+
+    # Draw with BDF font (should be no-op and return early)
+    img_with_bdf = Image.new("RGB", (40, 16), (0, 0, 0))
+    draw_emboss(ImageDraw.Draw(img_with_bdf), (4, 3), "8", FakeBDF(), (255, 255, 255))
+    bdf_pixels = list(img_with_bdf.getdata())
+
+    # Assert the guard worked: BDF image is identical to blank (no-op)
+    assert bdf_pixels == blank_pixels, \
+        "BDF guard should be a no-op (image unchanged); guard did not fire or drew pixels"
+
+    # Sanity: normal font DOES draw
+    img_with_normal = Image.new("RGB", (40, 16), (0, 0, 0))
+    draw_emboss(ImageDraw.Draw(img_with_normal), (4, 3), "8", _FONT, (255, 255, 255))
+    normal_pixels = list(img_with_normal.getdata())
+    assert normal_pixels != blank_pixels, \
+        "normal font should draw (sanity check: image should differ from blank)"
