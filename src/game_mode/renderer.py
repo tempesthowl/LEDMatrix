@@ -16,6 +16,8 @@ from typing import Any, Dict, Optional, Tuple
 
 from PIL import Image, ImageDraw, ImageFont
 
+from src.common.text_helper import draw_emboss
+
 try:
     from src.game_mode.team_colors import get_contrasting_pair, contrasting_text_color, readable_label_color
 except ImportError:  # pragma: no cover — fallback when used outside src tree
@@ -583,25 +585,12 @@ class GameModeRenderer:
             draw.rectangle([x0 + aw, y, x1, y + h], fill=tuple(home_color))
 
     def _draw_bar_label(self, draw, pos, text, fill, font) -> None:
-        """Draw a bar % label with a single 1px drop-shadow (down-right) so it
-        pops on its segment fill without the chunky look of a full outline. The
-        shadow is the OPPOSITE luminance of the text — black behind light labels,
-        white behind dark ones — so both ends of the bar (e.g. white "38%" on
-        blue and black "HOU 62%" on orange) get the same crisp embossed look."""
-        x, y = pos
-        shadow = COLOR_BLACK if (fill[0] + fill[1] + fill[2]) >= 384 else COLOR_WHITE
-        draw.text((x + 1, y + 1), text, fill=shadow, font=font)
-        draw.text(pos, text, fill=fill, font=font)
+        """Bar % label: 1px down-right emboss, opposite-luminance shadow."""
+        draw_emboss(draw, pos, text, font, fill, shadow=None)
 
     def _draw_shadowed(self, draw, pos, text, fill, font, shadow) -> None:
-        """1px down-right drop-shadow then the text, with an explicit shadow
-        color. Used by the scorebug, which sits on the black panel: a light
-        shadow stays visible there (and adds visual weight), where the bar's
-        opposite-luminance rule would draw an invisible black shadow behind
-        light team colors."""
-        x, y = pos
-        draw.text((x + 1, y + 1), text, fill=shadow, font=font)
-        draw.text(pos, text, fill=fill, font=font)
+        """On-black label: 1px down-right emboss with an explicit (light) shadow."""
+        draw_emboss(draw, pos, text, font, fill, shadow=shadow)
 
     def _render_prob_bar(
         self,
