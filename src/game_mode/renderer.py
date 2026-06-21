@@ -54,6 +54,11 @@ BAR_GREEN = (40, 180, 60)
 BAR_RED = (180, 40, 40)
 BAR_BORDER = (60, 60, 60)
 
+# Separator between period and clock on the scorebug game-state row. Must be a
+# glyph the 4x6 status font actually has — a middot (U+00B7) renders as the
+# .notdef tofu box because the font lacks it, so we use a plain hyphen.
+STATE_SEP = " - "
+
 
 class GameModeRenderer:
     """Renders a focused single-game display with Kalshi odds."""
@@ -234,7 +239,7 @@ class GameModeRenderer:
             state_text = data.get("status_detail", "Pregame")
         else:
             parts = [p for p in [period, clock] if p]
-            state_text = " \u00b7 ".join(parts) if parts else ""
+            state_text = STATE_SEP.join(parts) if parts else ""
 
         # Row 3: game state centered
         if state_text:
