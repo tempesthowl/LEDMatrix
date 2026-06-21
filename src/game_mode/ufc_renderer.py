@@ -18,6 +18,8 @@ from typing import Any, Dict, Optional, Tuple
 
 from PIL import Image, ImageDraw, ImageFont
 
+from src.common.text_helper import draw_emboss
+
 logger = logging.getLogger(__name__)
 
 COLOR_WHITE = (255, 255, 255)
@@ -185,12 +187,12 @@ class UFCGameModeRenderer:
         draw.rectangle([x, BAR_Y, x + a_w - 1, BAR_Y + BAR_H - 1], fill=a_color)
         draw.rectangle([x + a_w, BAR_Y, x + w - 1, BAR_Y + BAR_H - 1], fill=b_color)
 
-        self._draw_bar_label(draw, x, a_w, a_last, a_pct)
-        self._draw_bar_label(draw, x + a_w, b_w, b_last, b_pct)
+        self._draw_bar_segment_label(draw, x, a_w, a_last, a_pct)
+        self._draw_bar_segment_label(draw, x + a_w, b_w, b_last, b_pct)
 
         return a_is_fav, b_is_fav
 
-    def _draw_bar_label(
+    def _draw_bar_segment_label(
         self,
         draw: ImageDraw.Draw,
         seg_x: int,
@@ -198,11 +200,12 @@ class UFCGameModeRenderer:
         name: str,
         pct: int,
     ) -> None:
-        """Draw {NAME} {PCT}% centered inside a bar segment.
+        """Draw {NAME} {PCT}% centered inside a bar segment via draw_emboss.
 
         Falls back to just {PCT}% if the segment is too narrow for the
         full label. Vertical centering uses bbox math so the ink sits on
         the midline regardless of ascender/descender metrics.
+        Text sits on a colored bar fill → shadow=None (auto opposite-luminance).
         """
         font = self.fonts["bar"]
         max_w = seg_w - 2
@@ -225,7 +228,7 @@ class UFCGameModeRenderer:
         ink_h = bottom - top
         tx = seg_x + (seg_w - tw) // 2 - left
         ty = BAR_Y + (BAR_H - ink_h) // 2 - top
-        draw.text((tx, ty), chosen, fill=COLOR_WHITE, font=font)
+        draw_emboss(draw, (tx, ty), chosen, font, COLOR_WHITE, shadow=None)
 
     def _render_winner_bar(self, draw: ImageDraw.Draw, winner_name: str) -> None:
         """Post-fight state: full-width green bar with winner name centered."""
@@ -241,7 +244,7 @@ class UFCGameModeRenderer:
         ink_h = bottom - top
         tx = x + (w - tw) // 2 - left
         ty = BAR_Y + (BAR_H - ink_h) // 2 - top
-        draw.text((tx, ty), text, fill=COLOR_WHITE, font=font)
+        draw_emboss(draw, (tx, ty), text, font, COLOR_WHITE, shadow=None)
 
     def _render_empty_bar(self, draw: ImageDraw.Draw) -> None:
         """No Kalshi data — show an outlined placeholder bar."""
@@ -282,7 +285,8 @@ class UFCGameModeRenderer:
         (winner_name set), we suppress the payouts and center the
         caption alone.
         """
-        font = self.fonts["bottom"]
+        pay_font = self.fonts["bar"]    # Kalshi payout multiples use the bar font
+        cap_font = self.fonts["bottom"]  # weight-class caption stays small
         x0 = self.middle_x
         w = self.middle_w
         y_baseline = BOTTOM_Y  # approximate top of ink; precise per-text
@@ -311,26 +315,26 @@ class UFCGameModeRenderer:
             a_pay_text = f"{a_pay:.1f}x" if a_pay > 0 else ""
             b_pay_text = f"{b_pay:.1f}x" if b_pay > 0 else ""
 
-        # Measure payout widths
+        # Measure payout widths using the bar font
         a_left, a_top, a_right, a_bottom = (
-            font.getbbox(a_pay_text) if a_pay_text else (0, 0, 0, 0)
+            pay_font.getbbox(a_pay_text) if a_pay_text else (0, 0, 0, 0)
         )
         b_left, b_top, b_right, b_bottom = (
-            font.getbbox(b_pay_text) if b_pay_text else (0, 0, 0, 0)
+            pay_font.getbbox(b_pay_text) if b_pay_text else (0, 0, 0, 0)
         )
         a_pay_w = a_right - a_left
         b_pay_w = b_right - b_left
 
-        # Draw left-aligned fighter-A payout
+        # Draw left-aligned fighter-A payout (on black panel → white shadow)
         if a_pay_text:
             ty = y_baseline - a_top
-            draw.text((x0, ty), a_pay_text, fill=a_pay_color, font=font)
+            draw_emboss(draw, (x0, ty), a_pay_text, pay_font, a_pay_color, shadow=(255, 255, 255))
 
-        # Draw right-aligned fighter-B payout
+        # Draw right-aligned fighter-B payout (on black panel → white shadow)
         if b_pay_text:
             tx = x0 + w - b_pay_w - b_left
             ty = y_baseline - b_top
-            draw.text((tx, ty), b_pay_text, fill=b_pay_color, font=font)
+            draw_emboss(draw, (tx, ty), b_pay_text, pay_font, b_pay_color, shadow=(255, 255, 255))
 
         # Center weight-class caption in the remaining middle width,
         # truncating if it would collide with either payout.
@@ -340,13 +344,13 @@ class UFCGameModeRenderer:
             cap_x_end = x0 + w - (b_pay_w + gap if b_pay_text else 0)
             cap_avail = max(0, cap_x_end - cap_x_start)
             if cap_avail > 0:
-                txt = self._truncate(caption, font, cap_avail)
+                txt = self._truncate(caption, cap_font, cap_avail)
                 if txt:
-                    c_left, c_top, c_right, c_bottom = font.getbbox(txt)
+                    c_left, c_top, c_right, c_bottom = cap_font.getbbox(txt)
                     cw = c_right - c_left
                     cx = cap_x_start + (cap_avail - cw) // 2 - c_left
                     cy = y_baseline - c_top
-                    draw.text((cx, cy), txt, fill=COLOR_DIM, font=font)
+                    draw.text((cx, cy), txt, fill=COLOR_DIM, font=cap_font)
 
     # ------------------------------------------------------------------
     # Headshots (with last-name text fallback)
@@ -412,7 +416,7 @@ class UFCGameModeRenderer:
         ink_h = bottom - top
         tx = x + (HEADSHOT_SIZE - tw) // 2 - left
         ty = (self.height - ink_h) // 2 - top
-        draw.text((tx, ty), text, fill=COLOR_WHITE, font=font)
+        draw_emboss(draw, (tx, ty), text, font, COLOR_WHITE, shadow=(255, 255, 255))
 
     # ------------------------------------------------------------------
     # Utilities
