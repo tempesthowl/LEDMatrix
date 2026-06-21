@@ -1,4 +1,8 @@
-from src.game_mode.renderer import GameModeRenderer
+from unittest.mock import patch
+
+from PIL import Image, ImageDraw
+
+from src.game_mode.renderer import GameModeRenderer, COLOR_WHITE
 
 
 def test_three_way_payout_labels_omit_team_abbrev():
@@ -20,3 +24,71 @@ def test_two_way_payout_labels_keep_payout_word():
     left, right = r._payout_labels(kalshi, "TEX", "HOU")
     assert left == "1.6x payout"
     assert right == "2.6x payout"
+
+
+# ---------------------------------------------------------------------------
+# Task 6: 2-way payout emboss — assert the shadow path is exercised
+# ---------------------------------------------------------------------------
+
+def _payout_row_pixels(img: Image.Image, r: GameModeRenderer) -> list:
+    """Crop the payout row (row2_y region) from the odds panel and return pixel list."""
+    # row2_y = 15, odds panel starts after div1 + extras gap
+    # We want a wide horizontal slice that covers the payout labels on the right side
+    row2_y = 15
+    crop = img.crop((r.div1_x, row2_y, r.width, row2_y + 10))
+    return list(crop.getdata())
+
+
+def _make_2way_data():
+    """Minimal GameFocusData for a 2-way (MLB) game with Kalshi payouts."""
+    return {
+        "away_team": "TEX",
+        "home_team": "HOU",
+        "away_score": 2,
+        "home_score": 3,
+        "away_color": (0, 100, 60),   # Rangers green
+        "home_color": (235, 110, 31),  # Astros orange
+        "league": "mlb",
+        "sport": "baseball",
+        "status_state": "in",
+        "period_label": "7th",
+        "game_clock": "",
+        "kalshi": {
+            "fav_team": "HOU",
+            "fav_pct": 65,
+            "dog_pct": 35,
+            "fav_payout": 1.5,
+            "dog_payout": 2.7,
+        },
+        # no extras → no 2nd divider, simpler layout
+    }
+
+
+def test_two_way_payout_embossed():
+    """2-way payout row must route through _draw_shadowed (gaining shadow ink).
+
+    Strategy: render once with the real _draw_shadowed, once with a no-op that
+    calls plain draw.text instead.  If _draw_shadowed is wired in for 2-way
+    payouts the two renders will differ in the payout row.
+    """
+    r = GameModeRenderer(320, 32)
+    data = _make_2way_data()
+
+    # ── Render A: real _draw_shadowed (current code) ──────────────────────
+    img_real = r.render(data)
+
+    # ── Render B: stub _draw_shadowed → plain draw.text so no shadow ink ──
+    def _noop_shadowed(draw, pos, text, fill, font, shadow):
+        draw.text(pos, text, fill=fill, font=font)
+
+    r2 = GameModeRenderer(320, 32)
+    r2._draw_shadowed = _noop_shadowed
+    img_noop = r2.render(data)
+
+    real_px = _payout_row_pixels(img_real, r)
+    noop_px = _payout_row_pixels(img_noop, r)
+
+    assert real_px != noop_px, (
+        "2-way payout row pixels are identical with and without _draw_shadowed — "
+        "the payout draw.text calls are not routing through _draw_shadowed yet"
+    )

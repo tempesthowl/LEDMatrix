@@ -501,16 +501,18 @@ class GameModeRenderer:
                 right_color = away_color if fav_team == home else home_color
                 payout_font = self.fonts["payout"]
 
-            draw.text((right_x, row2_y), left_text, fill=left_color, font=payout_font)
+            self._draw_shadowed(draw, (right_x, row2_y), left_text, left_color, payout_font, COLOR_WHITE)
 
             # Right-align the right-hand payout
             right_bbox = payout_font.getbbox(right_text)
             right_w_px = right_bbox[2] - right_bbox[0]
-            draw.text(
+            self._draw_shadowed(
+                draw,
                 (right_x + right_w - right_w_px, row2_y),
                 right_text,
-                fill=right_color,
-                font=payout_font,
+                right_color,
+                payout_font,
+                COLOR_WHITE,
             )
 
             left_bbox = payout_font.getbbox(left_text)
