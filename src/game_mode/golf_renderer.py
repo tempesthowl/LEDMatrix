@@ -17,6 +17,8 @@ from typing import Any, Dict
 
 from PIL import Image, ImageDraw, ImageFont
 
+from src.common.text_helper import draw_emboss
+
 logger = logging.getLogger(__name__)
 
 # --- Colors ---
@@ -177,17 +179,17 @@ class GolfLeaderboardRenderer:
         # Rank (skipped on favorites view — double-digit ranks 10+
         # would collide with the name column).
         if show_rank:
-            draw.text((self.COL_RANK_X, y), rank, fill=COLOR_WHITE, font=row_font)
+            draw_emboss(draw, (self.COL_RANK_X, y), rank, row_font, COLOR_WHITE, shadow=(255, 255, 255))
         # Name (PressStart2P is ~8px wide; fits ~10 chars in 85px)
-        draw.text((self.COL_NAME_X, y), name[:10], fill=COLOR_WHITE, font=row_font)
+        draw_emboss(draw, (self.COL_NAME_X, y), name[:10], row_font, COLOR_WHITE, shadow=(255, 255, 255))
         # Score
-        draw.text((self.COL_SCORE_X, y), score, fill=COLOR_WHITE, font=row_font)
+        draw_emboss(draw, (self.COL_SCORE_X, y), score, row_font, COLOR_WHITE, shadow=(255, 255, 255))
         # Thru (small font)
         if thru:
             draw.text((self.COL_THRU_X, y + 2), thru, fill=COLOR_GRAY, font=small_font)
         # Kalshi %
         pct_text = f"{pct}%"
-        draw.text((self.COL_PCT_X, y), pct_text, fill=COLOR_GOLD, font=row_font)
+        draw_emboss(draw, (self.COL_PCT_X, y), pct_text, row_font, COLOR_GOLD, shadow=(255, 255, 255))
         # Probability bar
         self._render_prob_bar(draw, y, pct)
         # Kalshi payout multiple ($1 ticket payout, capped at 99x for clean column)
@@ -197,11 +199,13 @@ class GolfLeaderboardRenderer:
             payout_int = 99
         payout_text = f"{payout_int}x"
         payout_w = self._text_width(payout_text, row_font)
-        draw.text(
+        draw_emboss(
+            draw,
             (self.COL_PAYOUT_END - payout_w, y),
             payout_text,
-            fill=COLOR_GOLD,
-            font=row_font,
+            row_font,
+            COLOR_GOLD,
+            shadow=(255, 255, 255),
         )
 
     def _render_prob_bar(self, draw: ImageDraw.Draw, y: int, pct: int) -> None:
