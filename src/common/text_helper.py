@@ -13,6 +13,26 @@ from typing import Dict, List, Optional, Tuple, Union
 from PIL import Image, ImageDraw, ImageFont
 
 
+def draw_emboss(draw, pos, text, font, fill, shadow=None, offset=(1, 1)):
+    """1px down-right drop-shadow then the text (emboss/weight; never a ring).
+
+    shadow=None  -> auto opposite-luminance: black behind light text, white
+                    behind dark text. For text on a COLORED fill (bar labels).
+    shadow=<rgb> -> explicit shadow color. On the BLACK panel pass white so the
+                    shadow stays visible and adds weight.
+
+    BDF fonts (freetype.Face) can't be drawn by PIL ImageDraw.text; if one is
+    passed, just return (callers handle BDF emboss separately).
+    """
+    if hasattr(font, "set_char_size"):           # freetype.Face (BDF) guard
+        return
+    if shadow is None:
+        shadow = (0, 0, 0) if (fill[0] + fill[1] + fill[2]) >= 384 else (255, 255, 255)
+    x, y = pos
+    draw.text((x + offset[0], y + offset[1]), text, font=font, fill=shadow)
+    draw.text(pos, text, font=font, fill=fill)
+
+
 class TextHelper:
     """
     Helper class for text rendering with outlines and font management.
