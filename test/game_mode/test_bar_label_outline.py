@@ -24,9 +24,46 @@ def test_draw_bar_label_halos_light_text():
     assert helper != plain  # white label gains a black halo
 
 
-def test_draw_bar_label_leaves_dark_text_untreated():
+def test_draw_bar_label_shadows_dark_text():
+    # Dark labels (e.g. black-on-orange "HOU 62%") now get a 1px drop-shadow
+    # too, so they pop on bright segment fills like the white "38%" does.
+    # Previously dark text was drawn flat (no halo).
     helper, plain = _two_renders((0, 0, 0))
-    assert helper == plain  # black label draws once, no halo
+    assert helper != plain  # black label now gains a (white) drop-shadow
+
+
+def test_dark_label_shadow_is_white_drop_shadow_not_cross():
+    # The dark-label shadow mirrors the light-label one: a single 1px
+    # down-right drop-shadow, but WHITE (opposite luminance of the text) so it
+    # reads on a bright fill. Added light ink lands to the RIGHT, never LEFT.
+    from PIL import Image, ImageDraw
+    from src.game_mode.renderer import GameModeRenderer
+    r = GameModeRenderer(320, 32)
+    font = r.fonts["pct"]
+    bg = (235, 110, 31)  # HOU orange bar
+    pos = (10, 3)
+    W, H = 72, 16
+
+    def mk(use_helper):
+        img = Image.new("RGB", (W, H), bg)
+        d = ImageDraw.Draw(img)
+        if use_helper:
+            r._draw_bar_label(d, pos, "8", (0, 0, 0), font)
+        else:
+            d.text(pos, "8", fill=(0, 0, 0), font=font)
+        return img.load()
+
+    helper, plain = mk(True), mk(False)
+    gx = [x for x in range(W) for y in range(H) if sum(plain[x, y]) < 250]
+    gx0, gx1 = min(gx), max(gx)
+
+    def added_light(x, y):
+        return (sum(helper[x, y]) - sum(plain[x, y])) > 120
+
+    left = sum(1 for y in range(H) for x in range(0, gx0) if added_light(x, y))
+    right = sum(1 for y in range(H) for x in range(gx1 + 1, W) if added_light(x, y))
+    assert right > 0, "dark label should gain a white drop-shadow to the right"
+    assert left == 0, "left-side light ink means a cross, not a drop shadow"
 
 
 import importlib.util

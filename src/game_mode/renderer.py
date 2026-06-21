@@ -583,12 +583,14 @@ class GameModeRenderer:
             draw.rectangle([x0 + aw, y, x1, y + h], fill=tuple(home_color))
 
     def _draw_bar_label(self, draw, pos, text, fill, font) -> None:
-        """Draw a bar % label; LIGHT (white) text gets a single 1px drop-shadow
-        (down-right) so it stays legible on mid-saturation segment fills without
-        the chunky look of a full outline. Dark/branded labels draw unchanged."""
-        if (fill[0] + fill[1] + fill[2]) >= 384:
-            x, y = pos
-            draw.text((x + 1, y + 1), text, fill=COLOR_BLACK, font=font)
+        """Draw a bar % label with a single 1px drop-shadow (down-right) so it
+        pops on its segment fill without the chunky look of a full outline. The
+        shadow is the OPPOSITE luminance of the text — black behind light labels,
+        white behind dark ones — so both ends of the bar (e.g. white "38%" on
+        blue and black "HOU 62%" on orange) get the same crisp embossed look."""
+        x, y = pos
+        shadow = COLOR_BLACK if (fill[0] + fill[1] + fill[2]) >= 384 else COLOR_WHITE
+        draw.text((x + 1, y + 1), text, fill=shadow, font=font)
         draw.text(pos, text, fill=fill, font=font)
 
     def _render_prob_bar(
