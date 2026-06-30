@@ -3882,6 +3882,8 @@ class BaseballScoreboardPlugin(BasePlugin if BasePlugin else object):
         manager and normalizes via the shared helper (today/pre filter,
         timezone-aware start label). Mirrors get_live_games().
         """
+        if normalize_upcoming_game is None:
+            return []
         tz_name = (self.config or {}).get("timezone", "America/Chicago")
         out: List[Dict[str, Any]] = []
         for league_id, registry in self._league_registry.items():
