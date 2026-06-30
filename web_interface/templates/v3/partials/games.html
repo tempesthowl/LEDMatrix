@@ -24,7 +24,7 @@
 
 <div class="bg-white rounded-lg shadow p-6 mt-6">
     <div class="border-b border-gray-200 pb-4 mb-6">
-        <h2 class="text-lg font-semibold text-gray-900">Upcoming Today</h2>
+        <h2 class="text-lg font-semibold text-gray-900">Upcoming</h2>
         <p class="mt-1 text-sm text-gray-600">Scheduled games across all sports, soonest first.</p>
     </div>
     <div id="upcoming-games-list" class="space-y-3">
@@ -55,7 +55,7 @@ function loadLiveGames() {
             const upContainer = document.getElementById('upcoming-games-list');
             if (upContainer) {
                 if (upcoming.length === 0) {
-                    upContainer.innerHTML = '<p class="text-gray-500 text-sm">No more games today.</p>';
+                    upContainer.innerHTML = '<p class="text-gray-500 text-sm">No upcoming games.</p>';
                 } else {
                     upContainer.innerHTML = upcoming.map(g => `
                         <div class="flex items-center justify-between bg-gray-50 rounded-lg p-4">

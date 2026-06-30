@@ -399,7 +399,7 @@
         const more = (data && data.data && data.data.upcoming_more) || 0;
         if (!upcoming.length) {
             upEl.className = 'empty';
-            upEl.textContent = 'No more games today.';
+            upEl.textContent = 'No upcoming games.';
         } else {
             upEl.className = '';
             const rows = upcoming.map(function (g) {
