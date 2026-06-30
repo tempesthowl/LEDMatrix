@@ -133,6 +133,12 @@ class BaseSoccerManager(SportsCore):
                     self.logger.error(
                         f"Background fetch failed for {self.league_name}: {result.error}"
                     )
+                # The key is a daily-rotating date range ("20260616-20260630") — without
+                # this, one entry accumulates per day per league-manager instance forever.
+                try:
+                    self.background_fetch_requests.pop(date_str, None)
+                except AttributeError:
+                    pass
 
             # Get background service configuration
             background_config = self.mode_config.get("background_service", {})
