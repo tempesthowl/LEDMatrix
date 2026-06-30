@@ -392,6 +392,32 @@
         syncSelection();
     };
 
+    function renderUpcoming(data) {
+        const upEl = document.getElementById('upcoming-games-content');
+        if (!upEl) return;
+        const upcoming = (data && data.data && data.data.upcoming) || [];
+        const more = (data && data.data && data.data.upcoming_more) || 0;
+        if (!upcoming.length) {
+            upEl.className = 'empty';
+            upEl.textContent = 'No more games today.';
+        } else {
+            upEl.className = '';
+            const rows = upcoming.map(function (g) {
+                const m = sportMeta(g.league);
+                const accent = m ? m.color : '#888';
+                return '<div class="upcoming-row">'
+                    + leagueLogo(g.league, accent)
+                    + '<span class="upcoming-teams">' + (g.away_team || '') + ' @ ' + (g.home_team || '') + '</span>'
+                    + '<span class="upcoming-time">' + (g.start_label || '') + '</span>'
+                    + '</div>';
+            }).join('');
+            const moreLine = more > 0
+                ? '<div class="upcoming-more">+' + more + ' more</div>'
+                : '';
+            upEl.innerHTML = rows + moreLine;
+        }
+    }
+
     async function refreshLiveGames() {
         const el = document.getElementById('live-games-content');
         try {
@@ -410,6 +436,7 @@
             if (games.length === 0) {
                 el.classList.add('empty');
                 el.textContent = 'No live games right now.';
+                renderUpcoming(data);
                 return;
             }
             el.classList.remove('empty');
@@ -490,9 +517,11 @@
             }).join('');
 
             el.innerHTML = toolbar + cards;
+            renderUpcoming(data);
         } catch (e) {
             el.classList.add('empty');
             el.textContent = 'Could not load live games.';
+            renderUpcoming(null);
         }
     }
 
