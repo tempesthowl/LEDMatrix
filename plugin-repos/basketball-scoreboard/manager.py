@@ -34,6 +34,11 @@ except ImportError:
     get_team_color = None
     get_contrasting_pair = None
 
+try:
+    from src.common.upcoming_games import normalize_upcoming_game
+except ImportError:
+    normalize_upcoming_game = None
+
 # Import scroll display components
 try:
     from scroll_display import ScrollDisplayManager
@@ -3444,6 +3449,33 @@ class BasketballScoreboardPlugin(BasePlugin if BasePlugin else object):
                 })
 
         return games
+
+    def get_upcoming_games(self) -> List[Dict[str, Any]]:
+        """Return today's scheduled (pre-state) games across enabled leagues.
+
+        Uniform contract consumed by the display controller's
+        _collect_upcoming_games(). Reads each enabled league's 'upcoming'
+        manager and normalizes via the shared helper (today/pre filter,
+        timezone-aware start label). Mirrors get_live_games().
+        """
+        if normalize_upcoming_game is None:
+            return []
+        tz_name = (self.config or {}).get("timezone", "America/Chicago")
+        out: List[Dict[str, Any]] = []
+        for league_id, registry in self._league_registry.items():
+            if not registry.get("enabled", False):
+                continue
+            mgr = registry.get("managers", {}).get("upcoming")
+            if not mgr:
+                continue
+            raw_games = getattr(mgr, "games_list", None)
+            if raw_games is None:
+                raw_games = getattr(mgr, "upcoming_games", [])
+            for g in (raw_games or []):
+                norm = normalize_upcoming_game(g, self.plugin_id, league_id, tz_name=tz_name)
+                if norm:
+                    out.append(norm)
+        return out
 
     def _find_live_manager_for_game(self, game_id: str):
         """Return the live manager holding a game, or None.

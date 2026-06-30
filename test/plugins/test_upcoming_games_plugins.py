@@ -77,3 +77,38 @@ def test_baseball_get_upcoming_games(monkeypatch):
     assert out[0]["away_team"] == "HOU"
     assert out[0]["league"] == "mlb"
     assert out[0]["start_label"] == "7:05 PM"
+
+
+import pytest
+
+
+@pytest.mark.parametrize("mod_name,plugin_dir,class_attr,plugin_id", [
+    ("basketball_mgr_upcoming_test", "basketball-scoreboard", None, "basketball"),
+    ("football_mgr_upcoming_test", "football-scoreboard", None, "football"),
+    ("soccer_mgr_upcoming_test", "soccer-scoreboard", None, "soccer"),
+])
+def test_other_plugins_get_upcoming_games(monkeypatch, mod_name, plugin_dir, class_attr, plugin_id):
+    mod = _load(mod_name, _REPO_ROOT / "plugin-repos" / plugin_dir)
+    # Resolve the manager class: the *Plugin subclass defining get_upcoming_games.
+    Manager = next(
+        v for v in vars(mod).values()
+        if isinstance(v, type) and v.__name__.endswith("Plugin")
+        and hasattr(v, "get_upcoming_games")
+    )
+    inst = Manager.__new__(Manager)
+    inst.plugin_id = plugin_id
+    inst.config = {"timezone": "America/Chicago"}
+    inst._league_registry = _fake_registry([_today_pre_raw()])
+
+    import src.common.upcoming_games as helper
+    fixed_now = CHI.localize(datetime(2026, 6, 29, 9, 0))
+    orig = helper.normalize_upcoming_game
+    monkeypatch.setattr(
+        mod, "normalize_upcoming_game",
+        lambda raw, pid, lg, **kw: orig(raw, pid, lg, now=fixed_now, tz_name=kw.get("tz_name", "America/Chicago")),
+    )
+
+    out = inst.get_upcoming_games()
+    assert len(out) == 1
+    assert out[0]["plugin_id"] == plugin_id
+    assert out[0]["start_label"] == "7:05 PM"
