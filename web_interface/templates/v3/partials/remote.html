@@ -67,8 +67,8 @@
       .refresh-btn.spinning i { animation: rmt-spin 0.8s linear infinite; }
       @keyframes rmt-spin { to { transform: rotate(360deg); } }
       @media (prefers-reduced-motion: reduce) { .refresh-btn.spinning i { animation: none; } }
-      .upcoming-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--rmt-border); }
-      .upcoming-row:last-child { border-bottom: none; }
+      .upcoming-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
+      .upcoming-row + .upcoming-row { border-top: 1px solid var(--rmt-border); }
       .upcoming-logo { width: 18px; height: 18px; object-fit: contain; }
       .upcoming-teams { flex: 1; font-weight: 600; color: var(--rmt-text); font-size: 0.9em; }
       .upcoming-time { color: var(--rmt-text-dim); font-variant-numeric: tabular-nums; font-size: 0.85em; }
