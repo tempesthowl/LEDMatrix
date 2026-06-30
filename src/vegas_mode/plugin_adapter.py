@@ -552,6 +552,10 @@ class PluginAdapter:
         """Get cached content if still valid."""
         with self._cache_lock:
             if plugin_id not in self._content_cache:
+                # Sweep expired entries even on a read-miss so that plugins
+                # which stop being fetched don't leave their (potentially large
+                # PIL scroll) images resident until the next write cycle.
+                self._cleanup_expired_cache_locked()
                 return None
 
             cached_time, content = self._content_cache[plugin_id]
@@ -562,14 +566,17 @@ class PluginAdapter:
             return content
 
     def _cache_content(self, plugin_id: str, content: List[Image.Image]) -> None:
-        """Cache content for a plugin."""
-        # Make copies to prevent mutation (done outside lock to minimize hold time)
-        cached_content = [img.copy() for img in content]
+        """Cache content for a plugin.
 
+        No copy is made: ScrollHelper.create_scrolling_image() only reads from
+        (paste FROM) these images — it never mutates them in place — so a deep
+        copy is unnecessary overhead.  If a future consumer mutates images, add
+        a copy here and benchmark the impact before shipping.
+        """
         with self._cache_lock:
             # Periodic cleanup of expired entries to prevent memory leak
             self._cleanup_expired_cache_locked()
-            self._content_cache[plugin_id] = (time.time(), cached_content)
+            self._content_cache[plugin_id] = (time.time(), content)
 
     def _cleanup_expired_cache_locked(self) -> None:
         """Remove expired entries from cache. Must be called with _cache_lock held."""
