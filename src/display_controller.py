@@ -19,6 +19,7 @@ from src.font_manager import FontManager
 from src.logging_config import get_logger
 from src.observability.trace import set_trace_id, clear_trace_id, trace_event
 from src.common.upcoming_games import select_with_representation
+from src.game_mode.team_colors import get_contrasting_pair
 
 # Get logger with consistent configuration
 logger = get_logger(__name__)
@@ -1329,6 +1330,32 @@ class DisplayController:
             except Exception:  # pylint: disable=broad-except
                 logger.warning("force_refresh failed for a plugin", exc_info=True)
 
+    def _rgb_to_hex(self, rgb):
+        """Convert an (r,g,b) tuple to '#RRGGBB'. None/invalid -> None."""
+        try:
+            r, g, b = rgb
+            return '#%02X%02X%02X' % (int(r), int(g), int(b))
+        except Exception:
+            return None
+
+    def _attach_team_colors(self, game):
+        """Add away_color/home_color hex to a game dict (cheap, no HTTP).
+
+        Calls get_contrasting_pair(away, home, league) — note arg order swapped
+        vs the raw function signature (home, away) so the return unpacks as
+        (away_rgb, home_rgb) directly.
+        """
+        try:
+            away_rgb, home_rgb = get_contrasting_pair(
+                game.get("away_team", ""), game.get("home_team", ""), game.get("league", "")
+            )
+            game["away_color"] = self._rgb_to_hex(away_rgb)
+            game["home_color"] = self._rgb_to_hex(home_rgb)
+        except Exception:
+            game["away_color"] = None
+            game["home_color"] = None
+        return game
+
     def _collect_live_games(self) -> List[Dict[str, Any]]:
         """Collect unique live games across all loaded sport plugins."""
         all_live: List[Dict[str, Any]] = []
@@ -1353,6 +1380,8 @@ class DisplayController:
             if gid and gid not in seen_ids:
                 seen_ids.add(gid)
                 unique.append(g)
+        for g in unique:
+            self._attach_team_colors(g)
         return unique
 
     def _collect_upcoming_games(self) -> Tuple[List[Dict[str, Any]], int]:
@@ -1385,6 +1414,8 @@ class DisplayController:
                 seen_ids.add(gid)
                 unique.append(g)
 
+        for g in unique:
+            self._attach_team_colors(g)
         return select_with_representation(unique, cap=8)
 
     def _publish_live_games_cache(
