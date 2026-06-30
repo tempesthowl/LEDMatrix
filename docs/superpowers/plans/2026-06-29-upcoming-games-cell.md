@@ -422,13 +422,16 @@ Expected: FAIL — `AttributeError: ... object has no attribute 'get_upcoming_ga
 
 - [ ] **Step 3: Add the method + import**
 
-At the top of `plugin-repos/baseball-scoreboard/manager.py`, ensure the helper is imported (add near the other `from src...` imports):
+At the top of `plugin-repos/baseball-scoreboard/manager.py`, import the helper. Match the file's existing defensive `src.*` import style (wrap in try/except so a stale checkout degrades instead of failing to load):
 
 ```python
-from src.common.upcoming_games import normalize_upcoming_game
+try:
+    from src.common.upcoming_games import normalize_upcoming_game
+except ImportError:
+    normalize_upcoming_game = None
 ```
 
-Add this method immediately after `get_live_games()` (after line ~3870):
+Add this method immediately after `get_live_games()` (after line ~3870). Note the first line: a guard so that if the helper failed to import (partial deploy), the method cleanly returns `[]` instead of raising `TypeError` mid-iteration — consistent with how the file guards `GameModeRenderer is None`:
 
 ```python
     def get_upcoming_games(self) -> List[Dict[str, Any]]:
@@ -439,6 +442,8 @@ Add this method immediately after `get_live_games()` (after line ~3870):
         manager and normalizes via the shared helper (today/pre filter,
         timezone-aware start label). Mirrors get_live_games().
         """
+        if normalize_upcoming_game is None:
+            return []
         tz_name = (self.config or {}).get("timezone", "America/Chicago")
         out: List[Dict[str, Any]] = []
         for league_id, registry in self._league_registry.items():
