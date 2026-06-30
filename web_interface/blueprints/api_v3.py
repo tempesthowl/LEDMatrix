@@ -1189,6 +1189,11 @@ def get_system_status():
         cpu_percent = psutil.cpu_percent(interval=0.1)  # Short interval for responsiveness
         memory = psutil.virtual_memory()
         memory_percent = memory.percent
+        try:
+            from src.system.memory_history import get_memory_history
+            get_memory_history().sample(now=time.time(), mem_percent=memory_percent)
+        except Exception:
+            pass
         disk = psutil.disk_usage('/')
         disk_percent = disk.percent
 
@@ -1395,6 +1400,16 @@ def get_system_version():
     except Exception as e:
         logger.exception("[System] get_system_version failed")
         return jsonify({'status': 'error', 'message': 'Failed to get system version'}), 500
+
+@api_v3.route('/system/memory-history', methods=['GET'])
+def get_memory_history_endpoint():
+    """Get bounded in-process memory usage history for uptime trend chart"""
+    try:
+        from src.system.memory_history import get_memory_history
+        return jsonify({'status': 'success', 'data': get_memory_history().snapshot()})
+    except Exception:
+        logger.exception("[System] memory-history failed")
+        return jsonify({'status': 'error', 'message': 'Failed to get memory history'}), 500
 
 @api_v3.route('/system/action', methods=['POST'])
 def execute_system_action():
