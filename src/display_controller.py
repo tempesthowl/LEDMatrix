@@ -20,6 +20,7 @@ from src.logging_config import get_logger
 from src.observability.trace import set_trace_id, clear_trace_id, trace_event
 from src.common.upcoming_games import select_with_representation
 from src.game_mode.team_colors import get_contrasting_pair
+from src.game_mode.kalshi_matcher import match_game as kalshi_match_game
 
 # Get logger with consistent configuration
 logger = get_logger(__name__)
@@ -307,6 +308,14 @@ class DisplayController:
         # remote UI stays in sync with the emulator's plugin state.
         self._last_live_games_publish = 0.0
         self._live_games_publish_min_interval = 5.0
+        # Kalshi background warmer state.
+        # _attach_kalshi() is a pure dict read — never calls kalshi_match_game().
+        # The warmer thread fetches odds off the hot path every ~20s.
+        self._kalshi_odds_by_key: dict = {}
+        self._kalshi_active_keys: set = set()
+        self._kalshi_odds_lock = threading.Lock()
+        self._kalshi_warmer_thread = None
+        self._kalshi_warmer_interval = 20.0
         # Controller-stats publish throttle (used by _publish_controller_stats).
         # Publishes RSS + mem-cache entry count to shared cache every ~30s so
         # the web /system/status can break down memory by process.
@@ -1356,6 +1365,60 @@ class DisplayController:
             game["home_color"] = None
         return game
 
+    def _kalshi_key(self, game):
+        """Canonical key for a game dict: (league, away_team, home_team)."""
+        return (game.get("league", ""), game.get("away_team", ""), game.get("home_team", ""))
+
+    def _attach_kalshi(self, game):
+        """Pure dict read — NO HTTP, never blocks the publish loop.
+
+        Returns the game with game["kalshi"] set to the pre-warmed odds dict,
+        or None if the warmer hasn't fetched this game yet.
+        """
+        with self._kalshi_odds_lock:
+            game["kalshi"] = self._kalshi_odds_by_key.get(self._kalshi_key(game))
+        return game
+
+    def _set_kalshi_active_keys(self, games):
+        """Rebuild the warmer's work set to exactly the current games (bounded).
+
+        Stale keys (games no longer live/upcoming) are evicted from the cache.
+        """
+        keys = {self._kalshi_key(g) for g in games}
+        with self._kalshi_odds_lock:
+            self._kalshi_active_keys = keys
+            self._kalshi_odds_by_key = {
+                k: v for k, v in self._kalshi_odds_by_key.items() if k in keys
+            }
+
+    def _ensure_kalshi_warmer(self):
+        """Start the background warmer thread if not already running."""
+        if self._kalshi_warmer_thread is not None:
+            return
+        t = threading.Thread(
+            target=self._kalshi_warmer_loop, daemon=True, name="kalshi-warmer"
+        )
+        self._kalshi_warmer_thread = t
+        t.start()
+
+    def _kalshi_warmer_loop(self):
+        """Off the hot path: fetch Kalshi odds for the active key set every ~20s."""
+        while True:
+            try:
+                with self._kalshi_odds_lock:
+                    keys = list(self._kalshi_active_keys)
+                for (league, away, home) in keys:
+                    try:
+                        odds = kalshi_match_game(self.plugin_manager, away, home, league)
+                    except Exception:  # pylint: disable=broad-except
+                        odds = None
+                    with self._kalshi_odds_lock:
+                        if (league, away, home) in self._kalshi_active_keys:
+                            self._kalshi_odds_by_key[(league, away, home)] = odds
+            except Exception:  # pylint: disable=broad-except
+                pass
+            time.sleep(self._kalshi_warmer_interval)
+
     def _collect_live_games(self) -> List[Dict[str, Any]]:
         """Collect unique live games across all loaded sport plugins."""
         all_live: List[Dict[str, Any]] = []
@@ -1382,6 +1445,7 @@ class DisplayController:
                 unique.append(g)
         for g in unique:
             self._attach_team_colors(g)
+            self._attach_kalshi(g)
         return unique
 
     def _collect_upcoming_games(self) -> Tuple[List[Dict[str, Any]], int]:
@@ -1416,6 +1480,7 @@ class DisplayController:
 
         for g in unique:
             self._attach_team_colors(g)
+            self._attach_kalshi(g)
         return select_with_representation(unique, cap=8)
 
     def _publish_live_games_cache(
@@ -1457,14 +1522,22 @@ class DisplayController:
         except Exception as e:  # pylint: disable=broad-except
             logger.debug("failed to cache live games: %s", e)
 
+        _upcoming_for_warmer: List[Dict[str, Any]] = []
         try:
             upcoming_games, upcoming_more = self._collect_upcoming_games()
+            _upcoming_for_warmer = upcoming_games
             self.cache_manager.set("game_mode_upcoming_games", {
                 "games": upcoming_games,
                 "more_count": upcoming_more,
             })
         except Exception as e:  # pylint: disable=broad-except
             logger.debug("failed to cache upcoming games: %s", e)
+
+        try:
+            self._set_kalshi_active_keys(list(unique_live) + list(_upcoming_for_warmer))
+            self._ensure_kalshi_warmer()
+        except Exception:  # pylint: disable=broad-except
+            pass
 
         try:
             self.cache_manager.set("game_mode_selection", {
