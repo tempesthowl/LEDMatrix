@@ -233,7 +233,10 @@ class ErrorAggregator:
                 self._patterns[pattern_key].count = count
                 self._patterns[pattern_key].last_seen = record.timestamp
                 self._patterns[pattern_key].severity = severity
-                self._patterns[pattern_key].affected_plugins.extend(affected_plugins)
+                # Dedupe + cap: this fires on every error once a pattern is active,
+                # so an unbounded extend() leaks proportional to error volume.
+                merged = self._patterns[pattern_key].affected_plugins + affected_plugins
+                self._patterns[pattern_key].affected_plugins = list(dict.fromkeys(merged))[-50:]
 
     def on_pattern_detected(self, callback: Callable[[ErrorPattern], None]) -> None:
         """
