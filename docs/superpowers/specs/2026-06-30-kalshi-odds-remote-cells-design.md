@@ -56,9 +56,9 @@ remote.js renders the split bar on each card
 - `kalshi`: the matcher result, or `null` if no market. Shape (2-way / US sports):
   `{ "fav_team": str, "fav_pct": int, "dog_pct": int, "fav_payout": float, "dog_payout": float, "market_ticker": str }`
   3-way (World Cup) additionally carries `home_pct`, `away_pct`, `draw_pct`, `draw_payout`, `is_three_way: true`.
-- `away_color`, `home_color`: ESPN brand colors as `#RRGGBB` strings, sourced from the raw game dict the plugins already build (same colors the LED scorebug/bars use). Used to color the bar segments. Absent → remote.js falls back to favorite = accent blue, underdog = muted grey.
+- `away_color`, `home_color`: team brand colors as `#RRGGBB` strings. **Important:** colors do NOT exist in the raw ESPN game dict or anywhere in the live/upcoming pipeline — they're derived only at focus time today. So the controller computes them **centrally** via the existing `src.game_mode.team_colors.get_contrasting_pair(away, home, league)` (the same alias-map system the LED bars use), converting the returned RGB tuples to `#RRGGBB`. This is a cheap local lookup — **no HTTP** — safe to do synchronously at publish time. Absent/failed → remote.js falls back to favorite = accent blue, underdog = muted grey.
 
-The 4 sport plugins (`football`, `baseball`, `basketball`, `soccer`) add only `away_color` / `home_color` to their `get_live_games()` and `get_upcoming_games()` dicts (and the shared `normalize_upcoming_game()` passes them through). All Kalshi fetching/attachment stays in the controller — the plugins never call the matcher for this feature.
+**The 4 sport plugins are NOT modified.** All enrichment (both colors and Kalshi) happens in one place — the controller. `get_live_games()` / `get_upcoming_games()` and `normalize_upcoming_game()` stay as-is. This is simpler than per-plugin changes and keeps the matcher/color concerns out of the plugins.
 
 ## Rendering (`remote.js`, bump `?v=43` → `?v=44`; CSS in `remote.html`)
 
@@ -83,15 +83,15 @@ All numbers rendered with `Math.round`/`toFixed` (no float artifacts); `font-var
 | Missing `away_color`/`home_color` | bar falls back to accent (favorite) / grey (underdog) |
 | `fav_pct`/`dog_pct` don't sum to 100 (vig) | render as-is; bar widths use the two values normalized to 100% |
 
-## File structure (≈8 files)
+## File structure (≈6 files — plugins untouched)
 
-- **Modify** `src/display_controller.py` — background Kalshi warmer (`_kalshi_odds_by_key` + a throttled fetch task reusing existing background infra) and the pure-read attach in `_collect_live_games` / `_collect_upcoming_games` (or `_publish_live_games_cache`).
-- **Modify** `plugin-repos/football-scoreboard/manager.py`, `plugin-repos/baseball-scoreboard/manager.py`, `plugin-repos/basketball-scoreboard/manager.py`, `plugin-repos/soccer-scoreboard/manager.py` — add `away_color`/`home_color` to the `get_live_games()` and `get_upcoming_games()` game dicts.
-- **Modify** `src/common/upcoming_games.py` — `normalize_upcoming_game()` passes `away_color`/`home_color` through from the raw game.
-- **Modify** `web_interface/blueprints/api_v3.py` — verify pass-through (likely no change; the games list serializes as-is).
-- **Modify** `web_interface/static/v3/remote.js` — render the split bar on live cards + two-line upcoming rows; derive per-side %; graceful blank; bump cache-bust.
-- **Modify** `web_interface/templates/v3/partials/remote.html` — CSS for `.kalshi-bar` (segments, labels) + two-line upcoming row; bump `remote.js?v=44`.
-- **Create** tests under `test/` (controller enricher + payload + a JS/Playwright render check).
+- **Modify** `src/display_controller.py` — (a) synchronous team-color enrichment via `team_colors.get_contrasting_pair` (RGB→hex); (b) background Kalshi warmer (`_kalshi_odds_by_key` + a daemon thread on a ~20s throttle, modeled on the existing `threading.Thread(daemon=True)` + `_last_*_publish` patterns already in this file); (c) attach both `away_color`/`home_color` (sync) and `kalshi` (pure read) to each game in `_collect_live_games` / `_collect_upcoming_games`.
+- **Modify** `web_interface/blueprints/api_v3.py` — verify pass-through (expected no change; the games list serializes as-is).
+- **Modify** `web_interface/static/v3/remote.js` — render the split bar on live cards + two-line upcoming rows; derive per-side %; graceful blank.
+- **Modify** `web_interface/templates/v3/partials/remote.html` — CSS for `.kalshi-bar` (segments, labels) + two-line upcoming row; bump `remote.js?v=43` → `?v=44`.
+- **Create** tests under `test/` (controller color + Kalshi enrichment + a JS/Playwright render check).
+
+The 4 sport plugin managers and `src/common/upcoming_games.py` are **not** modified.
 
 ## Testing
 
