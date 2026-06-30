@@ -22,6 +22,16 @@
     </div>
 </div>
 
+<div class="bg-white rounded-lg shadow p-6 mt-6">
+    <div class="border-b border-gray-200 pb-4 mb-6">
+        <h2 class="text-lg font-semibold text-gray-900">Upcoming Today</h2>
+        <p class="mt-1 text-sm text-gray-600">Scheduled games across all sports, soonest first.</p>
+    </div>
+    <div id="upcoming-games-list" class="space-y-3">
+        <p class="text-gray-500 text-sm">Loading upcoming games…</p>
+    </div>
+</div>
+
 <script>
 function loadLiveGames() {
     fetch('/api/v3/games/live')
@@ -37,6 +47,30 @@ function loadLiveGames() {
                 statusEl.classList.remove('hidden');
             } else {
                 statusEl.classList.add('hidden');
+            }
+
+            // Render upcoming card — runs before any early return so it shows even with zero live games
+            const upcoming = data.data.upcoming || [];
+            const upcomingMore = data.data.upcoming_more || 0;
+            const upContainer = document.getElementById('upcoming-games-list');
+            if (upContainer) {
+                if (upcoming.length === 0) {
+                    upContainer.innerHTML = '<p class="text-gray-500 text-sm">No more games today.</p>';
+                } else {
+                    upContainer.innerHTML = upcoming.map(g => `
+                        <div class="flex items-center justify-between bg-gray-50 rounded-lg p-4">
+                            <div class="flex items-center space-x-3">
+                                <span class="font-semibold text-gray-900">${g.away_team}</span>
+                                <span class="text-gray-400 text-sm">@</span>
+                                <span class="font-semibold text-gray-900">${g.home_team}</span>
+                                <span class="text-sm text-gray-500">${g.league || ''}</span>
+                            </div>
+                            <span class="text-sm font-medium text-gray-700">${g.start_label}</span>
+                        </div>
+                    `).join('') + (upcomingMore > 0
+                        ? `<p class="text-gray-500 text-sm">+${upcomingMore} more</p>`
+                        : '');
+                }
             }
 
             if (games.length === 0) {
