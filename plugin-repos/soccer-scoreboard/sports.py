@@ -123,6 +123,8 @@ class SportsCore(ABC):
         self.session.mount("http://", adapter)
 
         self._logo_cache = {}
+        self._logo_cache_order: List[str] = []
+        self._logo_cache_max: int = 256
 
         # Set up headers
         self.headers = {
@@ -560,6 +562,16 @@ class SportsCore(ABC):
         BDF fonts are guarded inside draw_emboss."""
         draw_emboss(draw, position, text, font, fill, shadow=(255, 255, 255))
 
+    def _cache_logo(self, key: str, value: "Image.Image") -> None:
+        """Insert into _logo_cache, evicting the oldest entry if at cap."""
+        if key in self._logo_cache:
+            return
+        if len(self._logo_cache) >= self._logo_cache_max and self._logo_cache_order:
+            oldest = self._logo_cache_order.pop(0)
+            self._logo_cache.pop(oldest, None)
+        self._logo_cache[key] = value
+        self._logo_cache_order.append(key)
+
     def _load_and_resize_logo(
         self, team_id: str, team_abbrev: str, logo_path: Path, logo_url: str | None
     ) -> Optional[Image.Image]:
@@ -618,7 +630,7 @@ class SportsCore(ABC):
             max_width = int(self.display_width * 1.5)
             max_height = int(self.display_height * 1.5)
             logo.thumbnail((max_width, max_height), Image.Resampling.LANCZOS)
-            self._logo_cache[team_abbrev] = logo
+            self._cache_logo(team_abbrev, logo)
             return logo
 
         except Exception as e:

@@ -10,7 +10,7 @@ Extracted from Basketball and Sports base classes for plugin independence.
 import os
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 from PIL import Image, ImageDraw, ImageFont
 
 
@@ -22,7 +22,19 @@ class BasketballHelpers:
         self.display_width = display_width
         self.display_height = display_height
         self._logo_cache = {}
-    
+        self._logo_cache_order: List[str] = []
+        self._logo_cache_max: int = 256
+
+    def _cache_logo(self, key: str, value: "Image.Image") -> None:
+        """Insert into _logo_cache, evicting the oldest entry if at cap."""
+        if key in self._logo_cache:
+            return
+        if len(self._logo_cache) >= self._logo_cache_max and self._logo_cache_order:
+            oldest = self._logo_cache_order.pop(0)
+            self._logo_cache.pop(oldest, None)
+        self._logo_cache[key] = value
+        self._logo_cache_order.append(key)
+
     def load_fonts(self):
         """Load fonts used by the scoreboard."""
         fonts = {}
@@ -79,7 +91,7 @@ class BasketballHelpers:
             logo.thumbnail((max_width, max_height), Image.Resampling.LANCZOS)
             
             # Cache the logo
-            self._logo_cache[team_abbrev] = logo
+            self._cache_logo(team_abbrev, logo)
             return logo
             
         except Exception as e:
