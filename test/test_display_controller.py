@@ -521,10 +521,15 @@ class TestLiveGamesRefresh:
 
 def _make_controller_with_plugins(plugins_by_mode):
     """Build a DisplayController shell with injected plugin_modes + cache."""
+    import threading
     from src.display_controller import DisplayController
     dc = DisplayController.__new__(DisplayController)
     dc.plugin_modes = plugins_by_mode
     dc.cache_manager = MagicMock()
+    # Kalshi warmer state (added in Task 2 of feature/kalshi-odds-remote-cells).
+    dc._kalshi_odds_by_key = {}
+    dc._kalshi_active_keys = set()
+    dc._kalshi_odds_lock = threading.Lock()
     return dc
 
 
