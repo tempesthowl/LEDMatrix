@@ -79,8 +79,8 @@
             dPct = Math.round(k.draw_pct || 0);
         } else {
             const awayFav = (k.fav_team === g.away_team);
-            aPct = Math.round(awayFav ? k.fav_pct : k.dog_pct);
-            hPct = Math.round(awayFav ? k.dog_pct : k.fav_pct);
+            aPct = Math.round((awayFav ? k.fav_pct : k.dog_pct) || 0);
+            hPct = Math.round((awayFav ? k.dog_pct : k.fav_pct) || 0);
         }
         const awayFav2 = (k.fav_team === g.away_team);
         aPay = awayFav2 ? k.fav_payout : k.dog_payout;
