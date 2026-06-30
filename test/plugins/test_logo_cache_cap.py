@@ -26,12 +26,12 @@ def _load(mod_name, rel):
 import pytest
 
 
-@pytest.mark.parametrize("mod_name,rel,cls_suffix", [
-    ("fb_sports_cap", "plugin-repos/football-scoreboard/sports.py", None),
-    ("bb_sports_cap", "plugin-repos/basketball-scoreboard/sports.py", None),
-    ("sc_sports_cap", "plugin-repos/soccer-scoreboard/sports.py", None),
+@pytest.mark.parametrize("mod_name,rel", [
+    ("fb_sports_cap", "plugin-repos/football-scoreboard/sports.py"),
+    ("bb_sports_cap", "plugin-repos/basketball-scoreboard/sports.py"),
+    ("sc_sports_cap", "plugin-repos/soccer-scoreboard/sports.py"),
 ])
-def test_cache_logo_evicts_over_cap(mod_name, rel, cls_suffix):
+def test_cache_logo_evicts_over_cap(mod_name, rel):
     mod = _load(mod_name, rel)
     # Find the class that defines _cache_logo (the SportsCore-like base in the copy).
     cls = next(v for v in vars(mod).values()
@@ -43,6 +43,23 @@ def test_cache_logo_evicts_over_cap(mod_name, rel, cls_suffix):
         def _fetch_data(self, *a, **kw): pass
 
     inst = object.__new__(_Concrete)
+    inst._logo_cache = {}
+    inst._logo_cache_order = []
+    inst._logo_cache_max = 4  # small for the test
+    img = Image.new("RGBA", (4, 4))
+    for i in range(10):
+        inst._cache_logo(f"TEAM{i}", img)
+    assert len(inst._logo_cache) <= 4
+    assert len(inst._logo_cache_order) <= 4
+
+
+def test_basketball_helpers_cache_logo_evicts_over_cap():
+    """Test that BasketballHelpers._cache_logo caps at 256 entries."""
+    mod = _load("bb_helpers", "plugin-repos/basketball-scoreboard/basketball_helpers.py")
+    cls = mod.BasketballHelpers
+
+    # Create an instance using __new__ to bypass __init__ heavy deps
+    inst = object.__new__(cls)
     inst._logo_cache = {}
     inst._logo_cache_order = []
     inst._logo_cache_max = 4  # small for the test
