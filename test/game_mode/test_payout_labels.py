@@ -17,13 +17,26 @@ def test_three_way_payout_labels_omit_team_abbrev():
     assert "ECU" not in right
 
 
-def test_two_way_payout_labels_keep_payout_word():
-    # 2-way (MLB) payouts are untouched: "{mult}x payout", no abbrev either.
+def test_two_way_payout_labels_bare_multiple():
+    # 2-way (MLB) payouts now match the 3-way (soccer) style: bare "{mult}x",
+    # no " payout" suffix. The suffix made high-payout dogs ("100.0x payout")
+    # crowd the panel edge; color + position carry the team identity.
     r = GameModeRenderer(320, 32)
     kalshi = {"fav_payout": 1.6, "dog_payout": 2.6, "fav_team": "HOU"}
     left, right = r._payout_labels(kalshi, "TEX", "HOU")
-    assert left == "1.6x payout"
-    assert right == "2.6x payout"
+    assert left == "1.6x"
+    assert right == "2.6x"
+    assert "payout" not in left
+    assert "payout" not in right
+
+
+def test_two_way_high_payout_dog_is_compact():
+    # Regression for "100.0x payout looks bad": a ~1% dog renders compactly.
+    r = GameModeRenderer(320, 32)
+    kalshi = {"fav_payout": 1.01, "dog_payout": 100.0, "fav_team": "LAD"}
+    left, right = r._payout_labels(kalshi, "LAD", "ATH")
+    assert left == "1.0x"
+    assert right == "100.0x"
 
 
 # ---------------------------------------------------------------------------

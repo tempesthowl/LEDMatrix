@@ -436,9 +436,10 @@ class GameModeRenderer:
     def _payout_labels(self, kalshi: Dict[str, Any], away: str, home: str) -> Tuple[str, str]:
         """(left_text, right_text) for the payout row.
 
-        3-way (soccer) shows just the multiple — team identity is carried by the
-        label's position (left=away, right=home) and color, so the abbrev is
-        redundant. 2-way keeps the "{mult}x payout" form.
+        Both 2-way and 3-way show just the multiple — team identity is carried by
+        the label's position and color, so the abbrev is redundant. The old 2-way
+        "{mult}x payout" form made high-payout dogs ("100.0x payout") crowd the
+        panel edge; the bare form matches the soccer multiples.
         """
         if kalshi.get("is_three_way") and kalshi.get("draw_pct") is not None:
             away_pct = max(int(kalshi.get("away_pct", 0)), 1)
@@ -446,7 +447,7 @@ class GameModeRenderer:
             return f"{100 / away_pct:.1f}x", f"{100 / home_pct:.1f}x"
         fav_payout = kalshi.get("fav_payout", 0)
         dog_payout = kalshi.get("dog_payout", 0)
-        return f"{fav_payout:.1f}x payout", f"{dog_payout:.1f}x payout"
+        return f"{fav_payout:.1f}x", f"{dog_payout:.1f}x"
 
     def _render_odds_panel(
         self, img: Image.Image, draw: ImageDraw.Draw, data: Dict[str, Any]
@@ -504,7 +505,9 @@ class GameModeRenderer:
                 fav_team = kalshi.get("fav_team", "")
                 left_color = home_color if fav_team == home else away_color
                 right_color = away_color if fav_team == home else home_color
-                payout_font = self.fonts["payout"]
+                # Match the 3-way multiples: bare "{mult}x" in the smaller pct
+                # font so high-payout dogs stay compact instead of crowding the edge.
+                payout_font = self.fonts["pct"]
 
             self._draw_shadowed(draw, (right_x, row2_y), left_text, left_color, payout_font, COLOR_WHITE)
 
