@@ -1,5 +1,6 @@
 import pytest
 import time
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch, ANY
 from src.display_controller import DisplayController
 
@@ -516,7 +517,6 @@ class TestLiveGamesRefresh:
 # ---------------------------------------------------------------------------
 # Task 4: _collect_upcoming_games + publish
 # ---------------------------------------------------------------------------
-from types import SimpleNamespace
 
 
 def _make_controller_with_plugins(plugins_by_mode):
@@ -565,4 +565,23 @@ def test_collect_upcoming_skips_plugins_without_method():
     dc = _make_controller_with_plugins({"x": SimpleNamespace()})  # no get_upcoming_games
     games, more = dc._collect_upcoming_games()
     assert games == []
+    assert more == 0
+
+
+def test_collect_upcoming_continues_when_a_plugin_raises():
+    """A plugin raising in get_upcoming_games is caught + skipped, not propagated."""
+    def boom():
+        raise RuntimeError("boom")
+
+    good_game = {
+        "plugin_id": "football", "game_id": "f1", "league": "nfl", "start_ts": 1.0,
+        "away_team": "C", "home_team": "D", "start_label": "3:00 PM",
+        "away_logo_url": "", "home_logo_url": "",
+    }
+    dc = _make_controller_with_plugins({
+        "bad": SimpleNamespace(get_upcoming_games=boom),
+        "good": SimpleNamespace(get_upcoming_games=lambda: [good_game]),
+    })
+    games, more = dc._collect_upcoming_games()
+    assert [g["game_id"] for g in games] == ["f1"]
     assert more == 0
