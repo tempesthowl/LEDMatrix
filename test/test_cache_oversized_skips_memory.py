@@ -18,6 +18,11 @@ def test_oversized_value_not_held_in_memory(tmp_path, monkeypatch):
     big = {"events": ["x" * 100 for _ in range(1000)]}  # ~100 KB on disk
     cm.save_cache("huge_key", big)
 
+    # Fix 1 guard: save_cache itself must NOT pin the oversized value.
+    assert "huge_key" not in cm._memory_cache, (
+        "save_cache must NOT pin an oversized value in memory at write time"
+    )
+
     # Evict from memory so the next read must come from disk.
     cm._memory_cache.clear()
     cm._memory_cache_timestamps.clear()

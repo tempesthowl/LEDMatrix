@@ -107,8 +107,3 @@ def _make_scroll_helper_with_mock_deps():
     """Build a ScrollHelper via __init__ to verify it sets frame_times correctly."""
     sh = ScrollHelper(display_width=64, display_height=32)
     return sh
-
-
-def _simulate_lru_hit(helper, key):
-    """Simulate a LogoHelper cache hit: move key to MRU end."""
-    helper._logo_cache.move_to_end(key)

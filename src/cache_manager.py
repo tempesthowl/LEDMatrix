@@ -319,11 +319,23 @@ class CacheManager:
         """
         # Periodic cleanup before adding new entries
         self._cleanup_memory_cache()
-        
-        # Update memory cache first
-        self._memory_cache_component.set(key, data)
-        
-        # Save to disk cache
+
+        # Guard: only pin in memory when the serialised value is under the
+        # size threshold.  The disk write happens unconditionally below so
+        # oversized values are always persisted and readable (served from
+        # disk by get_cached_data / load_cache).  We compute size from the
+        # in-memory object here because the disk file does not exist yet at
+        # this point in the call (memory set precedes disk set).
+        try:
+            serialised_size = len(json.dumps(data, default=str).encode())
+        except Exception:
+            # Non-serialisable data: allow caching (safe default).
+            serialised_size = 0
+
+        if serialised_size < self._MAX_MEMORY_VALUE_BYTES:
+            self._memory_cache_component.set(key, data)
+
+        # Save to disk cache (always — oversized values must still persist)
         try:
             self._disk_cache_component.set(key, data)
         except CacheError:
