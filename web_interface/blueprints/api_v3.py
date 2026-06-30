@@ -1819,6 +1819,18 @@ def get_live_games():
         except Exception:
             pass
 
+        # Read upcoming games published by the controller (separate process).
+        upcoming = []
+        upcoming_more = 0
+        try:
+            up_rec = cache.get_cached_data('game_mode_upcoming_games', max_age=600, memory_ttl=2)
+            up_data = up_rec.get('data') if isinstance(up_rec, dict) and 'data' in up_rec else up_rec
+            if up_data and isinstance(up_data, dict):
+                upcoming = up_data.get('games', [])
+                upcoming_more = int(up_data.get('more_count', 0))
+        except Exception:
+            pass
+
         return jsonify({
             'status': 'success',
             'data': {
@@ -1826,6 +1838,8 @@ def get_live_games():
                 'game_mode_active': game_mode_active,
                 'selected_game_ids': selected_ids,
                 'auto_cycle': auto_cycle,
+                'upcoming': upcoming,
+                'upcoming_more': upcoming_more,
             }
         })
     except Exception as exc:
