@@ -73,6 +73,14 @@
       .upcoming-teams { flex: 1; font-weight: 600; color: var(--rmt-text); font-size: 0.9em; }
       .upcoming-time { color: var(--rmt-text-dim); font-variant-numeric: tabular-nums; font-size: 0.85em; }
       .upcoming-more { padding-top: 6px; color: var(--rmt-text-dim); font-size: 0.85em; }
+      .kalshi-bar { margin-top: 6px; }
+      .kbar { display: flex; height: 7px; border-radius: 4px; overflow: hidden; }
+      .kbar > span { display: block; height: 100%; }
+      .kbar-lbl { display: flex; justify-content: space-between; gap: 8px; margin-top: 4px; font-size: 11px; font-variant-numeric: tabular-nums; color: var(--rmt-text); }
+      .kbar-lbl .kdim { color: var(--rmt-text-dim); }
+      .upcoming-row--odds { flex-direction: column; align-items: stretch; }
+      .upcoming-row-top { display: flex; align-items: center; gap: 8px; }
+      .upcoming-row-top .upcoming-teams { flex: 1; }
     </style>
     <section class="remote-section" id="live-games">
         <h3>Live Games
@@ -194,7 +202,7 @@
         <button type="button" class="pending-apply" onclick="applyPending()">Apply</button>
     </div>
 
-    <script src="/static/v3/remote.js?v=43" defer></script>
+    <script src="/static/v3/remote.js?v=44" defer></script>
 
     <style>
         .health-trend {

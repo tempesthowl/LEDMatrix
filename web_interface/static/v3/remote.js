@@ -65,6 +65,38 @@
         return `<i class="fas ${fa} sport-icon" style="color:${c}"></i>`;
     }
 
+    function kalshiBar(g) {
+        const k = g.kalshi;
+        if (!k) return '';
+        const awayC = g.away_color || 'var(--rmt-accent)';
+        const homeC = g.home_color || '#5B6B82';
+        const drawC = '#5B6B82';
+        const pay = function (p) { return (p && p > 0) ? (' · ' + p.toFixed(2) + 'x') : ''; };
+        let aPct, hPct, dPct = 0, aPay, hPay, threeWay = !!k.is_three_way;
+        if (threeWay) {
+            aPct = Math.round(k.away_pct || 0);
+            hPct = Math.round(k.home_pct || 0);
+            dPct = Math.round(k.draw_pct || 0);
+        } else {
+            const awayFav = (k.fav_team === g.away_team);
+            aPct = Math.round(awayFav ? k.fav_pct : k.dog_pct);
+            hPct = Math.round(awayFav ? k.dog_pct : k.fav_pct);
+        }
+        const awayFav2 = (k.fav_team === g.away_team);
+        aPay = awayFav2 ? k.fav_payout : k.dog_payout;
+        hPay = awayFav2 ? k.dog_payout : k.fav_payout;
+        const tot = Math.max(1, aPct + hPct + dPct);
+        const seg = function (w, c) { return '<span style="width:' + (w / tot * 100) + '%;background:' + c + '"></span>'; };
+        let bar = seg(aPct, awayC);
+        if (threeWay) bar += seg(dPct, drawC);
+        bar += seg(hPct, homeC);
+        const favCls = function (isAway) { return (k.fav_team === (isAway ? g.away_team : g.home_team)) ? '' : ' kdim'; };
+        let labels = '<span class="' + favCls(true).trim() + '">' + g.away_team + ' ' + aPct + '%' + pay(aPay) + '</span>';
+        if (threeWay) labels += '<span class="kdim">Draw ' + dPct + '%</span>';
+        labels += '<span class="' + favCls(false).trim() + '">' + g.home_team + ' ' + hPct + '%' + pay(hPay) + '</span>';
+        return '<div class="kalshi-bar"><div class="kbar">' + bar + '</div><div class="kbar-lbl">' + labels + '</div></div>';
+    }
+
     // --- Utilities ---
     function api(path, opts = {}) {
         return fetch('/api/v3' + path, {
@@ -405,10 +437,14 @@
             const rows = upcoming.map(function (g) {
                 const m = sportMeta(g.league);
                 const accent = m ? m.color : '#888';
-                return '<div class="upcoming-row">'
+                const bar = kalshiBar(g);
+                return '<div class="upcoming-row' + (bar ? ' upcoming-row--odds' : '') + '">'
+                    + '<div class="upcoming-row-top">'
                     + leagueLogo(g.league, accent)
                     + '<span class="upcoming-teams">' + (g.away_team || '') + ' @ ' + (g.home_team || '') + '</span>'
                     + '<span class="upcoming-time">' + (g.start_label || '') + '</span>'
+                    + '</div>'
+                    + bar
                     + '</div>';
             }).join('');
             const moreLine = more > 0
@@ -497,6 +533,7 @@
                                     <span class="score">${g.home_score ?? ''}</span> <span class="team">${g.home_team}</span>
                                 </div>
                                 <div class="game-meta-line">${live}<span>${[g.period_label, leagueLabel].filter(Boolean).join(' · ')}</span></div>
+                                ${kalshiBar(g)}
                             </div>`;
                 }
                 return `
