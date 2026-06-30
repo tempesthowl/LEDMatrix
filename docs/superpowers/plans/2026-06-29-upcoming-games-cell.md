@@ -391,7 +391,7 @@ def _fake_registry(games):
 
 def test_baseball_get_upcoming_games(monkeypatch):
     mod = _load("baseball_mgr_upcoming_test", _REPO_ROOT / "plugin-repos" / "baseball-scoreboard")
-    Manager = mod.BaseballScoreboardManager
+    Manager = mod.BaseballScoreboardPlugin
     inst = Manager.__new__(Manager)
     inst.plugin_id = "baseball"
     inst.config = {"timezone": "America/Chicago"}
@@ -413,7 +413,7 @@ def test_baseball_get_upcoming_games(monkeypatch):
     assert out[0]["start_label"] == "7:05 PM"
 ```
 
-> **Note on the class name:** confirm the exact manager class name in `plugin-repos/baseball-scoreboard/manager.py` (grep `^class .*Manager`) and use it verbatim in the test. The placeholder above assumes `BaseballScoreboardManager`.
+> **Note on the class name:** confirm the exact manager class name in `plugin-repos/baseball-scoreboard/manager.py` (grep `^class .*Manager`) and use it verbatim in the test. The four classes are `BaseballScoreboardPlugin`, `BasketballScoreboardPlugin`, `FootballScoreboardPlugin`, `SoccerScoreboardPlugin` (suffix `Plugin`, not `Manager`).
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -512,10 +512,10 @@ import pytest
 ])
 def test_other_plugins_get_upcoming_games(monkeypatch, mod_name, plugin_dir, class_attr, plugin_id):
     mod = _load(mod_name, _REPO_ROOT / "plugin-repos" / plugin_dir)
-    # Resolve the manager class: the *Manager subclass defining get_upcoming_games.
+    # Resolve the manager class: the *Plugin subclass defining get_upcoming_games.
     Manager = next(
         v for v in vars(mod).values()
-        if isinstance(v, type) and v.__name__.endswith("Manager")
+        if isinstance(v, type) and v.__name__.endswith("Plugin")
         and hasattr(v, "get_upcoming_games")
     )
     inst = Manager.__new__(Manager)
@@ -537,7 +537,7 @@ def test_other_plugins_get_upcoming_games(monkeypatch, mod_name, plugin_dir, cla
     assert out[0]["start_label"] == "7:05 PM"
 ```
 
-> If a manager class can't be auto-resolved (multiple `*Manager` types), grep `^class .*Manager` in that file and hard-code the class name instead of the `next(...)` lookup.
+> If a manager class can't be auto-resolved (multiple `*Manager` types), grep `^class ` in that file and hard-code the class name instead of the `next(...)` lookup.
 
 - [ ] **Step 5: Run the full plugin test file**
 
