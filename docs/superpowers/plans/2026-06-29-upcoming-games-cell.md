@@ -182,7 +182,7 @@ def test_representation_empty():
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `python -m pytest test/common/test_upcoming_games.py -v -p no:cacheprovider --no-cov`
+Run: `python -m pytest test/common/test_upcoming_games.py -v -p no:cacheprovider --override-ini="addopts="`
 Expected: FAIL — `ModuleNotFoundError: No module named 'src.common.upcoming_games'`
 
 - [ ] **Step 3: Write the helper**
@@ -317,7 +317,7 @@ def select_with_representation(
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `python -m pytest test/common/test_upcoming_games.py -v -p no:cacheprovider --no-cov`
+Run: `python -m pytest test/common/test_upcoming_games.py -v -p no:cacheprovider --override-ini="addopts="`
 Expected: PASS (9 tests)
 
 - [ ] **Step 5: Commit**
@@ -417,7 +417,7 @@ def test_baseball_get_upcoming_games(monkeypatch):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `python -m pytest test/plugins/test_upcoming_games_plugins.py::test_baseball_get_upcoming_games -v -p no:cacheprovider --no-cov`
+Run: `python -m pytest test/plugins/test_upcoming_games_plugins.py::test_baseball_get_upcoming_games -v -p no:cacheprovider --override-ini="addopts="`
 Expected: FAIL — `AttributeError: ... object has no attribute 'get_upcoming_games'`
 
 - [ ] **Step 3: Add the method + import**
@@ -459,7 +459,7 @@ Add this method immediately after `get_live_games()` (after line ~3870):
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `python -m pytest test/plugins/test_upcoming_games_plugins.py::test_baseball_get_upcoming_games -v -p no:cacheprovider --no-cov`
+Run: `python -m pytest test/plugins/test_upcoming_games_plugins.py::test_baseball_get_upcoming_games -v -p no:cacheprovider --override-ini="addopts="`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
@@ -541,7 +541,7 @@ def test_other_plugins_get_upcoming_games(monkeypatch, mod_name, plugin_dir, cla
 
 - [ ] **Step 5: Run the full plugin test file**
 
-Run: `python -m pytest test/plugins/test_upcoming_games_plugins.py -v -p no:cacheprovider --no-cov`
+Run: `python -m pytest test/plugins/test_upcoming_games_plugins.py -v -p no:cacheprovider --override-ini="addopts="`
 Expected: PASS (baseball + 3 parametrized = 4 tests)
 
 - [ ] **Step 6: Commit**
@@ -622,7 +622,7 @@ def test_collect_upcoming_skips_plugins_without_method():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `python -m pytest test/test_display_controller.py -k upcoming -v -p no:cacheprovider --no-cov`
+Run: `python -m pytest test/test_display_controller.py -k upcoming -v -p no:cacheprovider --override-ini="addopts="`
 Expected: FAIL — `AttributeError: ... has no attribute '_collect_upcoming_games'`
 
 - [ ] **Step 3: Add `_collect_upcoming_games()` and the import**
@@ -671,7 +671,7 @@ Add this method directly after `_collect_live_games()` (after ~line 1347):
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `python -m pytest test/test_display_controller.py -k upcoming -v -p no:cacheprovider --no-cov`
+Run: `python -m pytest test/test_display_controller.py -k upcoming -v -p no:cacheprovider --override-ini="addopts="`
 Expected: PASS (2 tests)
 
 - [ ] **Step 5: Publish the upcoming cache in `_publish_live_games_cache()`**
@@ -691,7 +691,7 @@ In `_publish_live_games_cache()`, after the `game_mode_live_games` `cache_manage
 
 - [ ] **Step 6: Run the display-controller tests**
 
-Run: `python -m pytest test/test_display_controller.py -v -p no:cacheprovider --no-cov`
+Run: `python -m pytest test/test_display_controller.py -v -p no:cacheprovider --override-ini="addopts="`
 Expected: PASS (existing + new)
 
 - [ ] **Step 7: Commit**
@@ -779,7 +779,7 @@ def test_live_endpoint_upcoming_defaults_empty(client, monkeypatch):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `python -m pytest test/web/test_games_upcoming_api.py -v -p no:cacheprovider --no-cov`
+Run: `python -m pytest test/web/test_games_upcoming_api.py -v -p no:cacheprovider --override-ini="addopts="`
 Expected: FAIL — `KeyError: 'upcoming'` / assertion error (key missing)
 
 - [ ] **Step 3: Read the upcoming cache + add to payload**
@@ -809,7 +809,7 @@ Then add the two keys to the `return jsonify({... 'data': {...}})` block:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `python -m pytest test/web/test_games_upcoming_api.py -v -p no:cacheprovider --no-cov`
+Run: `python -m pytest test/web/test_games_upcoming_api.py -v -p no:cacheprovider --override-ini="addopts="`
 Expected: PASS (2 tests)
 
 - [ ] **Step 5: Commit**
@@ -987,7 +987,7 @@ No code. This task produces the evidence required by the project Working Agreeme
 
 - [ ] **Step 1: Run the full test suite for new code**
 
-Run: `python -m pytest test/common/test_upcoming_games.py test/plugins/test_upcoming_games_plugins.py test/test_display_controller.py test/web/test_games_upcoming_api.py -v -p no:cacheprovider --no-cov`
+Run: `python -m pytest test/common/test_upcoming_games.py test/plugins/test_upcoming_games_plugins.py test/test_display_controller.py test/web/test_games_upcoming_api.py -v -p no:cacheprovider --override-ini="addopts="`
 Expected: all PASS.
 
 - [ ] **Step 2: Launch the dev loop**
