@@ -17,14 +17,16 @@ logger = logging.getLogger(__name__)
 
 class FontManager:
     """
-    Comprehensive font management supporting TTF and BDF fonts with caching, 
+    Comprehensive font management supporting TTF and BDF fonts with caching,
     measurement, plugin support, and manager font registration.
-    
+
     This FontManager serves dual purposes:
     1. Utility functions for font loading, caching, and measurement
     2. Dynamic detection and override of fonts used by managers/plugins
     """
-    
+
+    _METRICS_CACHE_MAX = 2048
+
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.fonts_config = config.get("fonts", {})
@@ -518,6 +520,11 @@ class FontManager:
             baseline = 10
 
         result = (width, height, baseline)
+        # Bound the cache: it keys on (hash(text), id(font)); dynamic strings
+        # (scores, clocks, Kalshi %) would otherwise grow it without limit.
+        if len(self.metrics_cache) >= self._METRICS_CACHE_MAX:
+            # FIFO drop of the oldest inserted key (dict preserves insertion order).
+            self.metrics_cache.pop(next(iter(self.metrics_cache)), None)
         self.metrics_cache[cache_key] = result
         return result
 
