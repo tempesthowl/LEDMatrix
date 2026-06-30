@@ -62,11 +62,32 @@ def test_drops_final_game():
     ) is None
 
 
-def test_drops_game_not_today_local():
-    now = _now_chi(2026, 6, 29, 9, 0)
-    # Tomorrow 7:05 PM Chicago
+def test_includes_tomorrow_with_weekday_label():
+    # Default window is today + tomorrow. Tomorrow's games carry a weekday
+    # prefix so they're distinguishable from today's bare time labels.
+    now = _now_chi(2026, 6, 29, 9, 0)  # Mon
+    # Tomorrow (Tue 6/30) 7:05 PM Chicago == 00:05 UTC 7/1
     start = pytz.UTC.localize(datetime(2026, 7, 1, 0, 5))
+    out = normalize_upcoming_game(_raw("1", "HOU", "NYY", start), "baseball", "mlb", now=now)
+    assert out is not None
+    assert out["start_label"] == "Tue 7:05 PM"
+
+
+def test_drops_day_after_tomorrow():
+    # Outside the default 2-day window (today + tomorrow).
+    now = _now_chi(2026, 6, 29, 9, 0)  # Mon
+    # Wed 7/1 7:05 PM Chicago == 00:05 UTC 7/2
+    start = pytz.UTC.localize(datetime(2026, 7, 2, 0, 5))
     assert normalize_upcoming_game(_raw("1", "HOU", "NYY", start), "baseball", "mlb", now=now) is None
+
+
+def test_days_ahead_zero_is_today_only():
+    now = _now_chi(2026, 6, 29, 9, 0)
+    # Tomorrow — excluded when days_ahead=0
+    start = pytz.UTC.localize(datetime(2026, 7, 1, 0, 5))
+    assert normalize_upcoming_game(
+        _raw("1", "HOU", "NYY", start), "baseball", "mlb", now=now, days_ahead=0
+    ) is None
 
 
 def test_accepts_iso_string_start_time():

@@ -44,12 +44,17 @@ def normalize_upcoming_game(
     *,
     now: Optional[datetime] = None,
     tz_name: str = DEFAULT_TZ,
+    days_ahead: int = 1,
 ) -> Optional[Dict[str, Any]]:
     """Normalize a raw plugin game dict into an upcoming-cell dict.
 
-    Returns None unless the game is a today, pre-state game:
+    Returns None unless the game is a pre-state game within the window:
       - not live, not final, and is_upcoming (or no live/final flags set)
-      - start time falls on today's date in tz_name
+      - start date is between today and today+days_ahead (inclusive) in tz_name
+
+    days_ahead defaults to 1 (today + tomorrow). The start_label is bare
+    time for today's games ("7:05 PM") and weekday-prefixed for later days
+    ("Tue 7:05 PM") so the two are distinguishable in the cell.
     """
     if raw.get("is_live") or raw.get("is_final"):
         return None
@@ -68,10 +73,12 @@ def normalize_upcoming_game(
 
     now_local = (now.astimezone(tz) if now is not None else datetime.now(tz))
     start_local = start_dt.astimezone(tz)
-    if start_local.date() != now_local.date():
+    delta_days = (start_local.date() - now_local.date()).days
+    if delta_days < 0 or delta_days > days_ahead:
         return None
 
-    label = start_local.strftime("%I:%M %p").lstrip("0")
+    time_str = start_local.strftime("%I:%M %p").lstrip("0")
+    label = time_str if delta_days == 0 else f"{start_local.strftime('%a')} {time_str}"
 
     return {
         "plugin_id": plugin_id,
