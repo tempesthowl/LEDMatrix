@@ -69,6 +69,14 @@ class DiskCache:
             return None
         return os.path.join(self.cache_dir, f"{key}.json")
     
+    def get_file_size(self, key: str) -> int:
+        """Bytes of the on-disk cache file for key, or 0 if absent."""
+        try:
+            path = self.get_cache_path(key)
+            return os.path.getsize(path) if path and os.path.exists(path) else 0
+        except OSError:
+            return 0
+
     def get(self, key: str, max_age: int = 300) -> Optional[Dict[str, Any]]:
         """
         Get data from disk cache.

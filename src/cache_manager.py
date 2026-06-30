@@ -60,6 +60,11 @@ class CacheManager:
         self._memory_cache_cleanup_interval = self._memory_cache_component._cleanup_interval
         self._last_memory_cache_cleanup = self._memory_cache_component._last_cleanup
         
+        # Max in-memory value size: values larger than this are served from disk
+        # and never pinned in RAM (prevents the ~73 MB MLB schedule from inflating
+        # to hundreds of MB in memory).
+        self._MAX_MEMORY_VALUE_BYTES = 5 * 1024 * 1024  # 5 MiB
+
         # Disk cleanup configuration
         self._disk_cleanup_interval_hours = 24  # Run cleanup every 24 hours
         self._disk_cleanup_interval = 3600.0  # Minimum interval between cleanups (1 hour) for throttle
@@ -295,8 +300,11 @@ class CacheManager:
         # 2) Disk cache
         record = self._disk_cache_component.get(key, max_age=max_age)
         if record is not None:
-            # Hydrate memory cache (use current time to start memory TTL window)
-            self._memory_cache_component.set(key, record)
+            # Hydrate memory cache only when the on-disk file is small enough.
+            # Oversized values (e.g. the 73 MB MLB schedule) are served directly
+            # from disk and never pinned in RAM to avoid memory bloat.
+            if self._disk_cache_component.get_file_size(key) < self._MAX_MEMORY_VALUE_BYTES:
+                self._memory_cache_component.set(key, record)
             return record
 
         # 3) Miss
@@ -332,8 +340,9 @@ class CacheManager:
         # Check disk cache
         data = self._disk_cache_component.get(key, max_age=3600)  # 1 hour for load_cache
         if data is not None:
-            # Update memory cache
-            self._memory_cache_component.set(key, data)
+            # Only pin in memory when the on-disk file is under the size threshold.
+            if self._disk_cache_component.get_file_size(key) < self._MAX_MEMORY_VALUE_BYTES:
+                self._memory_cache_component.set(key, data)
             return data
         
         return None
