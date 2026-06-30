@@ -4,7 +4,7 @@ import sys
 import os
 import json
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Set
+from typing import Dict, Any, List, Optional, Set, Tuple
 from datetime import datetime
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed  # pylint: disable=no-name-in-module
@@ -18,6 +18,7 @@ from src.cache_manager import CacheManager
 from src.font_manager import FontManager
 from src.logging_config import get_logger
 from src.observability.trace import set_trace_id, clear_trace_id, trace_event
+from src.common.upcoming_games import select_with_representation
 
 # Get logger with consistent configuration
 logger = get_logger(__name__)
@@ -1346,6 +1347,38 @@ class DisplayController:
                 unique.append(g)
         return unique
 
+    def _collect_upcoming_games(self) -> Tuple[List[Dict[str, Any]], int]:
+        """Collect today's upcoming games across plugins, deduped + represented.
+
+        Mirrors _collect_live_games(): iterate unique plugin instances, call
+        the uniform get_upcoming_games() contract (skip plugins without it),
+        dedupe by game_id, then select up to 8 with cross-sport
+        representation. Returns (selected, more_count).
+        """
+        all_upcoming: List[Dict[str, Any]] = []
+        checked_plugins = set()
+        for mode_name, plugin_instance in self.plugin_modes.items():
+            pid = id(plugin_instance)
+            if pid in checked_plugins:
+                continue
+            checked_plugins.add(pid)
+            if not hasattr(plugin_instance, "get_upcoming_games"):
+                continue
+            try:
+                all_upcoming.extend(plugin_instance.get_upcoming_games() or [])
+            except Exception as e:  # pylint: disable=broad-except
+                logger.warning("get_upcoming_games failed for %s: %s", mode_name, e)
+
+        seen_ids = set()
+        unique: List[Dict[str, Any]] = []
+        for g in all_upcoming:
+            gid = g.get("game_id", "")
+            if gid and gid not in seen_ids:
+                seen_ids.add(gid)
+                unique.append(g)
+
+        return select_with_representation(unique, cap=8)
+
     def _publish_live_games_cache(
         self,
         games: Optional[List[Dict[str, Any]]] = None,
@@ -1384,6 +1417,15 @@ class DisplayController:
             })
         except Exception as e:  # pylint: disable=broad-except
             logger.debug("failed to cache live games: %s", e)
+
+        try:
+            upcoming_games, upcoming_more = self._collect_upcoming_games()
+            self.cache_manager.set("game_mode_upcoming_games", {
+                "games": upcoming_games,
+                "more_count": upcoming_more,
+            })
+        except Exception as e:  # pylint: disable=broad-except
+            logger.debug("failed to cache upcoming games: %s", e)
 
         try:
             self.cache_manager.set("game_mode_selection", {

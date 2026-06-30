@@ -511,3 +511,58 @@ class TestLiveGamesRefresh:
         assert live.last_update == 0
         live.cache_manager.delete.assert_called_once_with("mlb_mlb_scoreboard_current")
         assert controller.plugin_manager.plugin_last_update["baseball-scoreboard"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Task 4: _collect_upcoming_games + publish
+# ---------------------------------------------------------------------------
+from types import SimpleNamespace
+
+
+def _make_controller_with_plugins(plugins_by_mode):
+    """Build a DisplayController shell with injected plugin_modes + cache."""
+    from src.display_controller import DisplayController
+    dc = DisplayController.__new__(DisplayController)
+    dc.plugin_modes = plugins_by_mode
+    dc.cache_manager = MagicMock()
+    return dc
+
+
+def test_collect_upcoming_games_dedupes_and_represents():
+    def mk_plugin(games):
+        return SimpleNamespace(get_upcoming_games=lambda g=games: list(g))
+
+    mlb_games = [
+        {"plugin_id": "baseball", "game_id": f"m{i}", "league": "mlb", "start_ts": 100.0 + i,
+         "away_team": "A", "home_team": "B", "start_label": "1:00 PM",
+         "away_logo_url": "", "home_logo_url": ""}
+        for i in range(6)
+    ]
+    nfl_games = [
+        {"plugin_id": "football", "game_id": f"f{i}", "league": "nfl", "start_ts": 200.0 + i,
+         "away_team": "C", "home_team": "D", "start_label": "3:00 PM",
+         "away_logo_url": "", "home_logo_url": ""}
+        for i in range(3)
+    ]
+    # Duplicate game_id across two modes of the same plugin must dedupe.
+    baseball_plugin = mk_plugin(mlb_games)
+    dc = _make_controller_with_plugins({
+        "baseball_live": baseball_plugin,
+        "baseball_recent": baseball_plugin,  # same instance -> visited once
+        "football_live": mk_plugin(nfl_games),
+    })
+
+    games, more = dc._collect_upcoming_games()
+    assert len(games) == 8
+    assert more == 1
+    # Representation: nfl present despite mlb flood.
+    assert any(g["league"] == "nfl" for g in games)
+    # First two are one mlb + one nfl (round 1).
+    assert {games[0]["league"], games[1]["league"]} == {"mlb", "nfl"}
+
+
+def test_collect_upcoming_skips_plugins_without_method():
+    dc = _make_controller_with_plugins({"x": SimpleNamespace()})  # no get_upcoming_games
+    games, more = dc._collect_upcoming_games()
+    assert games == []
+    assert more == 0
