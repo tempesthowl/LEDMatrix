@@ -306,6 +306,11 @@ class DisplayController:
         # remote UI stays in sync with the emulator's plugin state.
         self._last_live_games_publish = 0.0
         self._live_games_publish_min_interval = 5.0
+        # Controller-stats publish throttle (used by _publish_controller_stats).
+        # Publishes RSS + mem-cache entry count to shared cache every ~30s so
+        # the web /system/status can break down memory by process.
+        self._last_stats_publish = 0.0
+        self._stats_publish_interval = 30.0
         # Last handled manual-refresh nonce (POST /api/v3/games/refresh). A new
         # nonce => force a restart-equivalent live-games fetch. See
         # _poll_live_games_refresh().
@@ -1242,6 +1247,9 @@ class DisplayController:
             # the tick-frequent calls safe.
             if any_updated or self._game_mode_active:
                 self._publish_live_games_cache()
+            # Publish per-process RSS + cache-entry count for /system/status.
+            # Throttled to ~30s inside the method — safe to call every tick.
+            self._publish_controller_stats()
 
     def _force_refresh_registry(self, plugin) -> None:
         """Zero a sport plugin's live-manager fetch timers + drop its ESPN
@@ -1434,6 +1442,31 @@ class DisplayController:
             })
         except Exception as e:  # pylint: disable=broad-except
             logger.debug("failed to publish selection cache: %s", e)
+
+    def _publish_controller_stats(self) -> None:
+        """Publish this process's RSS and memory-cache entry count to the
+        shared cache (~30s throttle) so the web /system/status endpoint can
+        break down memory usage by process (controller vs web).
+        """
+        if not self.cache_manager:
+            return
+        now = time.monotonic()
+        if (now - self._last_stats_publish) < self._stats_publish_interval:
+            return
+        self._last_stats_publish = now
+        try:
+            import psutil as _psutil
+            import os as _os
+            rss_mb = round(
+                _psutil.Process(_os.getpid()).memory_info().rss / (1024 * 1024), 1
+            )
+            mem_entries = len(self.cache_manager._memory_cache) if self.cache_manager else 0
+            self.cache_manager.set("display_controller_stats", {
+                "rss_mb": rss_mb,
+                "mem_cache_entries": mem_entries,
+            })
+        except Exception:  # pylint: disable=broad-except
+            pass
 
     def _tick_plugin_updates_throttled(self, min_interval: float = 0.0):
         """Throttled version of _tick_plugin_updates for high-FPS loops.

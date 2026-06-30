@@ -1185,6 +1185,36 @@ def get_system_status():
                 'message': 'psutil not available for system monitoring'
             }), 503
 
+        # Read controller stats published by display_controller.py (best-effort)
+        controller_cache = {}
+        try:
+            cache = _ensure_cache_manager()
+            rec = cache.get_cached_data('display_controller_stats', max_age=120, memory_ttl=2)
+            d = rec.get('data') if isinstance(rec, dict) and 'data' in rec else rec
+            if isinstance(d, dict):
+                controller_cache = {
+                    'entries': d.get('mem_cache_entries', 0),
+                    'rss_mb': d.get('rss_mb', 0),
+                }
+        except Exception:
+            pass
+
+        # Per-process RSS breakdown (best-effort via psutil)
+        processes = []
+        try:
+            import psutil as _psutil
+            for p in _psutil.process_iter(['name', 'cmdline', 'memory_info']):
+                try:
+                    cmd = ' '.join(p.info.get('cmdline') or [])
+                    if 'run.py' in cmd:
+                        processes.append({'name': 'controller', 'rss_mb': round(p.info['memory_info'].rss / (1024 * 1024), 1)})
+                    elif 'web_interface' in cmd or 'start.py' in cmd:
+                        processes.append({'name': 'web', 'rss_mb': round(p.info['memory_info'].rss / (1024 * 1024), 1)})
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
         # Get system metrics using psutil
         cpu_percent = psutil.cpu_percent(interval=0.1)  # Short interval for responsiveness
         memory = psutil.virtual_memory()
@@ -1238,7 +1268,9 @@ def get_system_status():
             'cpu_temp': round(cpu_temp, 1) if cpu_temp is not None else None,
             'disk_used_percent': round(disk_percent, 1),
             'disk_total_gb': round(disk.total / (1024 * 1024 * 1024), 1),
-            'disk_used_gb': round(disk.used / (1024 * 1024 * 1024), 1)
+            'disk_used_gb': round(disk.used / (1024 * 1024 * 1024), 1),
+            'controller_cache': controller_cache,
+            'processes': processes,
         }
 
         # Cache the result if available
