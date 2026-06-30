@@ -1341,13 +1341,13 @@ class DisplayController:
     def _attach_team_colors(self, game):
         """Add away_color/home_color hex to a game dict (cheap, no HTTP).
 
-        Calls get_contrasting_pair(away, home, league) — note arg order swapped
-        vs the raw function signature (home, away) so the return unpacks as
-        (away_rgb, home_rgb) directly.
+        Calls get_contrasting_pair(home_team, away_team, league) and stores
+        the resulting RGB tuples as hex strings in game["home_color"] and
+        game["away_color"]. Never raises — sets both fields to None on error.
         """
         try:
-            away_rgb, home_rgb = get_contrasting_pair(
-                game.get("away_team", ""), game.get("home_team", ""), game.get("league", "")
+            home_rgb, away_rgb = get_contrasting_pair(
+                game.get("home_team", ""), game.get("away_team", ""), game.get("league", "")
             )
             game["away_color"] = self._rgb_to_hex(away_rgb)
             game["home_color"] = self._rgb_to_hex(home_rgb)

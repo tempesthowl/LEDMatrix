@@ -20,14 +20,16 @@ def test_rgb_to_hex():
     assert c._rgb_to_hex("bad") is None
 
 
-def test_attach_team_colors_adds_hex(monkeypatch):
-    monkeypatch.setattr(dc, "get_contrasting_pair",
-                        lambda a, h, l: ((227, 24, 55), (0, 34, 68)))
+def test_attach_team_colors_maps_away_and_home_correctly(monkeypatch):
+    def fake_pair(arg1, arg2, league):
+        cmap = {"KC": (227, 24, 55), "DEN": (251, 79, 20)}
+        return cmap[arg1], cmap[arg2]   # color of arg1, color of arg2 (like the real fn)
+    monkeypatch.setattr(dc, "get_contrasting_pair", fake_pair)
     c = _ctrl()
     g = {"away_team": "KC", "home_team": "DEN", "league": "nfl"}
-    out = c._attach_team_colors(g)
-    assert out["away_color"] == "#E31837"
-    assert out["home_color"] == "#002244"
+    c._attach_team_colors(g)
+    assert g["away_color"] == "#E31837"   # KC -> away_color
+    assert g["home_color"] == "#FB4F14"   # DEN -> home_color
 
 
 def test_attach_team_colors_never_raises(monkeypatch):
