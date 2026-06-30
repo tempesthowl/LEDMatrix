@@ -241,8 +241,8 @@
     <script>
     (function () {
         const STORAGE_KEY = 'ledticker.memTrend.v1';
-        const MAX_SAMPLES = 360;            // 1h at the existing 10s health-poll cadence
-        const MAX_AGE_MS = 2 * 3600 * 1000; // drop entries older than 2h on load
+        const MAX_SAMPLES = 2880;           // 24h at the 30s server cadence
+        const MAX_AGE_MS = 2 * 3600 * 1000; // drop entries older than 2h on load (client-local fallback)
         const SAVE_DEBOUNCE_MS = 1000;
         const POLL_FALLBACK_MS = 30000;
         const DEDUP_MS = 2000;
@@ -327,6 +327,15 @@
             if (minEl) minEl.textContent = 'min ' + minV.toFixed(0) + '%';
             if (maxEl) maxEl.textContent = 'max ' + maxV.toFixed(0) + '%';
             if (nowEl) nowEl.textContent = latest.toFixed(0) + '%';
+
+            // Update title with actual time span of the buffered data
+            const titleEl = document.querySelector('.health-trend-title');
+            if (titleEl && buffer.length > 1) {
+                const spanH = (buffer[buffer.length - 1].t - buffer[0].t) / 3600000;
+                titleEl.textContent = spanH >= 1
+                    ? `Memory trend (${spanH.toFixed(0)}h)`
+                    : `Memory trend (${Math.round(spanH * 60)}m)`;
+            }
         }
 
         function pushSample(percent) {
@@ -348,10 +357,26 @@
             return parsePercent(el.textContent || '');
         }
 
-        function init() {
+        async function init() {
             const target = document.getElementById('health-memory');
             if (!target) return;
-            buffer = loadBuffer();
+
+            // Seed from server history first (full uptime span); fall back to client-local buffer
+            try {
+                const r = await fetch('/api/v3/system/memory-history');
+                const j = await r.json();
+                const s = (j && j.data && j.data.samples) || [];
+                if (s.length) {
+                    buffer = s.map(p => ({ t: p.t * 1000, v: p.mem }))
+                               .filter(p => p.v >= 0 && p.v <= 100)
+                               .slice(-MAX_SAMPLES);
+                }
+            } catch (_) { /* fall back to client-local buffer */ }
+
+            if (!buffer.length) {
+                buffer = loadBuffer();
+            }
+
             const seed = readCurrent();
             if (seed != null) pushSample(seed);
             render();
