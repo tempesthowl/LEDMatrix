@@ -17,6 +17,7 @@ Features:
 
 import logging
 import time
+from collections import deque
 from typing import Optional, Dict, Any
 from PIL import Image
 import numpy as np
@@ -104,7 +105,7 @@ class ScrollHelper:
         self.frame_count = 0
         self.last_frame_time = time.time()
         self.last_fps_log_time = time.time()
-        self.frame_times = []
+        self.frame_times = deque(maxlen=100)
         
         # Scrolling state management
         self.is_scrolling = False
@@ -811,11 +812,7 @@ class ScrollHelper:
         
         # Calculate instantaneous frame time
         frame_time = current_time - self.last_frame_time
-        self.frame_times.append(frame_time)
-        
-        # Keep only last 100 frames for average
-        if len(self.frame_times) > 100:
-            self.frame_times.pop(0)
+        self.frame_times.append(frame_time)  # deque(maxlen=100) auto-evicts oldest
         
         # Log FPS every 5 seconds to avoid spam
         if current_time - self.last_fps_log_time >= 5.0:

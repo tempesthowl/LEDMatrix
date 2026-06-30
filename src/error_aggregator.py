@@ -12,7 +12,7 @@ Errors are stored in memory with optional JSON export.
 import threading
 import traceback
 import json
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -105,7 +105,7 @@ class ErrorAggregator:
         self.pattern_window = timedelta(minutes=pattern_window_minutes)
         self.export_path = export_path
 
-        self._records: List[ErrorRecord] = []
+        self._records: deque = deque(maxlen=self.max_records)
         self._error_counts: Dict[str, int] = defaultdict(int)
         self._plugin_error_counts: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
         self._patterns: Dict[str, ErrorPattern] = {}
@@ -152,10 +152,8 @@ class ErrorAggregator:
                 stack_trace=traceback.format_exc()
             )
 
-            # Add record (with size limit)
+            # Add record (deque(maxlen=max_records) auto-evicts oldest)
             self._records.append(record)
-            if len(self._records) > self.max_records:
-                self._records.pop(0)
 
             # Update counts
             self._error_counts[error_type] += 1
@@ -271,7 +269,7 @@ class ErrorAggregator:
                     k: v.to_dict() for k, v in self._patterns.items()
                 },
                 "recent_errors": [
-                    r.to_dict() for r in self._records[-20:]
+                    r.to_dict() for r in list(self._records)[-20:]
                 ]
             }
 
@@ -288,7 +286,7 @@ class ErrorAggregator:
         with self._lock:
             plugin_errors = self._plugin_error_counts.get(plugin_id, {})
             recent_plugin_errors = [
-                r for r in self._records[-100:]
+                r for r in list(self._records)[-100:]
                 if r.plugin_id == plugin_id
             ]
 
@@ -323,7 +321,10 @@ class ErrorAggregator:
         with self._lock:
             cutoff = datetime.now() - timedelta(hours=max_age_hours)
             original_count = len(self._records)
-            self._records = [r for r in self._records if r.timestamp > cutoff]
+            self._records = deque(
+                (r for r in self._records if r.timestamp > cutoff),
+                maxlen=self.max_records
+            )
             cleared = original_count - len(self._records)
 
             if cleared > 0:

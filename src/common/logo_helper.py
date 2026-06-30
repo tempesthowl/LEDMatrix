@@ -7,6 +7,7 @@ Extracted from LEDMatrix core to provide reusable functionality for plugins.
 
 import logging
 import os
+from collections import OrderedDict
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 from urllib.parse import urlparse
@@ -49,9 +50,8 @@ class LogoHelper:
         self.cache_size = cache_size
         self.logger = logger or logging.getLogger(__name__)
         
-        # In-memory logo cache
-        self._logo_cache: Dict[str, Image.Image] = {}
-        self._cache_order: List[str] = []  # For LRU cache management
+        # In-memory logo cache (OrderedDict: least-recently-used at front, MRU at end)
+        self._logo_cache: OrderedDict = OrderedDict()
         
         # Session for HTTP requests
         self.session = requests.Session()
@@ -79,10 +79,8 @@ class LogoHelper:
         cache_key = f"{team_abbr}_{logo_path}"
         if cache_key in self._logo_cache:
             self.logger.debug(f"Using cached logo for {team_abbr}")
-            # Update LRU order (move to end)
-            if cache_key in self._cache_order:
-                self._cache_order.remove(cache_key)
-            self._cache_order.append(cache_key)
+            # Move to MRU end (O(1) with OrderedDict)
+            self._logo_cache.move_to_end(cache_key)
             return self._logo_cache[cache_key]
         
         try:
@@ -197,7 +195,6 @@ class LogoHelper:
     def clear_cache(self) -> None:
         """Clear the logo cache."""
         self._logo_cache.clear()
-        self._cache_order.clear()
         self.logger.debug("Logo cache cleared")
     
     def get_cache_stats(self) -> Dict[str, int]:
@@ -230,16 +227,13 @@ class LogoHelper:
         return logo
     
     def _cache_logo(self, cache_key: str, logo: Image.Image) -> None:
-        """Cache a logo with LRU eviction."""
-        # Remove oldest if cache is full
+        """Cache a logo with LRU eviction (O(1) via OrderedDict)."""
+        # Evict least-recently-used entry if at capacity
         if len(self._logo_cache) >= self.cache_size:
-            if self._cache_order:
-                oldest_key = self._cache_order.pop(0)
-                del self._logo_cache[oldest_key]
-        
-        # Add to cache
+            self._logo_cache.popitem(last=False)  # pop LRU (front of OrderedDict)
+
+        # Insert at MRU end
         self._logo_cache[cache_key] = logo
-        self._cache_order.append(cache_key)
     
     def _download_logo(self, url: str, file_path: Path) -> None:
         """Download logo from URL."""
