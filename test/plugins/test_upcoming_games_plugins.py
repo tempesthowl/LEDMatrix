@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 import pytz
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -79,9 +80,6 @@ def test_baseball_get_upcoming_games(monkeypatch):
     assert out[0]["start_label"] == "7:05 PM"
 
 
-import pytest
-
-
 @pytest.mark.parametrize("mod_name,plugin_dir,class_attr,plugin_id", [
     ("basketball_mgr_upcoming_test", "basketball-scoreboard", None, "basketball"),
     ("football_mgr_upcoming_test", "football-scoreboard", None, "football"),
@@ -111,4 +109,5 @@ def test_other_plugins_get_upcoming_games(monkeypatch, mod_name, plugin_dir, cla
     out = inst.get_upcoming_games()
     assert len(out) == 1
     assert out[0]["plugin_id"] == plugin_id
+    assert out[0]["league"] == "mlb"
     assert out[0]["start_label"] == "7:05 PM"
