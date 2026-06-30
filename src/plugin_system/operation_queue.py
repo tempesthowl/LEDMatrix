@@ -133,16 +133,27 @@ class PluginOperationQueue:
     def get_operation_status(self, operation_id: str) -> Optional[PluginOperation]:
         """
         Get status of an operation.
-        
+
+        Checks the live _operations index first (covers pending/running ops).
+        Falls back to _operation_history for completed/failed/cancelled ops that
+        have been evicted from the index.
+
         Args:
             operation_id: Operation identifier
-        
+
         Returns:
             PluginOperation if found, None otherwise
         """
         self._ensure_loaded()
         with self._lock:
-            return self._operations.get(operation_id)
+            op = self._operations.get(operation_id)
+            if op is not None:
+                return op
+            # Fall back to history for completed/failed/cancelled ops.
+            for hist_op in self._operation_history:
+                if hist_op.operation_id == operation_id:
+                    return hist_op
+            return None
     
     def cancel_operation(self, operation_id: str) -> bool:
         """
@@ -170,6 +181,8 @@ class PluginOperationQueue:
                 operation.completed_at = datetime.now()
                 operation.message = "Operation cancelled by user"
                 self._add_to_history(operation)
+                # Evict from live index — same discipline as _execute_operation.
+                self._operations.pop(operation_id, None)
                 self.logger.info(f"Cancelled operation {operation_id}")
                 return True
             
@@ -317,7 +330,11 @@ class PluginOperationQueue:
                 
                 # Add to history
                 self._add_to_history(operation)
-                
+
+                # Completed ops live in _operation_history (capped). Drop them from
+                # the primary index so it doesn't grow one UUID per op forever.
+                self._operations.pop(operation.operation_id, None)
+
                 # Save history to file
                 self._save_history()
     
