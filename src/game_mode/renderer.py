@@ -231,10 +231,12 @@ class GameModeRenderer:
         _sport = data.get("sport", "")
         if data.get("status_state") == "in" and _poss in ("away", "home"):
             if _poss == "away":
-                aw = self.fonts["team"].getbbox(away_disp)[2]
+                _b = self.fonts["team"].getbbox(away_disp)
+                aw = _b[2] - _b[0]
                 self._draw_possession_icon(draw, text_x + aw + 3, row1_y + 1, _sport)
             else:
-                hw = self.fonts["team"].getbbox(home_disp)[2]
+                _b = self.fonts["team"].getbbox(home_disp)
+                hw = _b[2] - _b[0]
                 self._draw_possession_icon(draw, text_x + hw + 3, row2_y + 1, _sport)
 
         # --- Scores (right-aligned in left panel) ---
