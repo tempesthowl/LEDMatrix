@@ -50,14 +50,38 @@ Possession only shows for live (`status_state == "in"`) games — a pre/final ga
 
 After each team's abbrev is drawn (row 1 = away at `row1_y`, row 2 = home at `row2_y`), if that team has possession (`extras["possession"] == "away"` for the away row, `"home"` for the home row) **and** the game is live, draw a ~6px sport shape at `(text_x + abbrev_width + 2, row_y + small_offset)`. There's ~40px of clear space between the abbrev and the right-aligned score, so a 6px icon + 2px gap fits without crowding.
 
-The icon shape is chosen from `focus_data["sport"]`:
-- **football** — brown ellipse (`(139,69,19)`) + a white lace line (mirror the existing `_draw_possession_indicator` shape in `football-scoreboard/game_renderer.py`).
-- **baseball** — white circle + a red stitch arc/line.
-- **basketball** — orange (`(235,110,40)`) circle + a black seam line.
+The icon shape is chosen from `focus_data["sport"]`. **LOCKED pixel-art (approved by Eric from a rendered preview)** — drawn pixel-by-pixel from a grid via `img.putpixel`, NOT PIL primitives, so the shapes are exact:
 
-Only one sport renders at a time (single-game focus), so shape + color distinguish the three even at 6px; the icon just needs to read as "this team has the ball / is batting."
+```python
+_ICON_COLORS = {
+    "b": (150, 78, 22),   # football brown
+    "w": (240, 240, 240), # white
+    "r": (205, 45, 45),   # baseball stitch red
+    "o": (235, 110, 40),  # basketball orange
+    "k": (22, 20, 16),    # seam black
+    ".": None,            # transparent (skip)
+}
+_ICON_GRIDS = {
+    "football": ["..bbbb..",   # 8 wide x 5 tall — brown oval + white lace stripe
+                 ".bbbbbb.",
+                 "bbwwwwbb",
+                 ".bbbbbb.",
+                 "..bbbb.."],
+    "baseball": [".wwww.",     # 6 wide x 6 tall — white ball + red side stitches
+                 "wwwwww",
+                 "rwwwwr",
+                 "rwwwwr",
+                 "wwwwww",
+                 ".wwww."],
+    "basketball": [".oooo.",   # 6 wide x 5 tall — orange ball + black seam cross
+                   "oookoo",
+                   "kkkkkk",
+                   "oookoo",
+                   ".oooo."],
+}
+```
 
-Factor the shape drawing into a small private helper (e.g. `_draw_possession_icon(draw, x, y, sport)`) so it's independently testable and the three shapes live in one place.
+Only one sport renders at a time (single-game focus), so these read clearly. Factor the drawing into a small private helper `_draw_possession_icon(img, x, y, sport)` that blits the grid for the given sport (no-op for an unrecognized sport) — independently testable, all three shapes in one place. It takes the PIL `img` (uses `putpixel`), not the `ImageDraw` object.
 
 ## Edge cases / degradation
 
@@ -71,7 +95,7 @@ Factor the shape drawing into a small private helper (e.g. `_draw_possession_ico
 
 ## File structure (~4 files)
 
-- **Modify** `src/game_mode/renderer.py` — drop the green (lines ~168-173); add `_draw_possession_icon(draw, x, y, sport)` + call it after each abbrev when that team has possession and the game is live.
+- **Modify** `src/game_mode/renderer.py` — drop the green (lines ~168-173); add `_draw_possession_icon(img, x, y, sport)` (blits the locked grid via `img.putpixel`) + call it after each abbrev when that team has possession and the game is live.
 - **Modify** `plugin-repos/basketball-scoreboard/manager.py` — `extras["possession"] = game.get("possession_indicator", "")` in `get_game_focus_data`.
 - **Modify** `plugin-repos/baseball-scoreboard/manager.py` — infer batting team from the inning half → `extras["possession"]` in `get_game_focus_data`.
 - **Create** tests under `test/game_mode/` (icon-helper draws per sport; scores no longer green; possession icon appears for the right team; no icon when no possession / non-live).
