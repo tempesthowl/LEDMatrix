@@ -3568,7 +3568,7 @@ class BasketballScoreboardPlugin(BasePlugin if BasePlugin else object):
             "home_logo": home_logo,
             "kalshi": None,
             "espn_odds": None,
-            "extras": {},  # middle panel renders league logo; no data needed
+            "extras": {"possession": game.get("possession_indicator", "")},
         }
         focus_data["pre_game_label"] = (
             format_kickoff_label(

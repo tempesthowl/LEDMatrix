@@ -4013,6 +4013,10 @@ class BaseballScoreboardPlugin(BasePlugin if BasePlugin else object):
                     "balls": game.get("balls", 0),
                     "strikes": game.get("strikes", 0),
                 },
+                "possession": (
+                    "away" if inning_half.lower().startswith("top")
+                    else ("home" if inning_half.lower().startswith("bot") else "")
+                ),
             },
         }
         focus_data["pre_game_label"] = (
