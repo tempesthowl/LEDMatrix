@@ -59,6 +59,17 @@ BAR_BORDER = (60, 60, 60)
 # .notdef tofu box because the font lacks it, so we use a plain hyphen.
 STATE_SEP = " - "
 
+# --- Possession icon pixel-art (locked — approved from rendered preview) ---
+_ICON_COLORS = {
+    "b": (150, 78, 22), "w": (240, 240, 240), "r": (205, 45, 45),
+    "o": (235, 110, 40), "k": (22, 20, 16), ".": None,
+}
+_ICON_GRIDS = {
+    "football":   ["..bbbb..", ".bbbbbb.", "bbwwwwbb", ".bbbbbb.", "..bbbb.."],   # 8x5
+    "baseball":   [".wwww.", "wwwwww", "rwwwwr", "rwwwwr", "wwwwww", ".wwww."],    # 6x6
+    "basketball": [".oooo.", "oookoo", "kkkkkk", "oookoo", ".oooo."],             # 6x5
+}
+
 
 class GameModeRenderer:
     """Renders a focused single-game display with Kalshi odds."""
@@ -172,12 +183,9 @@ class GameModeRenderer:
             away_color = data.get("away_color", COLOR_WHITE)
             home_color = data.get("home_color", COLOR_WHITE)
 
-        # Determine winning team for green highlight
-        away_score_color = COLOR_GREEN if away_score > home_score else COLOR_WHITE
-        home_score_color = COLOR_GREEN if home_score > away_score else COLOR_WHITE
-        if away_score == home_score:
-            away_score_color = COLOR_WHITE
-            home_score_color = COLOR_WHITE
+        # Scores always white — possession icon (not color) indicates leading/active team
+        away_score_color = COLOR_WHITE
+        home_score_color = COLOR_WHITE
 
         # Row positions (3 rows in 32px height)
         row1_y = 2   # Away team
@@ -216,6 +224,18 @@ class GameModeRenderer:
         home_disp = _fit_name(home_team, data.get("home_name", ""), str(home_score))
         self._draw_shadowed(draw, (text_x, row1_y), away_disp, away_color, self.fonts["team"], COLOR_WHITE)
         self._draw_shadowed(draw, (text_x, row2_y), home_disp, home_color, self.fonts["team"], COLOR_WHITE)
+
+        # --- Possession icon: draw after the possessing team's abbrev (live only) ---
+        _extras = data.get("extras")
+        _poss = _extras.get("possession", "") if isinstance(_extras, dict) else ""
+        _sport = data.get("sport", "")
+        if data.get("status_state") == "in" and _poss in ("away", "home"):
+            if _poss == "away":
+                aw = self.fonts["team"].getbbox(away_disp)[2]
+                self._draw_possession_icon(draw, text_x + aw + 3, row1_y + 1, _sport)
+            else:
+                hw = self.fonts["team"].getbbox(home_disp)[2]
+                self._draw_possession_icon(draw, text_x + hw + 3, row2_y + 1, _sport)
 
         # --- Scores (right-aligned in left panel) ---
         away_score_str = str(away_score)
@@ -447,6 +467,18 @@ class GameModeRenderer:
                 img.paste(resized, (x, y))
         except Exception as e:
             logger.debug("Failed to paste logo: %s", e)
+
+    def _draw_possession_icon(self, draw, x, y, sport):
+        """Blit the locked possession-icon pixel grid for `sport` at (x, y).
+        No-op for a sport without an icon (soccer/ufc/golf/unknown)."""
+        grid = _ICON_GRIDS.get(sport)
+        if not grid:
+            return
+        for j, row in enumerate(grid):
+            for i, ch in enumerate(row):
+                col = _ICON_COLORS.get(ch)
+                if col is not None:
+                    draw.point((x + i, y + j), fill=col)
 
     # ------------------------------------------------------------------
     # Right Panel — Odds
