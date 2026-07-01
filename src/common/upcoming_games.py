@@ -93,6 +93,34 @@ def normalize_upcoming_game(
     }
 
 
+def format_kickoff_label(
+    start_dt_utc: Optional[datetime],
+    tz_name: str = DEFAULT_TZ,
+    *,
+    now: Optional[datetime] = None,
+) -> str:
+    """Central kickoff label for the pre-game focus view.
+
+    Returns bare time ("8:00 PM") for a game today in tz_name, weekday-prefixed
+    ("Tue 8:00 PM") otherwise, and "" when start_dt_utc is None. Mirrors the
+    Upcoming cell's start_label formatting.
+    """
+    if start_dt_utc is None:
+        return ""
+    try:
+        tz = pytz.timezone(tz_name)
+    except Exception:  # pylint: disable=broad-except
+        tz = pytz.timezone(DEFAULT_TZ)
+    if start_dt_utc.tzinfo is None:
+        start_dt_utc = pytz.UTC.localize(start_dt_utc)
+    now_local = (now.astimezone(tz) if now is not None else datetime.now(tz))
+    start_local = start_dt_utc.astimezone(tz)
+    time_str = start_local.strftime("%I:%M %p").lstrip("0")
+    if start_local.date() == now_local.date():
+        return time_str
+    return f"{start_local.strftime('%a')} {time_str}"
+
+
 def select_with_representation(
     games: List[Dict[str, Any]],
     cap: int = 8,

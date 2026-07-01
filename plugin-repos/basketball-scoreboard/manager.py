@@ -35,9 +35,10 @@ except ImportError:
     get_contrasting_pair = None
 
 try:
-    from src.common.upcoming_games import normalize_upcoming_game
+    from src.common.upcoming_games import normalize_upcoming_game, format_kickoff_label
 except ImportError:
     normalize_upcoming_game = None
+    format_kickoff_label = None
 
 # Import scroll display components
 try:
@@ -3569,6 +3570,13 @@ class BasketballScoreboardPlugin(BasePlugin if BasePlugin else object):
             "espn_odds": None,
             "extras": {},  # middle panel renders league logo; no data needed
         }
+        focus_data["pre_game_label"] = (
+            format_kickoff_label(
+                game.get("start_time_utc"),
+                self.config.get("timezone") or "America/Chicago",
+            )
+            if status_state == "pre" else ""
+        ) if format_kickoff_label is not None else ""
 
         # Kalshi odds
         if kalshi_match_game and self.plugin_manager:

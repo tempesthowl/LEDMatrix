@@ -55,9 +55,10 @@ except ImportError:
     get_contrasting_pair = None
 
 try:
-    from src.common.upcoming_games import normalize_upcoming_game
+    from src.common.upcoming_games import normalize_upcoming_game, format_kickoff_label
 except ImportError:
     normalize_upcoming_game = None
+    format_kickoff_label = None
 
 # Import scroll display components
 try:
@@ -1642,6 +1643,13 @@ class SoccerScoreboardPlugin(BasePlugin if BasePlugin else object):
             "away_logo": away_logo, "home_logo": home_logo,
             "kalshi": None, "espn_odds": None, "extras": None,
         }
+        focus_data["pre_game_label"] = (
+            format_kickoff_label(
+                game.get("start_time_utc"),
+                self.config.get("timezone") or "America/Chicago",
+            )
+            if status_state == "pre" else ""
+        ) if format_kickoff_label is not None else ""
         if kalshi_match_game and self.plugin_manager:
             try:
                 focus_data["kalshi"] = kalshi_match_game(self.plugin_manager, _away, _home, league)
