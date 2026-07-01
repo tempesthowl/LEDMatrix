@@ -143,6 +143,13 @@ class GameModeRenderer:
     # Left Panel — Scorebug
     # ------------------------------------------------------------------
 
+    def _pre_game_slot_text(self, data):
+        """For a pre game, the score-slot string: the kickoff label, else 'VS'.
+        Returns None for non-pre games (draw the real scores)."""
+        if data.get("status_state") != "pre":
+            return None
+        return (data.get("pre_game_label") or "").strip() or "VS"
+
     def _render_scorebug(
         self, img: Image.Image, draw: ImageDraw.Draw, data: Dict[str, Any]
     ) -> None:
@@ -217,16 +224,28 @@ class GameModeRenderer:
         away_bbox = self.fonts["score"].getbbox(away_score_str)
         home_bbox = self.fonts["score"].getbbox(home_score_str)
 
-        self._draw_shadowed(
-            draw,
-            (score_x - (away_bbox[2] - away_bbox[0]), row1_y),
-            away_score_str, away_score_color, self.fonts["score"], COLOR_WHITE,
-        )
-        self._draw_shadowed(
-            draw,
-            (score_x - (home_bbox[2] - home_bbox[0]), row2_y),
-            home_score_str, home_score_color, self.fonts["score"], COLOR_WHITE,
-        )
+        slot_text = self._pre_game_slot_text(data)
+        if slot_text is not None:
+            # Pre-game: show the kickoff time (small font) or VS (score font),
+            # right-aligned in the score column, vertically centered — never 0-0.
+            slot_font = self.fonts["status"] if slot_text != "VS" else self.fonts["score"]
+            sb = slot_font.getbbox(slot_text)
+            sw = sb[2] - sb[0]
+            slot_y = 7 if slot_text != "VS" else (row1_y + 5)
+            self._draw_shadowed(
+                draw, (score_x - sw, slot_y), slot_text, COLOR_WHITE, slot_font, COLOR_BLACK,
+            )
+        else:
+            self._draw_shadowed(
+                draw,
+                (score_x - (away_bbox[2] - away_bbox[0]), row1_y),
+                away_score_str, away_score_color, self.fonts["score"], COLOR_WHITE,
+            )
+            self._draw_shadowed(
+                draw,
+                (score_x - (home_bbox[2] - home_bbox[0]), row2_y),
+                home_score_str, home_score_color, self.fonts["score"], COLOR_WHITE,
+            )
 
         # --- Game state (period + clock) ---
         period = data.get("period_label", "")
@@ -236,7 +255,7 @@ class GameModeRenderer:
         if status_state == "post":
             state_text = "FINAL"
         elif status_state == "pre":
-            state_text = data.get("status_detail", "Pregame")
+            state_text = "Pregame"
         else:
             parts = [p for p in [period, clock] if p]
             state_text = STATE_SEP.join(parts) if parts else ""
