@@ -438,11 +438,18 @@
                 const m = sportMeta(g.league);
                 const accent = m ? m.color : '#888';
                 const bar = kalshiBar(g);
+                const gid = String(g.game_id || '');
+                const isFocused = gid !== '' && gid === String(focusedGameId);
+                const focusBtn = '<button class="focus-btn focus-btn--sm" onclick="focusGame(\''
+                    + gid + '\',\'' + (g.plugin_id || '') + '\',\'' + (g.league || '') + '\')"'
+                    + (isFocused ? ' disabled' : '') + '>'
+                    + (isFocused ? 'FOCUSED' : 'FOCUS') + '</button>';
                 return '<div class="upcoming-row' + (bar ? ' upcoming-row--odds' : '') + '">'
                     + '<div class="upcoming-row-top">'
                     + leagueLogo(g.league, accent)
                     + '<span class="upcoming-teams">' + (g.away_team || '') + ' @ ' + (g.home_team || '') + '</span>'
                     + '<span class="upcoming-time">' + (g.start_label || '') + '</span>'
+                    + focusBtn
                     + '</div>'
                     + bar
                     + '</div>';
