@@ -158,6 +158,57 @@ def test_odds_view_shows_rank_column(renderer, sample_focus_data):
     assert white_in_rank_col > 0, "Expected rank column populated on odds view"
 
 
+def test_player_rows_not_embossed(renderer, sample_focus_data, monkeypatch):
+    """Regression (bug 2026-07-02): golf player-row text must be drawn PLAIN,
+    never with a draw_emboss white drop-shadow.
+
+    Commit 881ccf25 wrapped rank/name/score/pct/payout in
+    draw_emboss(..., shadow=(255,255,255)). For the WHITE row text that's a
+    white glyph with a white shadow 1px down-right — it fattens the 8px
+    PressStart2P glyphs into an illegible white blob ('white on white').
+    Reverted; this guards against re-introduction.
+
+    Detection is layout-independent: the emboss signature is the SAME string
+    drawn twice at positions offset by exactly (+1,+1) (shadow then text).
+    """
+    from PIL import ImageDraw
+
+    calls = []
+    orig_text = ImageDraw.ImageDraw.text
+
+    def spy(self, xy, text="", *args, **kwargs):
+        calls.append((tuple(xy), str(text)))
+        return orig_text(self, xy, text, *args, **kwargs)
+
+    monkeypatch.setattr(ImageDraw.ImageDraw, "text", spy)
+    renderer.render(sample_focus_data)
+
+    from collections import defaultdict
+    positions = defaultdict(list)
+    for pos, text in calls:
+        positions[text].append(pos)
+
+    embossed = [
+        text
+        for text, ps in positions.items()
+        for a in ps
+        for b in ps
+        if b == (a[0] + 1, a[1] + 1)
+    ]
+    assert not embossed, (
+        f"Golf player-row text is embossed (white-on-white blob): {embossed}"
+    )
+
+
+def test_golf_renderer_does_not_import_draw_emboss():
+    """Structural guard: golf uses plain draw.text, so draw_emboss must not be
+    imported into the module (see reverted 881ccf25)."""
+    import src.game_mode.golf_renderer as gm
+    assert not hasattr(gm, "draw_emboss"), (
+        "golf_renderer must not use draw_emboss — plain draw.text only"
+    )
+
+
 def test_final_status_label_gray(renderer, sample_focus_data):
     """When status_state='post', the round_label area should use gray, not gold."""
     data = dict(sample_focus_data)
