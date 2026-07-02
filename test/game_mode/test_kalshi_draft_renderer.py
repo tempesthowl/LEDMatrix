@@ -157,6 +157,51 @@ def test_handles_partial_candidate_list(renderer):
     assert non_black_row3 == 0, "Row 3 should be blank when only 2 candidates"
 
 
+def test_candidate_rows_not_embossed(renderer, sample_pick_1_data, monkeypatch):
+    """Regression (bug 2026-07-02): draft candidate-row text must be drawn PLAIN,
+    never draw_emboss with a white shadow.
+
+    Commit 4447f1ce wrapped rank/name/pct/payout in
+    draw_emboss(..., shadow=(255,255,255)). White/gold text + a white 1px shadow
+    on the black panel fattens the 8px glyphs into an illegible blob — the same
+    white-on-white as golf. Reverted; this guards re-introduction. The emboss
+    signature is the SAME string drawn twice at a (+1,+1) offset.
+    """
+    from PIL import ImageDraw
+    from collections import defaultdict
+
+    calls = []
+    orig_text = ImageDraw.ImageDraw.text
+
+    def spy(self, xy, text="", *args, **kwargs):
+        calls.append((tuple(xy), str(text)))
+        return orig_text(self, xy, text, *args, **kwargs)
+
+    monkeypatch.setattr(ImageDraw.ImageDraw, "text", spy)
+    renderer.render(sample_pick_1_data)
+
+    positions = defaultdict(list)
+    for pos, text in calls:
+        positions[text].append(pos)
+    embossed = [
+        text
+        for text, ps in positions.items()
+        for a in ps
+        for b in ps
+        if b == (a[0] + 1, a[1] + 1)
+    ]
+    assert not embossed, f"Draft row text is embossed (white-on-white blob): {embossed}"
+
+
+def test_draft_renderer_does_not_import_draw_emboss():
+    """Structural guard: draft uses plain draw.text; draw_emboss must not be
+    imported into the module (see reverted 4447f1ce)."""
+    import src.game_mode.kalshi_draft_renderer as mod
+    assert not hasattr(mod, "draw_emboss"), (
+        "kalshi_draft_renderer must not use draw_emboss — plain draw.text only"
+    )
+
+
 def test_payout_math_uses_inverse_pct(renderer):
     """88% should compute payout=1x; 5% should compute payout=20x."""
     img = renderer.render({

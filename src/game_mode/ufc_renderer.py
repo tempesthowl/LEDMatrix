@@ -328,13 +328,13 @@ class UFCGameModeRenderer:
         # Draw left-aligned fighter-A payout (on black panel → white shadow)
         if a_pay_text:
             ty = y_baseline - a_top
-            draw_emboss(draw, (x0, ty), a_pay_text, pay_font, a_pay_color, shadow=(255, 255, 255))
+            draw.text((x0, ty), a_pay_text, fill=a_pay_color, font=pay_font)
 
         # Draw right-aligned fighter-B payout (on black panel → white shadow)
         if b_pay_text:
             tx = x0 + w - b_pay_w - b_left
             ty = y_baseline - b_top
-            draw_emboss(draw, (tx, ty), b_pay_text, pay_font, b_pay_color, shadow=(255, 255, 255))
+            draw.text((tx, ty), b_pay_text, fill=b_pay_color, font=pay_font)
 
         # Center weight-class caption in the remaining middle width,
         # truncating if it would collide with either payout.
@@ -416,7 +416,9 @@ class UFCGameModeRenderer:
         ink_h = bottom - top
         tx = x + (HEADSHOT_SIZE - tw) // 2 - left
         ty = (self.height - ink_h) // 2 - top
-        draw_emboss(draw, (tx, ty), text, font, COLOR_WHITE, shadow=(255, 255, 255))
+        # Plain white on the black headshot area — a white emboss shadow here
+        # was white-on-white and fattened the fallback name into a blob.
+        draw.text((tx, ty), text, fill=COLOR_WHITE, font=font)
 
     # ------------------------------------------------------------------
     # Utilities
