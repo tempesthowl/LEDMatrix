@@ -946,7 +946,13 @@
         const memTotalGb = (s.memory_total_mb / 1024).toFixed(2);
         memEl.innerHTML = `${s.memory_used_percent.toFixed(0)}%`
             + `<span class="health-value-sub">${memUsedGb} / ${memTotalGb} GB</span>`;
-        setHealthClass(memEl, s.memory_used_percent, { warn: 70, crit: 90 });
+        // Healthy plateau on this 2GB Pi is ~70-74% — jemalloc's warm working set
+        // rises for the first ~7h then flatlines; it is NOT a leak. The systemd
+        // MemoryMax kill (controller 1400M) fires near ~88% system-equivalent, and
+        // the daily 04:00 restart resets it. So: stay green through the normal
+        // plateau, warn only as it climbs toward the kill, crit only if the safety
+        // net failed. (Was warn:70 — tripped orange at the healthy 71% resting state.)
+        setHealthClass(memEl, s.memory_used_percent, { warn: 82, crit: 92 });
 
         // Disk — same pattern
         const diskEl = document.getElementById('health-disk');
