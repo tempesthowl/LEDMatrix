@@ -1,8 +1,9 @@
-"""Tests that UFCGameModeRenderer routes labels through draw_emboss.
+"""Tests for UFCGameModeRenderer text rendering.
 
-Concrete assertion: after the fix, payouts use self.fonts["bar"] (PressStart2P
-8pt), not self.fonts["bottom"] (4x6 6pt).  The bar font produces taller ink
-glyphs — measure ink height on the rendered payout row to confirm.
+UFC is fully de-embossed (2026-07-02, Eric's call): every label is plain
+draw.text, matching golf/draft and the original pre-emboss state. These tests
+assert the payout still uses the bar font (not the tiny bottom font), the
+headshot name-fallback isn't white-on-white, and the bar labels are plain.
 """
 
 from PIL import Image
@@ -122,15 +123,11 @@ def test_headshot_name_fallback_not_white_on_white(monkeypatch):
     assert not embossed, f"UFC headshot name-fallback is white-on-white: {embossed}"
 
 
-def test_bar_segment_labels_keep_emboss_outline(monkeypatch):
-    """Guard the DELIBERATE decision to keep emboss on the probability-bar labels.
-
-    Fighter name+pct labels sit INSIDE the colored bar segments, where white text
-    needs the draw_emboss auto (black) outline to stay legible — white on the
-    green bar is only ~2.5:1 contrast. These must NOT be reverted to plain text
-    when stripping the white-on-white emboss elsewhere. Emboss draws the label
-    twice (outline then text) at a (+1,+1) offset.
-    """
+def test_bar_segment_labels_are_plain(monkeypatch):
+    """UFC is fully de-embossed (2026-07-02): the probability-bar labels are
+    plain white draw.text — no emboss outline — matching golf/draft and the
+    original pre-emboss state. Assert no emboss double-draw (same string drawn
+    twice at a +1,+1 offset)."""
     from PIL import Image, ImageDraw
     from collections import defaultdict
 
@@ -159,7 +156,15 @@ def test_bar_segment_labels_keep_emboss_outline(monkeypatch):
         for b in ps
         if b == (a[0] + 1, a[1] + 1)
     ]
-    assert embossed, (
-        "Bar-segment label lost its emboss outline — white text on the colored "
-        "bar will wash out"
+    assert not embossed, (
+        f"Bar-segment label is embossed — UFC should be fully plain: {embossed}"
+    )
+
+
+def test_ufc_renderer_does_not_import_draw_emboss():
+    """Structural guard: UFC is fully de-embossed; draw_emboss must not be
+    imported into the module."""
+    import src.game_mode.ufc_renderer as mod
+    assert not hasattr(mod, "draw_emboss"), (
+        "ufc_renderer must not use draw_emboss — plain draw.text only"
     )

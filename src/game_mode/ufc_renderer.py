@@ -18,8 +18,6 @@ from typing import Any, Dict, Optional, Tuple
 
 from PIL import Image, ImageDraw, ImageFont
 
-from src.common.text_helper import draw_emboss
-
 logger = logging.getLogger(__name__)
 
 COLOR_WHITE = (255, 255, 255)
@@ -200,12 +198,11 @@ class UFCGameModeRenderer:
         name: str,
         pct: int,
     ) -> None:
-        """Draw {NAME} {PCT}% centered inside a bar segment via draw_emboss.
+        """Draw {NAME} {PCT}% centered inside a bar segment (plain white).
 
         Falls back to just {PCT}% if the segment is too narrow for the
         full label. Vertical centering uses bbox math so the ink sits on
         the midline regardless of ascender/descender metrics.
-        Text sits on a colored bar fill → shadow=None (auto opposite-luminance).
         """
         font = self.fonts["bar"]
         max_w = seg_w - 2
@@ -228,7 +225,7 @@ class UFCGameModeRenderer:
         ink_h = bottom - top
         tx = seg_x + (seg_w - tw) // 2 - left
         ty = BAR_Y + (BAR_H - ink_h) // 2 - top
-        draw_emboss(draw, (tx, ty), chosen, font, COLOR_WHITE, shadow=None)
+        draw.text((tx, ty), chosen, fill=COLOR_WHITE, font=font)
 
     def _render_winner_bar(self, draw: ImageDraw.Draw, winner_name: str) -> None:
         """Post-fight state: full-width green bar with winner name centered."""
@@ -244,7 +241,7 @@ class UFCGameModeRenderer:
         ink_h = bottom - top
         tx = x + (w - tw) // 2 - left
         ty = BAR_Y + (BAR_H - ink_h) // 2 - top
-        draw_emboss(draw, (tx, ty), text, font, COLOR_WHITE, shadow=None)
+        draw.text((tx, ty), text, fill=COLOR_WHITE, font=font)
 
     def _render_empty_bar(self, draw: ImageDraw.Draw) -> None:
         """No Kalshi data — show an outlined placeholder bar."""
