@@ -590,6 +590,18 @@ class GameModeRenderer:
                 payout_left_end, payout_right_start,
             )
 
+        # --- Batter (baseball): "AB <name>" in the row-2 gap between payouts —
+        # the same slot the soccer possession bar uses. Live only, and only when
+        # Kalshi payouts define the gap (keeps the odds panel empty when there's
+        # no market, per the no-duplicate-extras contract). Baseball has no
+        # possession bar, so the two never collide.
+        batter = extras.get("batter", "") if isinstance(extras, dict) else ""
+        if (batter and data.get("status_state") == "in"
+                and payout_left_end is not None and payout_right_start is not None):
+            self._render_batter_name(
+                draw, batter, payout_left_end, payout_right_start, row2_y,
+            )
+
         # --- Row 3: ESPN traditional lines (WHITE font per Eric's feedback) ---
         if espn_odds:
             spread = espn_odds.get("spread")
@@ -646,6 +658,49 @@ class GameModeRenderer:
             draw.rectangle([x0, y, x0 + aw - 1, y + h], fill=tuple(away_color))
         if aw < bar_w:
             draw.rectangle([x0 + aw, y, x1, y + h], fill=tuple(home_color))
+
+    def _render_batter_name(self, draw, batter, left_end, right_start, y) -> None:
+        """Draw "AB <name>" centered in the payout-row gap (the possession-bar
+        slot). ASCII-folds + uppercases so the 4x6 pixel font (which lacks
+        accented glyphs) renders "J. Ramírez" as "J. RAMIREZ" instead of tofu.
+        Fits by dropping the "AB " prefix then truncating; no-op if the gap is
+        too small."""
+        import unicodedata
+
+        name = "".join(
+            c for c in unicodedata.normalize("NFKD", batter or "")
+            if not unicodedata.combining(c)
+        ).upper().strip()
+        if not name:
+            return
+
+        PAD = 6
+        x0, x1 = left_end + PAD, right_start - PAD
+        gap = x1 - x0
+        if gap < 20:
+            return
+
+        font = self.fonts["payout"]  # 4x6 — matches the ESPN line below it
+
+        def _w(s: str) -> int:
+            b = font.getbbox(s)
+            return b[2] - b[0]
+
+        label = "AB "
+        text = label + name
+        if _w(text) > gap:          # too wide → drop the "AB " prefix
+            text = name
+        while text and _w(text) > gap:  # still too wide → truncate the name
+            text = text[:-1]
+        if not text:
+            return
+
+        tx = x0 + (gap - _w(text)) // 2
+        if text.startswith(label):
+            self._draw_bar_label(draw, (tx, y), label, COLOR_GOLD, font)
+            self._draw_bar_label(draw, (tx + _w(label), y), text[len(label):], COLOR_WHITE, font)
+        else:
+            self._draw_bar_label(draw, (tx, y), text, COLOR_WHITE, font)
 
     def _draw_bar_label(self, draw, pos, text, fill, font) -> None:
         """Bar % label: 1px down-right emboss, opposite-luminance shadow."""

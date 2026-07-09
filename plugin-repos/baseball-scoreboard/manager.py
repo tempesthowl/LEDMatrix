@@ -4017,6 +4017,7 @@ class BaseballScoreboardPlugin(BasePlugin if BasePlugin else object):
                     "away" if inning_half.lower().startswith("top")
                     else ("home" if inning_half.lower().startswith("bot") else "")
                 ),
+                "batter": game.get("batter", ""),
             },
         }
         focus_data["pre_game_label"] = (

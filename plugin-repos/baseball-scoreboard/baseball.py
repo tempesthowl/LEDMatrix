@@ -286,6 +286,17 @@ class Baseball(SportsCore):
 
                 if is_favorite_game:
                     self.logger.debug(f"Bases occupied: {bases_occupied}")
+
+                # Batter at the plate — ESPN situation.batter.athlete.shortName
+                # ("C. Abrams"). Consumed by Game Mode's payout-row batter label.
+                # Empty when ESPN omits it (between innings / pitching change).
+                batter = ""
+                try:
+                    _bat = situation.get("batter") or {}
+                    _ath = _bat.get("athlete") or {}
+                    batter = (_ath.get("shortName") or _ath.get("displayName") or "").strip()
+                except Exception:
+                    batter = ""
             else:
                 # Default values for non-live games
                 inning = 1
@@ -295,6 +306,7 @@ class Baseball(SportsCore):
                 outs = 0
                 bases_occupied = [False, False, False]
                 has_count_data = False
+                batter = ""
 
             details.update(
                 {
@@ -307,6 +319,7 @@ class Baseball(SportsCore):
                     "outs": outs,
                     "bases_occupied": bases_occupied,
                     "has_count_data": has_count_data,
+                    "batter": batter,
                     "start_time": game_event["date"],
                     "series_summary": series_summary,
                 }
