@@ -41,6 +41,18 @@ except ImportError:
 
 KALSHI_BASE_URL = "https://api.elections.kalshi.com/trade-api/v2"
 
+
+def _now_eastern():
+    """Current time in US/Eastern — the zone Kalshi encodes into game-day
+    ticker dates (e.g. KXMLBGAME-26JUL081840ATLPIT). Returns None if the
+    zone database is unavailable so callers can fall back to local time."""
+    try:
+        from zoneinfo import ZoneInfo
+        from datetime import datetime as _dt
+        return _dt.now(ZoneInfo("America/New_York"))
+    except Exception:
+        return None
+
 # NFL Draft pick → Kalshi series ticker. Pick #1 is the PLAYER exact-pick
 # market (KXNFLDRAFT1, event KXNFLDRAFT1-26); picks #2-#16 are children of
 # KXNFLDRAFTPICK. KXNFLDRAFT1ST is the team-making-the-pick market — NOT
@@ -716,7 +728,12 @@ class KalshiMarketsPlugin(BasePlugin):
                 params={
                     "series_ticker": series_prefix,
                     "status": "open",
-                    "limit": 50,
+                    # A full MLB slate has 56+ open game events at once (tonight's
+                    # games plus tomorrow's already-listed markets). 50 truncated
+                    # tonight's late-starting games out of the result, so the date
+                    # match below saw only tomorrow's same-matchup event. 200 is
+                    # Kalshi's max page size and comfortably covers a day.
+                    "limit": 200,
                 },
                 timeout=15,
             )
@@ -737,41 +754,42 @@ class KalshiMarketsPlugin(BasePlugin):
             away_terms.append(kalshi_away)
             home_terms.append(kalshi_home)
 
-            # Build today's date strings for matching Kalshi tickers
-            # Ticker format: KXMLBGAME-26APR131235AZBAL (26=year, APR13=date)
+            # Build today's date strings for matching Kalshi tickers.
+            # Ticker format: KXMLBGAME-26APR131235AZBAL (26=year, APR13=date).
+            # Kalshi dates the ticker by US/Eastern game day; accept today in
+            # BOTH the box's local zone and US/Eastern so an ET/CT skew near
+            # midnight still matches the correct same-day event.
             from datetime import datetime as _dt
-            now = _dt.now()
-            today_mmdd = now.strftime("%b%d").upper()  # e.g. "APR13"
-            today_ymmdd = now.strftime("%y%b%d").upper()  # e.g. "26APR13"
+            date_tokens = set()
+            for _n in (_dt.now(), _now_eastern()):
+                if _n is None:
+                    continue
+                date_tokens.add(_n.strftime("%y%b%d").upper())  # e.g. "26JUL08"
+                date_tokens.add(_n.strftime("%b%d").upper())    # e.g. "JUL08"
 
+            # Match an event for BOTH teams AND a same-day ticker date. We must
+            # NOT fall back to a different-date event: on a full slate two same-
+            # matchup games are open at once (tonight's live game plus tomorrow's
+            # matinee), and showing tomorrow's pre-game price for tonight's live
+            # game is worse than showing no bar. Fail closed instead.
             matched_event = None
-            fallback_event = None
             team_matches = []
             for event in events:
                 search = f"{event.get('title', '')} {event.get('event_ticker', '')}".lower()
-                if any(t in search for t in away_terms) and any(t in search for t in home_terms):
-                    ticker = event.get("event_ticker", "").upper()
-                    team_matches.append(ticker)
-                    # Prefer event whose ticker contains today's date
-                    if today_ymmdd in ticker or today_mmdd in ticker:
-                        matched_event = event
-                        break
-                    elif fallback_event is None:
-                        fallback_event = event
-
-            if team_matches:
-                self.logger.info(
-                    "Kalshi date match: looking for %s in tickers, found team matches: %s",
-                    today_ymmdd, team_matches[:5],
-                )
-
-            if not matched_event:
-                matched_event = fallback_event
+                if not (any(t in search for t in away_terms) and any(t in search for t in home_terms)):
+                    continue
+                ticker = event.get("event_ticker", "").upper()
+                team_matches.append(ticker)
+                if any(tok in ticker for tok in date_tokens):
+                    matched_event = event
+                    break
 
             if not matched_event:
                 self.logger.debug(
-                    "No Kalshi event matched %s vs %s (checked %d events)",
-                    away_team, home_team, len(events),
+                    "No same-day Kalshi event for %s vs %s (date tokens %s; team "
+                    "matches without a today-dated ticker: %s; checked %d events)",
+                    away_team, home_team, sorted(date_tokens),
+                    team_matches[:5], len(events),
                 )
                 self.cache_manager.set(cache_key, {}, ttl=20)
                 return None
