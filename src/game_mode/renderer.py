@@ -113,9 +113,6 @@ class GameModeRenderer:
         _try_load("score_big", "PressStart2P-Regular.ttf", 13)
         _try_load("status", "4x6-font.ttf", 6)
         _try_load("pct", "PressStart2P-Regular.ttf", 8)
-        # Payout multiples: the original PressStart bar-label font at 60% size
-        # (8 -> 5). Same style as before, just smaller.
-        _try_load("payout_mult", "PressStart2P-Regular.ttf", 5)
         _try_load("odds_detail", "4x6-font.ttf", 6)
         _try_load("payout", "4x6-font.ttf", 6)
 
@@ -593,8 +590,10 @@ class GameModeRenderer:
                 home_color = readable_label_color(home, league)
 
             left_text, right_text = self._payout_labels(kalshi, away, home)
-            # Payout multiples: original PressStart bar-label style at 60% size.
-            payout_font = self.fonts["payout_mult"]
+            # Payout multiples: same small 4x6 font as the batter + ESPN lines,
+            # drawn PLAIN (no emboss/shadow/outline) — just the team color. Eric:
+            # the bolder shadowed multiples were "so hard to read".
+            payout_font = self.fonts["payout"]
             if kalshi.get("is_three_way") and kalshi.get("draw_pct") is not None:
                 # 3-way bar is ordered away | draw | home, so payouts follow:
                 # away on the left, home on the right. Color carries the team
@@ -605,18 +604,14 @@ class GameModeRenderer:
                 left_color = home_color if fav_team == home else away_color
                 right_color = away_color if fav_team == home else home_color
 
-            self._draw_shadowed(draw, (right_x, row2_y), left_text, left_color, payout_font, COLOR_WHITE)
+            draw.text((right_x, row2_y), left_text, fill=left_color, font=payout_font)
 
             # Right-align the right-hand payout
             right_bbox = payout_font.getbbox(right_text)
             right_w_px = right_bbox[2] - right_bbox[0]
-            self._draw_shadowed(
-                draw,
+            draw.text(
                 (right_x + right_w - right_w_px, row2_y),
-                right_text,
-                right_color,
-                payout_font,
-                COLOR_WHITE,
+                right_text, fill=right_color, font=payout_font,
             )
 
             left_bbox = payout_font.getbbox(left_text)

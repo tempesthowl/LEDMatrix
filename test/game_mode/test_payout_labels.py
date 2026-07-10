@@ -77,20 +77,15 @@ def _make_2way_data():
     }
 
 
-def test_two_way_payout_embossed():
-    """2-way payout row must route through _draw_shadowed (gaining shadow ink).
-
-    Strategy: render once with the real _draw_shadowed, once with a no-op that
-    calls plain draw.text instead.  If _draw_shadowed is wired in for 2-way
-    payouts the two renders will differ in the payout row.
+def test_two_way_payout_plain_not_embossed():
+    """2-way payout multiples are drawn PLAIN (no emboss/shadow/outline) — Eric
+    found the shadowed multiples "so hard to read". Stubbing _draw_shadowed must
+    NOT change the payout row, proving the multiples don't route through it.
     """
     r = GameModeRenderer(320, 32)
     data = _make_2way_data()
-
-    # ── Render A: real _draw_shadowed (current code) ──────────────────────
     img_real = r.render(data)
 
-    # ── Render B: stub _draw_shadowed → plain draw.text so no shadow ink ──
     def _noop_shadowed(draw, pos, text, fill, font, shadow):
         draw.text(pos, text, fill=fill, font=font)
 
@@ -98,10 +93,7 @@ def test_two_way_payout_embossed():
     r2._draw_shadowed = _noop_shadowed
     img_noop = r2.render(data)
 
-    real_px = _payout_row_pixels(img_real, r)
-    noop_px = _payout_row_pixels(img_noop, r)
-
-    assert real_px != noop_px, (
-        "2-way payout row pixels are identical with and without _draw_shadowed — "
-        "the payout draw.text calls are not routing through _draw_shadowed yet"
+    assert _payout_row_pixels(img_real, r) == _payout_row_pixels(img_noop, r), (
+        "payout row changed when _draw_shadowed was stubbed — the multiples "
+        "should be plain draw.text, not embossed"
     )
