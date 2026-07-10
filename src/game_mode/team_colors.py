@@ -608,6 +608,13 @@ def contrasting_text_color(bar_color: tuple, team_abbrev: str = "", league: str 
 # (Eric keeps the color coding).
 _MIN_TEXT_VALUE = 140  # max-channel floor for small text on black; tuned on the emulator.
 
+# A primary at/above _BRIGHTEN_MIN (but below the text floor) is a real,
+# saturated brand color that only needs a gentle lift to read — brighten it and
+# keep the team's identity hue (e.g. TEX navy-blue 0,50,120 -> brighter blue).
+# Below this it's too dark to reach the floor without washing out (e.g. USA WC
+# navy 10,30,90), so it falls through to the brighter secondary instead.
+_BRIGHTEN_MIN = 100
+
 # Sparse third-choice brand colors, keyed league -> canonical abbrev. Empty by
 # default; add an entry only when a team's primary AND secondary are both too
 # dark, or when a specific lighter tint is preferred (e.g. a USA light-blue).
@@ -633,18 +640,31 @@ def _scale_to_value(rgb: tuple, target: int) -> tuple:
 def readable_label_color(abbrev: str, league: str = "") -> tuple:
     """Return a team-colored RGB legible as small text on the black panel.
 
-    Walks the team's [primary, secondary, tertiary] brand colors and returns
-    the first whose max channel clears `_MIN_TEXT_VALUE`. If none do (rare),
-    brightens the primary to the floor (hue preserved). Never returns white.
+    Preference order (keeps the team's *identity* hue whenever the primary can
+    read on black):
+      1. Primary, if it already clears the small-text brightness floor.
+      2. Else, if the primary is only moderately dark (>= _BRIGHTEN_MIN),
+         BRIGHTEN it hue-preserving — so a saturated brand color keeps its
+         identity (TEX navy-blue -> brighter blue, NOT the red secondary; the
+         bar fill already shows that blue, so the label must match it).
+      3. Else (primary too dark to lift without washing out, e.g. USA WC navy)
+         fall through to the brighter secondary/tertiary identity color.
+    Never returns white.
     """
     key = _canonicalize(abbrev, league)
     primary = _get_league_map(league, secondary=False).get(key)
     secondary = _get_league_map(league, secondary=True).get(key)
     tertiary = _LEAGUE_COLORS_TERTIARY.get((league or "").lower(), {}).get(key)
 
-    for candidate in (primary, secondary, tertiary):
+    if primary and max(primary) >= _MIN_TEXT_VALUE:
+        return tuple(primary)
+    # Moderately-dark but saturated primary -> brighten, keeping the brand hue.
+    if primary and max(primary) >= _BRIGHTEN_MIN:
+        return _scale_to_value(primary, _MIN_TEXT_VALUE)
+    # Too dark to lift -> use a brighter secondary/tertiary identity color.
+    for candidate in (secondary, tertiary):
         if candidate and max(candidate) >= _MIN_TEXT_VALUE:
             return tuple(candidate)
 
-    base = primary or secondary or _DEFAULT_COLOR
+    base = secondary or primary or _DEFAULT_COLOR
     return _scale_to_value(base, _MIN_TEXT_VALUE)

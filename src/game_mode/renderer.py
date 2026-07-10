@@ -258,15 +258,16 @@ class GameModeRenderer:
                 draw, (score_x - sw, slot_y), slot_text, COLOR_WHITE, slot_font, COLOR_BLACK,
             )
         else:
-            self._draw_shadowed(
-                draw,
+            # Scores are white on the black panel — drawn PLAIN (no emboss). A
+            # white drop-shadow behind white text just smears (Eric: "white on
+            # white looks bad"); a black shadow would be invisible anyway.
+            draw.text(
                 (score_x - (away_bbox[2] - away_bbox[0]), row1_y),
-                away_score_str, away_score_color, self.fonts["score"], COLOR_WHITE,
+                away_score_str, fill=away_score_color, font=self.fonts["score"],
             )
-            self._draw_shadowed(
-                draw,
+            draw.text(
                 (score_x - (home_bbox[2] - home_bbox[0]), row2_y),
-                home_score_str, home_score_color, self.fonts["score"], COLOR_WHITE,
+                home_score_str, fill=home_score_color, font=self.fonts["score"],
             )
 
         # --- Game state (period + clock) ---
@@ -608,25 +609,39 @@ class GameModeRenderer:
             home_ml = espn_odds.get("home_ml")
             away_ml = espn_odds.get("away_ml")
             ou = espn_odds.get("over_under")
+            away_abbr = data.get("away_team", "")
+            home_abbr = data.get("home_team", "")
+
+            def _sml(v):  # signed moneyline, e.g. -132 / +112
+                return f"+{v}" if v > 0 else f"{v}"
 
             # Build label/value pairs: labels in gold, values in white
             segments = []  # list of (text, color)
+            # Spread — name the favored team. ESPN's `spread` is the HOME line
+            # (negative => home favored), so a bare "-1.5" never says for whom.
             if spread is not None:
-                sign = "+" if spread > 0 else ""
+                if spread < 0:
+                    fav, mag = home_abbr, -spread
+                elif spread > 0:
+                    fav, mag = away_abbr, spread
+                else:
+                    fav, mag = "", 0
                 segments.append(("SPR ", COLOR_GOLD))
-                segments.append((f"{sign}{spread}", COLOR_WHITE))
+                segments.append((f"{fav} -{mag:g}" if fav else "PK", COLOR_WHITE))
+            # Moneyline — label each side (away then home, matching the scorebug
+            # rows) so "-140/+120" isn't ambiguous about which team is which.
             if home_ml is not None and away_ml is not None:
                 if segments:
                     segments.append(("  ", COLOR_WHITE))
-                h_sign = "+" if home_ml > 0 else ""
-                a_sign = "+" if away_ml > 0 else ""
                 segments.append(("ML ", COLOR_GOLD))
-                segments.append((f"{h_sign}{home_ml}/{a_sign}{away_ml}", COLOR_WHITE))
+                segments.append(
+                    (f"{away_abbr} {_sml(away_ml)} {home_abbr} {_sml(home_ml)}", COLOR_WHITE)
+                )
             if ou is not None:
                 if segments:
                     segments.append(("  ", COLOR_WHITE))
                 segments.append(("O/U ", COLOR_GOLD))
-                segments.append((f"{ou}", COLOR_WHITE))
+                segments.append((f"{ou:g}", COLOR_WHITE))
 
             # Measure total width for centering
             total_w = sum(self.fonts["odds_detail"].getbbox(t)[2] - self.fonts["odds_detail"].getbbox(t)[0] for t, _ in segments)

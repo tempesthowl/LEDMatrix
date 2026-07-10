@@ -165,6 +165,17 @@ def test_readable_label_color_keeps_bright_primary():
     assert readable_label_color("BRA", "fifa.world") == FIFA_WORLD_COLORS["BRA"]
 
 
+def test_readable_label_color_brightens_moderately_dark_primary_keeps_hue():
+    # TEX blue primary (0,50,120) is below the small-text floor but saturated
+    # enough to lift — brighten it and KEEP the blue identity, don't flip to the
+    # red secondary (Eric: "why is the TEX payout red instead of blue?").
+    from src.game_mode.team_colors import readable_label_color
+    c = readable_label_color("TEX", "mlb")
+    assert max(c) == 140, "lifted to the small-text floor"
+    assert c[2] == max(c) and c[2] > c[0] and c[2] > c[1], "still blue-dominant"
+    assert c != (192, 17, 31), "not the red secondary"
+
+
 def test_readable_label_color_never_white_for_dark_team():
     from src.game_mode.team_colors import readable_label_color
     assert readable_label_color("USA", "fifa.world") != (255, 255, 255)
