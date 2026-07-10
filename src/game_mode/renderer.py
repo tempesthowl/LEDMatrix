@@ -346,7 +346,7 @@ class GameModeRenderer:
         state_color = COLOR_GOLD if status_state == "in" else COLOR_GRAY
         sb = self.fonts["status"].getbbox(state_text)
         sw = sb[2] - sb[0]
-        draw.text((x + w - sw, 0), state_text, fill=state_color, font=self.fonts["status"])
+        draw.text((x + w - sw, 2), state_text, fill=state_color, font=self.fonts["status"])
 
     def _render_baseball_extras(
         self, draw: ImageDraw.Draw, extras: Dict[str, Any], x: int, w: int
