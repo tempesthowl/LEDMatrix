@@ -110,7 +110,7 @@ class GameModeRenderer:
         # Bigger scorebug fonts used when the game state moves out to the extras
         # panel (baseball/football/basketball), freeing vertical room.
         _try_load("team_big", "PressStart2P-Regular.ttf", 10)
-        _try_load("score_big", "PressStart2P-Regular.ttf", 13)
+        _try_load("score_big", "PressStart2P-Regular.ttf", 10)
         _try_load("status", "4x6-font.ttf", 6)
         _try_load("pct", "PressStart2P-Regular.ttf", 8)
         _try_load("odds_detail", "4x6-font.ttf", 6)
@@ -201,7 +201,9 @@ class GameModeRenderer:
             team_font = self.fonts["team_big"]
             score_font = self.fonts["score_big"]
             row1_y, row2_y = 1, 17
-            text_dy, score_dy = 3, 1  # nudge text/score to center against the taller logo
+            # Score now matches the team-label size, so share its vertical offset
+            # to keep the two centered on the same line.
+            text_dy, score_dy = 3, 3
         else:
             logo_size = self.logo_size
             team_font = self.fonts["team"]
