@@ -548,20 +548,20 @@ class GameModeRenderer:
                 home_color = readable_label_color(home, league)
 
             left_text, right_text = self._payout_labels(kalshi, away, home)
+            # Payout multiples in the small 4x6 font (~60% of the bold PressStart
+            # bar %s) so they read as secondary info and stay clear of the panel
+            # edge. PressStart blurs below its 8px design, so we use the crisp
+            # 4x6 pixel font instead of a downscaled "pct".
+            payout_font = self.fonts["payout"]
             if kalshi.get("is_three_way") and kalshi.get("draw_pct") is not None:
                 # 3-way bar is ordered away | draw | home, so payouts follow:
                 # away on the left, home on the right. Color carries the team
-                # identity now that the abbrev is gone. Use the bar-label font
-                # (pct) so the multiples match the "TIE"/"ECUADOR 79%" glyphs.
+                # identity now that the abbrev is gone.
                 left_color, right_color = away_color, home_color
-                payout_font = self.fonts["pct"]
             else:
                 fav_team = kalshi.get("fav_team", "")
                 left_color = home_color if fav_team == home else away_color
                 right_color = away_color if fav_team == home else home_color
-                # Match the 3-way multiples: bare "{mult}x" in the smaller pct
-                # font so high-payout dogs stay compact instead of crowding the edge.
-                payout_font = self.fonts["pct"]
 
             self._draw_shadowed(draw, (right_x, row2_y), left_text, left_color, payout_font, COLOR_WHITE)
 
