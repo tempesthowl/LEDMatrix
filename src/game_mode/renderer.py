@@ -107,8 +107,15 @@ class GameModeRenderer:
 
         _try_load("team", "PressStart2P-Regular.ttf", 8)
         _try_load("score", "PressStart2P-Regular.ttf", 8)
+        # Bigger scorebug fonts used when the game state moves out to the extras
+        # panel (baseball/football/basketball), freeing vertical room.
+        _try_load("team_big", "PressStart2P-Regular.ttf", 10)
+        _try_load("score_big", "PressStart2P-Regular.ttf", 13)
         _try_load("status", "4x6-font.ttf", 6)
         _try_load("pct", "PressStart2P-Regular.ttf", 8)
+        # Payout multiples: the original PressStart bar-label font at 60% size
+        # (8 -> 5). Same style as before, just smaller.
+        _try_load("payout_mult", "PressStart2P-Regular.ttf", 5)
         _try_load("odds_detail", "4x6-font.ttf", 6)
         _try_load("payout", "4x6-font.ttf", 6)
 
@@ -187,22 +194,35 @@ class GameModeRenderer:
         away_score_color = COLOR_WHITE
         home_score_color = COLOR_WHITE
 
-        # Row positions (3 rows in 32px height)
-        row1_y = 2   # Away team
-        row2_y = 13  # Home team
-        row3_y = 25  # Game state
+        # Baseball uses a bigger 2-row scorebug: the inning state (T8/B5) moves
+        # to the extras top-right, freeing the third row for larger logos, team
+        # names, and scores. Other sports keep the compact 3-row layout with the
+        # state centered on the bottom row.
+        big = data.get("sport") == "baseball"
+        if big:
+            logo_size = 14
+            team_font = self.fonts["team_big"]
+            score_font = self.fonts["score_big"]
+            row1_y, row2_y = 1, 17
+            text_dy, score_dy = 3, 1  # nudge text/score to center against the taller logo
+        else:
+            logo_size = self.logo_size
+            team_font = self.fonts["team"]
+            score_font = self.fonts["score"]
+            row1_y, row2_y, row3_y = 2, 13, 25
+            text_dy, score_dy = 0, 0
 
         # --- Logos ---
         logo_x = 2
-        text_x_after_logo = logo_x + self.logo_size + 3
+        text_x_after_logo = logo_x + logo_size + 3
 
         away_logo = data.get("away_logo")
         home_logo = data.get("home_logo")
 
         if away_logo:
-            self._paste_logo(img, away_logo, logo_x, row1_y)
+            self._paste_logo(img, away_logo, logo_x, row1_y, logo_size)
         if home_logo:
-            self._paste_logo(img, home_logo, logo_x, row2_y)
+            self._paste_logo(img, home_logo, logo_x, row2_y, logo_size)
 
         # If no logos, shift text left
         text_x = text_x_after_logo if (away_logo or home_logo) else 4
@@ -215,15 +235,15 @@ class GameModeRenderer:
             disp = wc_display_name(abbrev, full_name, league)
             if disp == abbrev:
                 return abbrev
-            disp_w = self.fonts["team"].getbbox(disp)[2] - self.fonts["team"].getbbox(disp)[0]
-            score_w = self.fonts["score"].getbbox(score_str)[2] - self.fonts["score"].getbbox(score_str)[0]
+            disp_w = team_font.getbbox(disp)[2] - team_font.getbbox(disp)[0]
+            score_w = score_font.getbbox(score_str)[2] - score_font.getbbox(score_str)[0]
             avail = (score_x - score_w) - text_x - 2
             return disp if disp_w <= avail else abbrev
 
         away_disp = _fit_name(away_team, data.get("away_name", ""), str(away_score))
         home_disp = _fit_name(home_team, data.get("home_name", ""), str(home_score))
-        self._draw_shadowed(draw, (text_x, row1_y), away_disp, away_color, self.fonts["team"], COLOR_WHITE)
-        self._draw_shadowed(draw, (text_x, row2_y), home_disp, home_color, self.fonts["team"], COLOR_WHITE)
+        self._draw_shadowed(draw, (text_x, row1_y + text_dy), away_disp, away_color, team_font, COLOR_WHITE)
+        self._draw_shadowed(draw, (text_x, row2_y + text_dy), home_disp, home_color, team_font, COLOR_WHITE)
 
         # --- Possession icon: draw after the possessing team's abbrev (live only) ---
         _extras = data.get("extras")
@@ -231,29 +251,29 @@ class GameModeRenderer:
         _sport = data.get("sport", "")
         if data.get("status_state") == "in" and _poss in ("away", "home"):
             if _poss == "away":
-                _b = self.fonts["team"].getbbox(away_disp)
+                _b = team_font.getbbox(away_disp)
                 aw = _b[2] - _b[0]
-                self._draw_possession_icon(draw, text_x + aw + 3, row1_y + 1, _sport)
+                self._draw_possession_icon(draw, text_x + aw + 3, row1_y + text_dy + 1, _sport)
             else:
-                _b = self.fonts["team"].getbbox(home_disp)
+                _b = team_font.getbbox(home_disp)
                 hw = _b[2] - _b[0]
-                self._draw_possession_icon(draw, text_x + hw + 3, row2_y + 1, _sport)
+                self._draw_possession_icon(draw, text_x + hw + 3, row2_y + text_dy + 1, _sport)
 
         # --- Scores (right-aligned in left panel) ---
         away_score_str = str(away_score)
         home_score_str = str(home_score)
 
-        away_bbox = self.fonts["score"].getbbox(away_score_str)
-        home_bbox = self.fonts["score"].getbbox(home_score_str)
+        away_bbox = score_font.getbbox(away_score_str)
+        home_bbox = score_font.getbbox(home_score_str)
 
         slot_text = self._pre_game_slot_text(data)
         if slot_text is not None:
             # Pre-game: show the kickoff time (small font) or VS (score font),
             # right-aligned in the score column, vertically centered — never 0-0.
-            slot_font = self.fonts["status"] if slot_text != "VS" else self.fonts["score"]
+            slot_font = self.fonts["status"] if slot_text != "VS" else score_font
             sb = slot_font.getbbox(slot_text)
             sw = sb[2] - sb[0]
-            slot_y = 7 if slot_text != "VS" else (row1_y + 5)
+            slot_y = 7 if slot_text != "VS" else (row1_y + score_dy + 5)
             self._draw_shadowed(
                 draw, (score_x - sw, slot_y), slot_text, COLOR_WHITE, slot_font, COLOR_BLACK,
             )
@@ -262,36 +282,38 @@ class GameModeRenderer:
             # white drop-shadow behind white text just smears (Eric: "white on
             # white looks bad"); a black shadow would be invisible anyway.
             draw.text(
-                (score_x - (away_bbox[2] - away_bbox[0]), row1_y),
-                away_score_str, fill=away_score_color, font=self.fonts["score"],
+                (score_x - (away_bbox[2] - away_bbox[0]), row1_y + score_dy),
+                away_score_str, fill=away_score_color, font=score_font,
             )
             draw.text(
-                (score_x - (home_bbox[2] - home_bbox[0]), row2_y),
-                home_score_str, fill=home_score_color, font=self.fonts["score"],
+                (score_x - (home_bbox[2] - home_bbox[0]), row2_y + score_dy),
+                home_score_str, fill=home_score_color, font=score_font,
             )
 
-        # --- Game state (period + clock) ---
-        period = data.get("period_label", "")
-        clock = data.get("game_clock", "")
-        status_state = data.get("status_state", "")
+        # --- Game state (period + clock) — in the scorebug only when it's NOT
+        # moved to the extras top-right (baseball moves it; see _draw_extras_state).
+        if not big:
+            period = data.get("period_label", "")
+            clock = data.get("game_clock", "")
+            status_state = data.get("status_state", "")
 
-        if status_state == "post":
-            state_text = "FINAL"
-        elif status_state == "pre":
-            state_text = "Pregame"
-        else:
-            parts = [p for p in [period, clock] if p]
-            state_text = STATE_SEP.join(parts) if parts else ""
+            if status_state == "post":
+                state_text = "FINAL"
+            elif status_state == "pre":
+                state_text = "Pregame"
+            else:
+                parts = [p for p in [period, clock] if p]
+                state_text = STATE_SEP.join(parts) if parts else ""
 
-        # Row 3: game state centered
-        if state_text:
-            state_color = COLOR_GOLD if status_state == "in" else COLOR_GRAY
-            status_bbox = self.fonts["status"].getbbox(state_text)
-            status_w = status_bbox[2] - status_bbox[0]
-            status_x = (left_w - status_w) // 2
-            draw.text(
-                (status_x, row3_y), state_text, fill=state_color, font=self.fonts["status"]
-            )
+            # Row 3: game state centered
+            if state_text:
+                state_color = COLOR_GOLD if status_state == "in" else COLOR_GRAY
+                status_bbox = self.fonts["status"].getbbox(state_text)
+                status_w = status_bbox[2] - status_bbox[0]
+                status_x = (left_w - status_w) // 2
+                draw.text(
+                    (status_x, row3_y), state_text, fill=state_color, font=self.fonts["status"]
+                )
 
     def _render_extras_section(
         self, img: Image.Image, draw: ImageDraw.Draw, data: Dict[str, Any], x: int, w: int
@@ -301,11 +323,33 @@ class GameModeRenderer:
         extras = data.get("extras", {})
 
         if sport == "baseball":
+            # Inning state (T8/B5) top-right, moved out of the bigger scorebug.
+            self._draw_extras_state(draw, data, x, w)
             self._render_baseball_extras(draw, extras, x, w)
         elif sport == "football":
             self._render_football_extras(draw, extras, x, w)
         elif sport == "basketball":
             self._render_basketball_extras(img, data, x, w)
+
+    def _draw_extras_state(self, draw: ImageDraw.Draw, data: Dict[str, Any], x: int, w: int) -> None:
+        """Draw the game state (T8 / FINAL) in the extras top-right — the spot
+        the scorebug's third row used to hold before baseball went 2-row."""
+        period = data.get("period_label", "")
+        clock = data.get("game_clock", "")
+        status_state = data.get("status_state", "")
+        if status_state == "post":
+            state_text = "FINAL"
+        elif status_state == "pre":
+            state_text = "Pregame"
+        else:
+            parts = [p for p in [period, clock] if p]
+            state_text = STATE_SEP.join(parts) if parts else ""
+        if not state_text:
+            return
+        state_color = COLOR_GOLD if status_state == "in" else COLOR_GRAY
+        sb = self.fonts["status"].getbbox(state_text)
+        sw = sb[2] - sb[0]
+        draw.text((x + w - sw, 0), state_text, fill=state_color, font=self.fonts["status"])
 
     def _render_baseball_extras(
         self, draw: ImageDraw.Draw, extras: Dict[str, Any], x: int, w: int
@@ -458,12 +502,13 @@ class GameModeRenderer:
         return logo
 
     def _paste_logo(
-        self, img: Image.Image, logo: Image.Image, x: int, y: int
+        self, img: Image.Image, logo: Image.Image, x: int, y: int, size: Optional[int] = None
     ) -> None:
         """Paste a logo onto the image, handling RGBA transparency."""
         try:
+            s = size or self.logo_size
             resized = logo.copy()
-            resized.thumbnail((self.logo_size, self.logo_size), Image.Resampling.LANCZOS)
+            resized.thumbnail((s, s), Image.Resampling.LANCZOS)
             if resized.mode == "RGBA":
                 img.paste(resized, (x, y), resized)
             else:
@@ -548,11 +593,8 @@ class GameModeRenderer:
                 home_color = readable_label_color(home, league)
 
             left_text, right_text = self._payout_labels(kalshi, away, home)
-            # Payout multiples in the small 4x6 font (~60% of the bold PressStart
-            # bar %s) so they read as secondary info and stay clear of the panel
-            # edge. PressStart blurs below its 8px design, so we use the crisp
-            # 4x6 pixel font instead of a downscaled "pct".
-            payout_font = self.fonts["payout"]
+            # Payout multiples: original PressStart bar-label style at 60% size.
+            payout_font = self.fonts["payout_mult"]
             if kalshi.get("is_three_way") and kalshi.get("draw_pct") is not None:
                 # 3-way bar is ordered away | draw | home, so payouts follow:
                 # away on the left, home on the right. Color carries the team
