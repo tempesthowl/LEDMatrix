@@ -19,6 +19,17 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional, List
 import pytz
 
+def _is_valid_american_ml(value) -> bool:
+    """True only for a real American moneyline. ESPN returns 0 (or null) for a
+    provider that has not posted a line; 0 is never a valid American price
+    (always <= -100 or >= +100), so 0/None/non-numeric all mean 'no line'."""
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and abs(value) >= 100
+    )
+
+
 class BaseOddsManager:
     """
     Base class for odds data fetching and management.
@@ -187,7 +198,20 @@ class BaseOddsManager:
 
         if "items" in data and data["items"]:
             self.logger.debug(f"Found {len(data['items'])} items in odds data")
-            item = data["items"][0]
+            items = data["items"]
+            # ESPN lists multiple provider items. item[0] is often a standard /
+            # pre-game market that carries moneyLine 0 during live play, while a
+            # later "Live Odds" provider holds the real price. Prefer the first
+            # item whose home AND away moneylines are valid; fall back to item[0]
+            # when none are (no line posted -> renderer guard hides the 0).
+            item = next(
+                (
+                    it for it in items
+                    if _is_valid_american_ml((it.get("homeTeamOdds") or {}).get("moneyLine"))
+                    and _is_valid_american_ml((it.get("awayTeamOdds") or {}).get("moneyLine"))
+                ),
+                items[0],
+            )
             self.logger.debug(f"First item keys: {list(item.keys())}")
 
             # The ESPN API returns odds data directly in the item, not in a providers array
