@@ -573,6 +573,69 @@ def test_collect_upcoming_skips_plugins_without_method():
     assert more == 0
 
 
+def test_collect_live_games_reaches_game_focus_only_plugin():
+    """Regression: ufc-scoreboard's ONLY display mode is 'game_focus', a key
+    shared by 6 sport plugins in plugin_modes (a dict — last writer wins). On
+    the live Pi 'game_focus' resolves to the soccer plugin, so a plugin whose
+    sole mode is 'game_focus' is evicted from plugin_modes entirely and never
+    polled. Its live-games sentinel must still surface, so _collect_live_games
+    must iterate every loaded plugin instance, not just plugin_modes.values().
+    """
+    ufc_sentinel = {"plugin_id": "ufc-scoreboard", "game_id": "ufc329",
+                    "away_team": "UFC LIVE", "home_team": "", "league": "ufc"}
+    ufc = SimpleNamespace(plugin_id="ufc-scoreboard",
+                          get_live_games=lambda: [ufc_sentinel])
+    soccer = SimpleNamespace(plugin_id="soccer-scoreboard",
+                             get_live_games=lambda: [])
+
+    # Live-Pi collision: 'game_focus' last-registered to soccer; UFC absent
+    # from plugin_modes values (its 'game_focus' key got clobbered).
+    dc = _make_controller_with_plugins({
+        "game_focus": soccer,
+        "soccer_fifa.world_live": soccer,
+    })
+    dc.plugin_manager = MagicMock()
+    dc.plugin_manager.get_all_plugins.return_value = {
+        "soccer-scoreboard": soccer,
+        "ufc-scoreboard": ufc,  # loaded, but evicted from plugin_modes
+    }
+    dc._attach_team_colors = MagicMock()
+    dc._attach_kalshi = MagicMock()
+
+    live = dc._collect_live_games()
+
+    assert any(g["game_id"] == "ufc329" for g in live), \
+        "UFC sentinel missing — game_focus-only plugin evicted from live games"
+
+
+def test_collect_upcoming_games_reaches_game_focus_only_plugin():
+    """Mirror of the live-games eviction fix: _collect_upcoming_games shares
+    the same plugin_modes iteration, so a game_focus-only plugin evicted from
+    plugin_modes must still contribute its upcoming games.
+    """
+    up = {"plugin_id": "ufc-scoreboard", "game_id": "ufc330", "league": "ufc",
+          "start_ts": 1.0, "away_team": "A", "home_team": "B",
+          "start_label": "SAT 9:00 PM", "away_logo_url": "", "home_logo_url": ""}
+    ufc = SimpleNamespace(plugin_id="ufc-scoreboard",
+                          get_upcoming_games=lambda: [up])
+    soccer = SimpleNamespace(plugin_id="soccer-scoreboard",
+                             get_upcoming_games=lambda: [])
+
+    dc = _make_controller_with_plugins({"game_focus": soccer})
+    dc.plugin_manager = MagicMock()
+    dc.plugin_manager.get_all_plugins.return_value = {
+        "soccer-scoreboard": soccer,
+        "ufc-scoreboard": ufc,
+    }
+    dc._attach_team_colors = MagicMock()
+    dc._attach_kalshi = MagicMock()
+
+    games, _more = dc._collect_upcoming_games()
+
+    assert any(g["game_id"] == "ufc330" for g in games), \
+        "UFC upcoming missing — game_focus-only plugin evicted from upcoming games"
+
+
 def test_collect_upcoming_continues_when_a_plugin_raises():
     """A plugin raising in get_upcoming_games is caught + skipped, not propagated."""
     def boom():

@@ -1419,11 +1419,36 @@ class DisplayController:
                 pass
             time.sleep(self._kalshi_warmer_interval)
 
+    def _iter_live_game_plugins(self) -> List[Any]:
+        """Every loaded plugin instance, for live/upcoming-game collection.
+
+        Iterate the plugin_manager's loaded set rather than plugin_modes,
+        because plugin_modes is keyed by mode name and the shared 'game_focus'
+        meta-mode collides across 6 sport plugins (it's a dict — last writer
+        wins). A plugin whose ONLY mode is 'game_focus' — e.g. ufc-scoreboard
+        — is therefore evicted from plugin_modes and would never be polled for
+        its live/upcoming sentinel. get_all_plugins() has no such collision.
+        Falls back to plugin_modes.values() when no plugin_manager is wired
+        (unit shells that inject plugin_modes directly).
+        """
+        pm = getattr(self, "plugin_manager", None)
+        if pm is not None and hasattr(pm, "get_all_plugins"):
+            try:
+                loaded = pm.get_all_plugins()
+                if loaded:
+                    return list(loaded.values())
+            except Exception:  # pylint: disable=broad-except
+                logger.warning(
+                    "get_all_plugins() failed; falling back to plugin_modes",
+                    exc_info=True,
+                )
+        return list(self.plugin_modes.values())
+
     def _collect_live_games(self) -> List[Dict[str, Any]]:
         """Collect unique live games across all loaded sport plugins."""
         all_live: List[Dict[str, Any]] = []
         checked_plugins = set()
-        for mode_name, plugin_instance in self.plugin_modes.items():
+        for plugin_instance in self._iter_live_game_plugins():
             pid = id(plugin_instance)
             if pid in checked_plugins:
                 continue
@@ -1434,7 +1459,8 @@ class DisplayController:
                 live_games = plugin_instance.get_live_games()
                 all_live.extend(live_games)
             except Exception as e:  # pylint: disable=broad-except
-                logger.warning("get_live_games failed for %s: %s", mode_name, e)
+                logger.warning("get_live_games failed for %s: %s",
+                               getattr(plugin_instance, "plugin_id", plugin_instance), e)
 
         seen_ids = set()
         unique: List[Dict[str, Any]] = []
@@ -1458,7 +1484,7 @@ class DisplayController:
         """
         all_upcoming: List[Dict[str, Any]] = []
         checked_plugins = set()
-        for mode_name, plugin_instance in self.plugin_modes.items():
+        for plugin_instance in self._iter_live_game_plugins():
             pid = id(plugin_instance)
             if pid in checked_plugins:
                 continue
@@ -1468,7 +1494,8 @@ class DisplayController:
             try:
                 all_upcoming.extend(plugin_instance.get_upcoming_games() or [])
             except Exception as e:  # pylint: disable=broad-except
-                logger.warning("get_upcoming_games failed for %s: %s", mode_name, e)
+                logger.warning("get_upcoming_games failed for %s: %s",
+                               getattr(plugin_instance, "plugin_id", plugin_instance), e)
 
         seen_ids = set()
         unique: List[Dict[str, Any]] = []
