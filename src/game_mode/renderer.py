@@ -38,6 +38,15 @@ def wc_display_name(abbrev: str, full_name: str, league: str, max_chars: int = 8
     return abbrev
 
 
+def _is_valid_american_ml(value) -> bool:
+    """0/None/non-numeric = no line (0 is never a valid American moneyline)."""
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and abs(value) >= 100
+    )
+
+
 # --- Colors ---
 COLOR_WHITE = (255, 255, 255)
 COLOR_BLACK = (0, 0, 0)
@@ -669,7 +678,7 @@ class GameModeRenderer:
                 segments.append((f"{fav} -{mag:g}" if fav else "PK", COLOR_WHITE))
             # Moneyline — label each side (away then home, matching the scorebug
             # rows) so "-140/+120" isn't ambiguous about which team is which.
-            if home_ml is not None and away_ml is not None:
+            if _is_valid_american_ml(home_ml) and _is_valid_american_ml(away_ml):
                 if segments:
                     segments.append(("  ", COLOR_WHITE))
                 segments.append(("ML ", COLOR_GOLD))
