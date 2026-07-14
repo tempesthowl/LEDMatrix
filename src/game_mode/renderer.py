@@ -168,11 +168,24 @@ class GameModeRenderer:
     # ------------------------------------------------------------------
 
     def _pre_game_slot_text(self, data):
-        """For a pre game, the score-slot string: the kickoff label, else 'VS'.
-        Returns None for non-pre games (draw the real scores)."""
+        """For a pre game, the score-slot string is always 'VS' — the matchup
+        indicator, never 0-0. The kickoff time lives on the status line instead
+        (see _state_text). Returns None for non-pre games (draw the real scores)."""
         if data.get("status_state") != "pre":
             return None
-        return (data.get("pre_game_label") or "").strip() or "VS"
+        return "VS"
+
+    def _state_text(self, data):
+        """Game-state string for the status line (scorebug row 3, or the extras
+        top-right for baseball): 'FINAL' for a finished game, the kickoff label
+        (else 'Pregame') for a pre game, or 'period - clock' for a live one."""
+        status_state = data.get("status_state", "")
+        if status_state == "post":
+            return "FINAL"
+        if status_state == "pre":
+            return (data.get("pre_game_label") or "").strip() or "Pregame"
+        parts = [p for p in [data.get("period_label", ""), data.get("game_clock", "")] if p]
+        return STATE_SEP.join(parts) if parts else ""
 
     def _render_scorebug(
         self, img: Image.Image, draw: ImageDraw.Draw, data: Dict[str, Any]
@@ -301,17 +314,8 @@ class GameModeRenderer:
         # --- Game state (period + clock) — in the scorebug only when it's NOT
         # moved to the extras top-right (baseball moves it; see _draw_extras_state).
         if not big:
-            period = data.get("period_label", "")
-            clock = data.get("game_clock", "")
             status_state = data.get("status_state", "")
-
-            if status_state == "post":
-                state_text = "FINAL"
-            elif status_state == "pre":
-                state_text = "Pregame"
-            else:
-                parts = [p for p in [period, clock] if p]
-                state_text = STATE_SEP.join(parts) if parts else ""
+            state_text = self._state_text(data)
 
             # Row 3: game state centered
             if state_text:
@@ -331,27 +335,24 @@ class GameModeRenderer:
         extras = data.get("extras", {})
 
         if sport == "baseball":
-            # Inning state (T8/B5) top-right, moved out of the bigger scorebug.
+            # Inning state (T8/B5), or the kickoff time pre-game, top-right.
             self._draw_extras_state(draw, data, x, w)
-            self._render_baseball_extras(draw, extras, x, w)
+            # Bases/outs/count only make sense once play starts. Pre/post-game
+            # there's no live situation, and drawing the (empty) diamond would
+            # collide with the kickoff time that now occupies this same panel.
+            if data.get("status_state") == "in":
+                self._render_baseball_extras(draw, extras, x, w)
         elif sport == "football":
             self._render_football_extras(draw, extras, x, w)
         elif sport == "basketball":
             self._render_basketball_extras(img, data, x, w)
 
     def _draw_extras_state(self, draw: ImageDraw.Draw, data: Dict[str, Any], x: int, w: int) -> None:
-        """Draw the game state (T8 / FINAL) in the extras top-right — the spot
-        the scorebug's third row used to hold before baseball went 2-row."""
-        period = data.get("period_label", "")
-        clock = data.get("game_clock", "")
+        """Draw the game state (T8 / FINAL / kickoff time) in the extras top-right
+        — the spot the scorebug's third row used to hold before baseball went
+        2-row."""
         status_state = data.get("status_state", "")
-        if status_state == "post":
-            state_text = "FINAL"
-        elif status_state == "pre":
-            state_text = "Pregame"
-        else:
-            parts = [p for p in [period, clock] if p]
-            state_text = STATE_SEP.join(parts) if parts else ""
+        state_text = self._state_text(data)
         if not state_text:
             return
         state_color = COLOR_GOLD if status_state == "in" else COLOR_GRAY
