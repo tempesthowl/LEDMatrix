@@ -263,8 +263,16 @@ def test_line_to_gain_is_drawn_and_guarded(renderer):
         assert not has_color(img, x0, x1, 15, 22, GOLD), f"line-to-gain drawn for distance={bad}"
 
 
+def _odds_panel_pixels(img, renderer):
+    """Full pixel dump of the odds panel (right of the second divider). Used for
+    "must not draw anything different" assertions -- stronger than a pixel-count
+    comparison, since it also catches e.g. a mispositioned or recolored bar that
+    happens to have the same non-black pixel count as the baseline."""
+    return list(img.crop((renderer.odds_start, 0, img.width, img.height)).getdata())
+
+
 def test_field_bar_guards(renderer):
-    base = odds_band(renderer.render(football(yard_line=None)).convert("RGB"), renderer)
+    base = _odds_panel_pixels(renderer.render(football(yard_line=None)).convert("RGB"), renderer)
     for kwargs, why in [
         ({"yard_line": -5}, "negative yard line"),
         ({"yard_line": 140}, "yard line past 100"),
@@ -272,7 +280,7 @@ def test_field_bar_guards(renderer):
         ({"possession": ""}, "unknown possession"),
     ]:
         img = renderer.render(football(**kwargs)).convert("RGB")
-        assert odds_band(img, renderer) == base, f"field bar drawn despite {why}"
+        assert _odds_panel_pixels(img, renderer) == base, f"field bar drawn despite {why}"
 
 
 def test_field_bar_is_football_only(renderer):
@@ -289,3 +297,76 @@ def test_field_bar_centres_itself_without_kalshi(renderer):
     d["kalshi"] = None
     img = renderer.render(d).convert("RGB")
     assert odds_band(img, renderer) > 0
+
+
+
+def _field_bar_span(img, renderer, y=18):
+    """x-range of the field bar's dark (18, 18, 18) interior fill in the
+    payout-row gap. Derived from the rendered pixels (not hardcoded), so it
+    survives small geometry changes; used to locate the end-zone caps, which
+    sit immediately outside this span."""
+    xs = [
+        x
+        for x in range(renderer.odds_start + 4, img.width - 4)
+        if img.getpixel((x, y)) == (18, 18, 18)
+    ]
+    return (min(xs), max(xs)) if xs else (None, None)
+
+
+def test_end_zone_colors_are_raw_not_label(renderer):
+    """Own end zone (left) must be the possessing team's raw color; the target
+    end zone (right, the defense driving-toward zone) must be the other
+    team's raw color -- never readable_label_color, which for HOU/nfl returns
+    (167, 25, 48), visibly different from the raw navy (0, 60, 160)."""
+    AWAY = (227, 24, 55)
+    HOME = (0, 60, 160)
+
+    away_poss = renderer.render(football(possession="away")).convert("RGB")
+    lo, hi = _field_bar_span(away_poss, renderer)
+    assert lo is not None and hi is not None
+    assert away_poss.getpixel((lo - 1, 18)) == AWAY, "away possession: own (left) end zone should be raw away color"
+    assert away_poss.getpixel((hi + 1, 18)) == HOME, "away possession: target (right) end zone should be raw home color"
+
+    home_poss = renderer.render(football(possession="home")).convert("RGB")
+    lo, hi = _field_bar_span(home_poss, renderer)
+    assert lo is not None and hi is not None
+    assert home_poss.getpixel((lo - 1, 18)) == HOME, "home possession: own (left) end zone should be raw home color"
+    assert home_poss.getpixel((hi + 1, 18)) == AWAY, "home possession: target (right) end zone should be raw away color"
+
+
+def test_field_bar_only_live_not_pre_or_post(renderer):
+    """A stale yardLine can linger in extras across state changes -- the field
+    bar must only ever draw for a live (status_state == 'in') game."""
+    baseline = _odds_panel_pixels(renderer.render(football(yard_line=None)).convert("RGB"), renderer)
+    for status in ("pre", "post"):
+        img = renderer.render(football(status=status, yard_line=65)).convert("RGB")
+        assert _odds_panel_pixels(img, renderer) == baseline, f"field bar drawn while status={status}"
+
+
+def test_ball_marker_never_overlaps_end_zone_at_extremes(renderer):
+    """yard_line 0 and 100 push the ball marker's unclamped position onto or
+    past an end zone; the clamp must keep it strictly inside the field and
+    leave both end-zone caps untouched."""
+    baseline = renderer.render(football(possession="home", yard_line=50, distance=None)).convert("RGB")
+    fx0, fx1 = _field_bar_span(baseline, renderer)
+    assert fx0 is not None and fx1 is not None
+
+    for yard_line in (0, 100):
+        img = renderer.render(football(possession="home", yard_line=yard_line, distance=None)).convert("RGB")
+        bx = ball_x(img, renderer)
+        assert bx is not None
+        assert fx0 <= bx <= fx1, (
+            f"ball marker at {bx} should stay within the field [{fx0}, {fx1}] "
+            f"for yard_line={yard_line}"
+        )
+        assert img.getpixel((fx0 - 1, 18)) == (0, 60, 160), f"own end zone overwritten at yard_line={yard_line}"
+        assert img.getpixel((fx1 + 1, 18)) == (227, 24, 55), f"target end zone overwritten at yard_line={yard_line}"
+
+
+def test_line_to_gain_guarded_past_the_target_end_zone(renderer):
+    """yard_line=95 + distance=10 gives lg=105 -- past the target end zone.
+    The 0 < lg < 100 guard must suppress the gold tick entirely rather than
+    clamping it onto the end zone."""
+    img = renderer.render(football(possession="home", yard_line=95, distance=10)).convert("RGB")
+    x0, x1 = renderer.odds_start + 4, img.width - 4
+    assert not has_color(img, x0, x1, 15, 22, GOLD)
