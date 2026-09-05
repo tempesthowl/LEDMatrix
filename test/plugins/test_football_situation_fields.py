@@ -71,31 +71,42 @@ def test_non_live_state_publishes_nothing(situations):
 
 
 def test_plugin_copy_matches_base_class_copy():
-    """The two football.py copies must stay in lockstep."""
-    import importlib.util
-    import sys
+    """The two football.py copies must stay in lockstep.
 
-    base = Path(__file__).resolve().parents[2]
-    spec = importlib.util.spec_from_file_location(
-        "_fb_plugin_copy", base / "plugin-repos" / "football-scoreboard" / "football.py"
-    )
-    # The plugin copy imports `sports`/`data_sources` by bare name.
-    sys.path.insert(0, str(base / "plugin-repos" / "football-scoreboard"))
-    try:
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-    finally:
-        sys.path.pop(0)
+    A single sample-input behavioural check does not exercise every branch
+    (e.g. the `or None` fallback is never hit when possessionText is truthy,
+    and a widened range guard like `<= 9999` is indistinguishable from
+    `<= 100` for an input of 58). Compare the method SOURCE TEXT instead so
+    drift in the partial-situation guards and range bounds is caught even
+    when no single sample call would reveal it.
+    """
+    import inspect
+    import re
 
     from src.base_classes.football import Football
 
-    a = mod.Football._situation_fields(
-        {"yardLine": 58, "possessionText": "UTEP 42", "down": 2, "distance": 3}, "in"
+    base_src = inspect.getsource(Football._situation_fields)
+
+    plugin_path = (
+        Path(__file__).resolve().parents[2]
+        / "plugin-repos" / "football-scoreboard" / "football.py"
     )
-    b = Football._situation_fields(
-        {"yardLine": 58, "possessionText": "UTEP 42", "down": 2, "distance": 3}, "in"
-    )
-    assert a == b
+    plugin_text = plugin_path.read_text(encoding="utf-8")
+    match = re.search(r"    @staticmethod\n    def _situation_fields\(.*?\n        \}\n", plugin_text, re.S)
+    assert match, "could not locate _situation_fields in the plugin copy"
+    plugin_src = match.group(0)
+
+    assert plugin_src == base_src
+
+    # Behavioural sanity check, kept alongside the load-bearing source
+    # comparison above (which is what actually catches drift).
+    sample = {"yardLine": 58, "possessionText": "UTEP 42", "down": 2, "distance": 3}
+    assert Football._situation_fields(sample, "in") == {
+        "yard_line": 58,
+        "ball_spot": "UTEP 42",
+        "down": 2,
+        "distance": 3,
+    }
 
 
 def test_focus_extras_forward_the_field_position_keys():
