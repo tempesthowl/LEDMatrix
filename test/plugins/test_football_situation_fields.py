@@ -121,3 +121,30 @@ def test_focus_extras_forward_the_field_position_keys():
     assert '"ball_spot": game.get("ball_spot") or ""' in block
     assert '"yard_line": game.get("yard_line")' in block
     assert '"distance": game.get("distance")' in block
+
+
+CALL_SITE = "**self._situation_fields(situation, status[\"type\"][\"state\"]),"
+
+
+def test_both_copies_actually_call_situation_fields():
+    """The suite imports src/base_classes/football.py, but the Pi RUNS
+    plugin-repos/football-scoreboard/football.py. Deleting the
+    `**self._situation_fields(...)` spread from the PLUGIN copy's
+    _extract_game_details leaves every other test in this file green -- the
+    lockstep check above compares the METHOD's source, not its call site --
+    while the whole field-position feature silently dies on hardware.
+
+    Source-text assertion, same technique as test_plugin_copy_matches_base_class_copy.
+    """
+    root = Path(__file__).resolve().parents[2]
+    for rel in (
+        Path("src") / "base_classes" / "football.py",
+        Path("plugin-repos") / "football-scoreboard" / "football.py",
+    ):
+        text = (root / rel).read_text(encoding="utf-8")
+        head, sep, body = text.partition("def _extract_game_details(")
+        assert sep, f"{rel}: _extract_game_details not found"
+        assert CALL_SITE in body, (
+            f"{rel}: _extract_game_details no longer spreads _situation_fields -- "
+            f"the field-position keys never reach the renderer"
+        )
