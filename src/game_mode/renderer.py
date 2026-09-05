@@ -78,6 +78,14 @@ _ICON_GRIDS = {
     "baseball":   [".wwww.", "wwwwww", "rwwwwr", "rwwwwr", "wwwwww", ".wwww."],    # 6x6
     "basketball": [".oooo.", "oookoo", "kkkkkk", "oookoo", ".oooo."],             # 6x5
 }
+# Lead-in between the team abbrev and the possession icon that follows it.
+ICON_GAP = 3
+
+
+def _text_w(font, text: str) -> int:
+    """Rendered pixel width of `text` in `font`."""
+    b = font.getbbox(text)
+    return b[2] - b[0]
 
 
 class GameModeRenderer:
@@ -103,6 +111,9 @@ class GameModeRenderer:
 
         # Cache for league logos displayed in the extras panel
         self._league_logo_cache: Dict[str, Optional[Image.Image]] = {}
+
+        # Cache for measured font ink bands (see _ink_band)
+        self._ink_band_cache: Dict[Any, Tuple[int, int]] = {}
 
     def _load_fonts(self) -> Dict[str, ImageFont.ImageFont]:
         fonts: Dict[str, Any] = {}
@@ -166,6 +177,27 @@ class GameModeRenderer:
     # ------------------------------------------------------------------
     # Left Panel — Scorebug
     # ------------------------------------------------------------------
+
+    def _ink_band(self, font) -> Tuple[int, int]:
+        """(top, bottom) ink row offsets of `font` relative to draw.text's y
+        anchor, measured rather than taken from getbbox — getbbox overshoots
+        these pixel fonts (PressStart2P @10 reports -1..10 but only inks
+        -1..8), which would mis-centre a font swap by a pixel."""
+        band = self._ink_band_cache.get(font)
+        if band is None:
+            probe = Image.new("1", (96, 48), 0)
+            ImageDraw.Draw(probe).text((2, 16), "AQ0", fill=1, font=font)
+            bb = probe.getbbox()
+            band = (bb[1] - 16, bb[3] - 1 - 16) if bb else (0, 0)
+            self._ink_band_cache[font] = band
+        return band
+
+    def _centering_shift(self, from_font, to_font) -> int:
+        """dy delta that keeps `to_font`'s ink band centred where `from_font`'s
+        sat — so a smaller team label still lines up with the big score."""
+        ft, fb = self._ink_band(from_font)
+        tt, tb = self._ink_band(to_font)
+        return ((ft + fb) - (tt + tb)) // 2
 
     def _pre_game_slot_text(self, data):
         """For a pre game, the score-slot string is always 'VS' — the matchup
@@ -252,6 +284,49 @@ class GameModeRenderer:
         league = data.get("league", "")
         score_x = left_w - 4
 
+        away_score_str = str(away_score)
+        home_score_str = str(home_score)
+        slot_text = self._pre_game_slot_text(data)
+
+        # --- Possession icon geometry (live only; sports without a grid get none).
+        # Resolved before the labels because the icon is drawn AFTER the abbrev
+        # and therefore has to be budgeted for when the abbrev is measured.
+        _extras = data.get("extras")
+        _poss = _extras.get("possession", "") if isinstance(_extras, dict) else ""
+        _sport = data.get("sport", "")
+        _icon_grid = (
+            _ICON_GRIDS.get(_sport)
+            if data.get("status_state") == "in" and _poss in ("away", "home")
+            else None
+        )
+        icon_reserve = (ICON_GAP + len(_icon_grid[0])) if _icon_grid else 0
+
+        if big:
+            # 4+ character abbrevs overrun the big layout's score column: 96 of
+            # the 220 files in assets/sports/ncaa_logos are 4+ chars, and Texas
+            # A&M ships as TAMU / TA&M / AANDM. In the 10px team_big font that is
+            # 40-50px starting at text_x = 19 (logo present), against a score
+            # column that starts at score_x - score_w = 63 for a two-digit score
+            # — so AANDM runs into the score outright and TAMU's possession icon
+            # lands on it. Fall back to the 8px label font, decided ONCE from the
+            # wider abbrev and the wider score string so the two rows can never
+            # disagree; the 14px logos and the big score font are untouched. NFL
+            # (<= 3 chars) and MLB (<= 3 chars) abbrevs always fit, so this never
+            # fires for them.
+            if slot_text is not None:
+                slot_font = self.fonts["status"] if slot_text != "VS" else score_font
+                score_col_w = _text_w(slot_font, slot_text)
+            else:
+                score_col_w = max(
+                    _text_w(score_font, away_score_str), _text_w(score_font, home_score_str)
+                )
+            label_room = (score_x - score_col_w - 1) - text_x
+            widest_label = max(_text_w(team_font, away_team), _text_w(team_font, home_team))
+            if widest_label + icon_reserve > label_room:
+                small_font = self.fonts["team"]
+                text_dy += self._centering_shift(team_font, small_font)
+                team_font = small_font
+
         def _fit_name(abbrev, full_name, score_str):
             disp = wc_display_name(abbrev, full_name, league)
             if disp == abbrev:
@@ -267,27 +342,25 @@ class GameModeRenderer:
         self._draw_shadowed(draw, (text_x, row2_y + text_dy), home_disp, home_color, team_font, COLOR_WHITE)
 
         # --- Possession icon: draw after the possessing team's abbrev (live only) ---
-        _extras = data.get("extras")
-        _poss = _extras.get("possession", "") if isinstance(_extras, dict) else ""
-        _sport = data.get("sport", "")
-        if data.get("status_state") == "in" and _poss in ("away", "home"):
+        if _icon_grid is not None:
             if _poss == "away":
-                _b = team_font.getbbox(away_disp)
-                aw = _b[2] - _b[0]
-                self._draw_possession_icon(draw, text_x + aw + 3, row1_y + text_dy + 1, _sport)
+                icon_row_y, icon_label, icon_score = row1_y, away_disp, away_score_str
             else:
-                _b = team_font.getbbox(home_disp)
-                hw = _b[2] - _b[0]
-                self._draw_possession_icon(draw, text_x + hw + 3, row2_y + text_dy + 1, _sport)
+                icon_row_y, icon_label, icon_score = row2_y, home_disp, home_score_str
+            icon_x = text_x + _text_w(team_font, icon_label) + ICON_GAP
+            icon_right = icon_x + len(_icon_grid[0]) - 1
+            # The score is right-aligned at score_x; an abbrev too long for even
+            # the fallback font would otherwise push the icon on top of it, and a
+            # football sitting on the "2" of "21" is worse than no football.
+            if icon_right < score_x - _text_w(score_font, icon_score):
+                self._draw_possession_icon(
+                    draw, icon_x, icon_row_y + text_dy + 1, _sport
+                )
 
         # --- Scores (right-aligned in left panel) ---
-        away_score_str = str(away_score)
-        home_score_str = str(home_score)
-
         away_bbox = score_font.getbbox(away_score_str)
         home_bbox = score_font.getbbox(home_score_str)
 
-        slot_text = self._pre_game_slot_text(data)
         if slot_text is not None:
             # Pre-game: show the kickoff time (small font) or VS (score font),
             # right-aligned in the score column, vertically centered — never 0-0.
@@ -358,11 +431,25 @@ class GameModeRenderer:
         — the spot the scorebug's third row used to hold before baseball went
         2-row.
 
-        Baseball's states (T8/B5/FINAL) are all short enough to always fit —
-        this shrink ladder exists for football, whose "Q4 - 15:00" (39px) does
-        not fit the 38px panel for roughly the first ten minutes of every
-        quarter. Shrink only as far as needed: collapse the separator, then
-        drop the period and show just the clock, then truncate from the right.
+        Baseball's live states (T8/B5) are short enough to always fit — this
+        shrink ladder exists for football, whose "Q4 - 15:00" (39px) does not fit
+        the 38px panel for roughly the first ten minutes of every quarter, and
+        for a not-today kickoff label ("Sat 11:00 AM", 48px) in either sport.
+
+        The ladder is STATE-AWARE, because the two strings shrink differently:
+
+        * live ("in") — "period - clock". Collapse STATE_SEP to a single space
+          ("Q4 15:00", 33px); failing that fall back to the clock alone; failing
+          that truncate from the right. All three steps are reachable.
+        * pre/post — a kickoff label or "FINAL". Substituting `game_clock` here
+          is never right: the football plugin reads it from status.displayClock,
+          which is "0:00" for a scheduled game, so the old ladder replaced the
+          kickoff time with a fake clock — and since _pre_game_slot_text puts VS
+          in the score slot and the big layout has no row 3, the kickoff time
+          then appeared nowhere at all. Drop the leading weekday token instead
+          ("Sat 11:00 AM" -> "11:00 AM", 32px), which also keeps the AM/PM the
+          truncation step was chopping off baseball's label, and only truncate
+          if even that is too wide.
         """
         status_state = data.get("status_state", "")
         state_text = self._state_text(data)
@@ -374,19 +461,26 @@ class GameModeRenderer:
             b = font.getbbox(s)
             return (b[2] - b[0]) <= w
 
+        def _truncate(s: str) -> str:
+            while len(s) > 1 and not _fits(s):
+                s = s[:-1]
+            return s
+
         if not _fits(state_text):
             collapsed = state_text.replace(STATE_SEP, " ")
             if _fits(collapsed):
                 state_text = collapsed
-            else:
+            elif status_state == "in":
                 clock_only = data.get("game_clock", "") or ""
                 if clock_only and _fits(clock_only):
                     state_text = clock_only
                 else:
-                    candidate = clock_only or collapsed
-                    while len(candidate) > 1 and not _fits(candidate):
-                        candidate = candidate[:-1]
-                    state_text = candidate
+                    state_text = _truncate(clock_only or collapsed)
+            else:
+                # "Sat 11:00 AM" -> "11:00 AM". A label with no leading token to
+                # drop falls straight through to the truncation.
+                _, _, tail = collapsed.partition(" ")
+                state_text = tail if (tail and _fits(tail)) else _truncate(tail or collapsed)
 
         state_color = COLOR_GOLD if status_state == "in" else COLOR_GRAY
         sb = font.getbbox(state_text)
@@ -507,6 +601,15 @@ class GameModeRenderer:
         bar_w, bar_h, spacing = 4, 2, 1
         away_to = extras.get("away_timeouts") or 0
         home_to = extras.get("home_timeouts") or 0
+        # At halftime ESPN still reports state == "in" but sends no `situation`
+        # at all, so the plugin's non-live stub zeroes both timeout counts. With
+        # nothing else in the panel that painted six dim bars claiming NEITHER
+        # team had a timeout left, for the full 12-15 minute break. No situation
+        # of any kind means no timeout row. A real late-game 0/0 still draws,
+        # because a down & distance comes with it.
+        if not away_to and not home_to and not extras.get("down_distance") \
+                and not extras.get("ball_spot"):
+            return
         for i in range(3):
             bx = x + i * (bar_w + spacing)
             draw.rectangle(

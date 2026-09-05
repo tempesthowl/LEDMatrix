@@ -187,12 +187,16 @@ def test_ball_spot_renders_below_the_down_distance(renderer):
 
 
 def test_each_extras_row_is_independently_guarded(renderer):
-    """A partial ESPN situation must degrade row by row, never crash."""
+    """A partial ESPN situation must degrade row by row, never crash.
+
+    With NOTHING left -- no down & distance, no ball spot, no timeouts -- the
+    panel goes fully blank rather than painting six dim timeout bars (see
+    test_halftime_draws_no_timeout_stub)."""
     img = renderer.render(
         football(down_distance="", ball_spot="", away_timeouts=0, home_timeouts=0)
     ).convert("RGB")
     assert row_band(img, renderer, 9, 24) == 0      # no text rows
-    assert row_band(img, renderer, 24, 32) > 0      # dim timeout bars still drawn
+    assert row_band(img, renderer, 24, 32) == 0     # and no timeout stub
 
 
 def test_each_extras_row_tolerates_none_values(renderer):
@@ -208,7 +212,43 @@ def test_each_extras_row_tolerates_none_values(renderer):
         )
     ).convert("RGB")
     assert row_band(img, renderer, 9, 24) == 0      # no text rows
-    assert row_band(img, renderer, 24, 32) > 0      # dim timeout bars still drawn
+    assert row_band(img, renderer, 24, 32) == 0     # and no timeout stub
+
+
+def test_halftime_draws_no_timeout_stub(renderer):
+    """At halftime ESPN keeps state == "in" but sends no `situation`, so the
+    plugin's non-live stub zeroes both timeout counts. Painting six dim bars
+    for 12-15 minutes asserts something false -- that NEITHER team has a
+    timeout left -- and is exactly the stub the live gate exists to prevent."""
+    img = renderer.render(
+        football(down_distance=None, ball_spot=None, yard_line=None, distance=None,
+                 away_timeouts=0, home_timeouts=0)
+    ).convert("RGB")
+    assert row_band(img, renderer, 24, 32) == 0, "halftime painted a timeout stub"
+
+
+def test_late_game_zero_timeouts_still_draws_the_bars(renderer):
+    """A REAL 0/0 -- both teams genuinely out of timeouts in the two-minute
+    drill -- arrives with a live down & distance, and must still render the six
+    dim bars. The halftime suppression must key on "no situation at all", not
+    on the timeout counts alone."""
+    img = renderer.render(
+        football(down_distance="3rd & 7", ball_spot="KC 35",
+                 away_timeouts=0, home_timeouts=0)
+    ).convert("RGB")
+    assert row_band(img, renderer, 24, 32) > 0, "real 0/0 timeouts must still draw"
+    x0 = renderer.div1_x + 4
+    assert _color_runs(img, 27, x0, renderer.div2_x, DIM) == [4, 4, 4, 4, 4, 4]
+
+
+def test_ball_spot_alone_still_draws_the_timeout_bars(renderer):
+    """Between drives ESPN can drop the down & distance but keep the ball spot.
+    That is still a live situation, so the timeout row stays."""
+    img = renderer.render(
+        football(down_distance=None, ball_spot="KC 35",
+                 away_timeouts=0, home_timeouts=0)
+    ).convert("RGB")
+    assert row_band(img, renderer, 24, 32) > 0
 
 
 GOLD = (255, 190, 40)
@@ -382,14 +422,22 @@ DD_ROW = (9, 17)  # down & distance row band, just below EXTRAS_STATE
 
 
 def _extras_overflow_pixels(img, renderer, y0, y1):
-    """Non-black pixels in [y0, y1) that fall outside the extras panel's
-    intended bounds (div1_x+4 .. div2_x-1). Scanned from div1_x+2 -- past the
-    2px divider itself (div1_x, div1_x+1) -- so the divider's own pixels
-    aren't mistaken for a bleed, but any encroachment into the panel's 2px
-    breathing-room gap (div1_x+2, div1_x+3) still counts as overflow. Stops
-    before div2_x so the second divider's own pixels are likewise excluded."""
+    """Non-black pixels in [y0, y1) that fall outside the extras panel's real
+    drawable region. Scanned from div1_x+2 -- past the 2px divider itself
+    (div1_x, div1_x+1) -- so the divider's own pixels aren't mistaken for a
+    bleed, but any encroachment into the panel's 2px breathing-room gap
+    (div1_x+2, div1_x+3) still counts as overflow. Stops before div2_x so the
+    second divider's own pixels are likewise excluded.
+
+    The allowed region is exactly what _render_extras_section is handed:
+    x = div1_x + 4, w = extras_w - 6, i.e. 93..130 on a 320px display -- NOT
+    div2_x - 1 (134), which the earlier bound used. Those four extra columns
+    are the panel's right-hand breathing room before the second divider, so a
+    right-side bleed of up to 4px was invisible to every overflow test."""
+    panel_x0 = renderer.div1_x + 4
+    panel_x1 = panel_x0 + (renderer.extras_w - 6) - 1
     scan_x0, scan_x1 = renderer.div1_x + 2, renderer.div2_x
-    allowed_x0, allowed_x1 = renderer.div1_x + 4, renderer.div2_x - 1
+    allowed_x0, allowed_x1 = panel_x0, panel_x1
     return [
         (x, y)
         for y in range(y0, y1)
@@ -547,3 +595,229 @@ def test_timeout_states_still_read_correctly(renderer):
     first_white_x = next(x for x in range(x0, away_x1) if img.getpixel((x, y)) == WHITE)
     first_dim_x = next(x for x in range(x0, away_x1) if img.getpixel((x, y)) == DIM)
     assert first_white_x < first_dim_x, "the lit timeout bar should come before the dim ones"
+
+
+# ---------------------------------------------------------------------------
+# Final review, F1: the big scorebug overran the score column for 4+ char NCAA
+# abbrevs. Every fixture above sets away_logo/home_logo to None, which moves
+# text_x from 19 to 4 and hid 15px of the overflow -- these fixtures set a real
+# 14x14 logo so the collision is actually reachable.
+# ---------------------------------------------------------------------------
+
+import hashlib                                                    # noqa: E402
+from PIL import Image                                             # noqa: E402
+
+from src.game_mode.renderer import _text_w                        # noqa: E402
+
+FOOTBALL_BROWN = (150, 78, 22)   # _ICON_GRIDS["football"] "b" pixels
+AWAY_INK = (160, 20, 20)
+HOME_INK = (0, 60, 160)
+SCORE_X = 83  # div1_x - 2 - 4, the score column's right edge
+
+
+def blank_logo():
+    """A transparent 14x14 logo. Pastes no pixels, but is truthy, so the
+    scorebug takes the with-logo branch (text_x = 19) that the collision
+    needs -- without making the test depend on a specific PNG's contents."""
+    return Image.new("RGBA", (14, 14), (0, 0, 0, 0))
+
+
+def ncaa(away, home, away_score=21, home_score=17, possession="away", **over):
+    """A logo-bearing NCAA football frame. league is left blank on purpose so
+    the explicit away/home colors survive get_contrasting_pair -- this is a
+    geometry test, and it needs label ink that is identifiable by color."""
+    d = football(possession=possession)
+    d.update({
+        "league": "", "away_team": away, "home_team": home,
+        "away_score": away_score, "home_score": home_score,
+        "away_color": AWAY_INK, "home_color": HOME_INK,
+        "away_logo": blank_logo(), "home_logo": blank_logo(),
+        "kalshi": None,
+    })
+    d.update(over)
+    return d
+
+
+def _cols_of(img, color, y0, y1, x0=0, x1=89):
+    return [
+        x
+        for x in range(x0, x1)
+        for y in range(y0, y1)
+        if img.getpixel((x, y)) == color
+    ]
+
+
+def _score_left(renderer, score_str):
+    """Left edge of the right-aligned score column, from the real score font."""
+    return SCORE_X - _text_w(renderer.fonts["score_big"], score_str)
+
+
+@pytest.mark.parametrize("abbrev", ["TAMU", "AANDM"])
+def test_long_ncaa_abbrev_never_enters_the_score_column(renderer, abbrev):
+    """TAMU is 40px and AANDM 50px in the 10px team_big font; starting at
+    text_x = 19 they run straight into a two-digit score that starts at 63."""
+    img = renderer.render(ncaa(abbrev, "LSU")).convert("RGB")
+    limit = _score_left(renderer, "21")
+
+    away_cols = _cols_of(img, AWAY_INK, 0, 16)
+    assert away_cols, "expected the away label to render some ink"
+    # +1 covers the label's down-right emboss shadow, which is pure white and
+    # so indistinguishable from score ink by color alone.
+    assert max(away_cols) + 1 < limit, (
+        f"{abbrev}: label ink reaches x={max(away_cols)}, score column starts at {limit}"
+    )
+
+
+@pytest.mark.parametrize("abbrev", ["TAMU", "AANDM"])
+def test_possession_icon_never_lands_on_the_score(renderer, abbrev):
+    """The icon is drawn at text_x + label_w + ICON_GAP. For TAMU that put it
+    on the "2" of "21"; the fallback font has to leave room for it, and where
+    even that is not enough the icon is dropped rather than drawn on the score."""
+    img = renderer.render(ncaa(abbrev, "LSU")).convert("RGB")
+    limit = _score_left(renderer, "21")
+    icon_cols = _cols_of(img, FOOTBALL_BROWN, 0, 16)
+    assert all(x < limit for x in icon_cols), (
+        f"{abbrev}: possession icon reaches x={max(icon_cols)}, score starts at {limit}"
+    )
+
+
+def test_tamu_keeps_its_possession_icon(renderer):
+    """The point of reserving icon room in the fit decision: TAMU must still
+    get a football, on the smaller label font."""
+    img = renderer.render(ncaa("TAMU", "LSU")).convert("RGB")
+    assert _cols_of(img, FOOTBALL_BROWN, 0, 16), "TAMU lost its possession icon"
+
+
+def test_both_rows_share_one_label_font(renderer):
+    """The fallback is decided ONCE, from the wider abbrev -- a per-row decision
+    would render TAMU at 8px above LSU at 10px, which looks broken."""
+    img = renderer.render(ncaa("TAMU", "LSU")).convert("RGB")
+    row1 = glyph_height(img, 19, SCORE_X - 25, 0, 15)
+    row2 = glyph_height(img, 19, SCORE_X - 25, 16, 31)
+    assert row1 == row2, f"row fonts disagree: {row1} vs {row2}"
+
+
+def test_short_abbrevs_keep_the_big_label_font(renderer):
+    """<= 3 char abbrevs (every NFL and MLB team) must never trip the fallback."""
+    for data, why in [
+        (ncaa("KC", "HOU"), "NFL-length football"),
+        (ncaa("TAM", "LSU"), "3-char NCAA"),
+    ]:
+        img = renderer.render(data).convert("RGB")
+        h = glyph_height(img, 19, SCORE_X - 25, 0, 15)
+        assert h >= 9, f"{why}: label shrank to {h}px tall; the fallback must not fire"
+
+
+# Captured by rendering these exact frames with the renderer at cd6aefbd -- the
+# branch HEAD before the F1 fix. Any change to these hashes means the
+# big-scorebug fallback leaked into a sport it must not touch.
+GOLDEN_NFL = "f9cc9245aae5c7fda7d99bce3b45dbf3"
+GOLDEN_MLB = "9127f05e1a57992cedf8e6a11fc6980a"
+
+
+def _with_blank_logos(d):
+    d["away_logo"] = blank_logo()
+    d["home_logo"] = blank_logo()
+    return d
+
+
+def test_nfl_frame_is_byte_identical_to_pre_fix(renderer):
+    img = renderer.render(_with_blank_logos(football())).convert("RGB")
+    assert hashlib.md5(img.tobytes()).hexdigest() == GOLDEN_NFL
+
+
+def test_mlb_frame_is_byte_identical_to_pre_fix(renderer):
+    img = renderer.render(_with_blank_logos(baseball())).convert("RGB")
+    assert hashlib.md5(img.tobytes()).hexdigest() == GOLDEN_MLB
+
+
+# ---------------------------------------------------------------------------
+# Final review, F2/F3: the shrink ladder must be state-aware.
+# ---------------------------------------------------------------------------
+
+def drawn_strings(renderer, data, y_max=9):
+    """Every string drawn above y_max, via a spy on PIL's text(). Used to assert
+    on the exact state string the ladder settled on, which pixel counting
+    cannot distinguish from a same-width alternative."""
+    from PIL import ImageDraw
+
+    seen = []
+    real = ImageDraw.ImageDraw.text
+
+    def spy(self, xy, text, *a, **k):
+        if xy[1] < y_max:
+            seen.append(text)
+        return real(self, xy, text, *a, **k)
+
+    with patch.object(ImageDraw.ImageDraw, "text", spy):
+        renderer.render(data)
+    return seen
+
+
+def test_pre_game_kickoff_time_is_not_replaced_by_the_game_clock(renderer):
+    """The football plugin fills game_clock from status.displayClock, which is
+    "0:00" for a scheduled game. Ladder step 2 substituted it for a kickoff
+    label too wide for the panel -- and since _pre_game_slot_text puts VS in the
+    score slot and the big layout has no row 3, the kickoff time then appeared
+    NOWHERE. Reachable today via the FOCUS button on /v3/remote upcoming rows."""
+    data = football(status="pre")
+    data.update({"pre_game_label": "Sat 11:00 AM", "game_clock": "0:00",
+                 "period_label": "", "away_score": 0, "home_score": 0})
+    strings = drawn_strings(renderer, data)
+    assert "0:00" not in strings, f"kickoff time replaced by the game clock: {strings}"
+    assert "11:00 AM" in strings, f"kickoff time missing entirely: {strings}"
+
+
+def test_pre_game_shrink_stays_inside_the_panel(renderer):
+    """Dropping the leading weekday ("Sat 11:00 AM" -> "11:00 AM", 32px) has to
+    actually fit the 38px panel, not merely be shorter."""
+    data = football(status="pre")
+    data.update({"pre_game_label": "Sat 11:00 AM", "game_clock": "0:00",
+                 "period_label": "", "away_score": 0, "home_score": 0})
+    img = renderer.render(data).convert("RGB")
+    assert _extras_overflow_pixels(img, renderer, *EXTRAS_STATE) == []
+
+
+def test_final_is_untouched_by_the_pre_post_ladder(renderer):
+    assert "FINAL" in drawn_strings(renderer, football(status="post"))
+
+
+def test_live_ladder_still_collapses_then_falls_back_to_the_clock(renderer):
+    """Steps 1 and 2 of the live ladder are both still reachable -- the earlier
+    claim that the later steps were dead code was wrong."""
+    data = football()
+    data.update({"period_label": "Q4", "game_clock": "15:00"})
+    assert "Q4 15:00" in drawn_strings(renderer, data)     # step 1
+
+    data = football()
+    data.update({"period_label": "OVERTIME", "game_clock": "15:00"})
+    assert "15:00" in drawn_strings(renderer, data)        # step 2
+
+
+def test_baseball_pre_game_keeps_am_pm(renderer):
+    """F3: baseball's game_clock is "", so its long kickoff label fell through
+    to the truncation step and lost the AM/PM ("Sat 11:00"). Baseball is an
+    explicit non-goal of this branch; the pre/post ladder must treat it exactly
+    like football."""
+    data = baseball()
+    data.update({"status_state": "pre", "period_label": "", "game_clock": "",
+                 "pre_game_label": "Sat 11:00 AM", "away_score": 0, "home_score": 0})
+    strings = drawn_strings(renderer, data)
+    assert "11:00 AM" in strings, strings
+    assert "Sat 11:00" not in strings, f"AM/PM truncated away: {strings}"
+
+    img = renderer.render(data).convert("RGB")
+    assert _extras_overflow_pixels(img, renderer, *EXTRAS_STATE) == [], (
+        "the base commit drew this label from x=83, bleeding 10px over the "
+        "divider into the scorebug; it must now stay inside the panel"
+    )
+
+
+@pytest.mark.parametrize("status,label", [("pre", "7:20 PM"), ("post", "")])
+def test_baseball_short_states_are_drawn_unshrunk(renderer, status, label):
+    """The frames the base commit rendered correctly must stay unchanged: a
+    state that already fits is drawn verbatim."""
+    data = baseball()
+    data.update({"status_state": status, "period_label": "", "game_clock": "",
+                 "pre_game_label": label})
+    assert renderer._state_text(data) in drawn_strings(renderer, data)
