@@ -209,3 +209,83 @@ def test_each_extras_row_tolerates_none_values(renderer):
     ).convert("RGB")
     assert row_band(img, renderer, 9, 24) == 0      # no text rows
     assert row_band(img, renderer, 24, 32) > 0      # dim timeout bars still drawn
+
+
+GOLD = (255, 190, 40)
+
+
+def odds_band(img, renderer, y0=15, y1=22):
+    return band_pixels(img, renderer.odds_start + 4, img.width - 4, y0, y1)
+
+
+def ball_x(img, renderer):
+    """x of the white 2px ball marker inside the payout-row gap."""
+    xs = [
+        x
+        for x in range(renderer.odds_start + 4, img.width - 4)
+        for y in range(16, 21)
+        if img.getpixel((x, y)) == (255, 255, 255)
+    ]
+    return sum(xs) / len(xs) if xs else None
+
+
+def test_field_bar_draws_for_a_live_football_game(renderer):
+    with_bar = renderer.render(football()).convert("RGB")
+    no_yard = renderer.render(football(yard_line=None)).convert("RGB")
+    assert odds_band(with_bar, renderer) > odds_band(no_yard, renderer)
+
+
+def test_possessing_team_always_attacks_right(renderer):
+    """Same absolute yard line, opposite possession -> mirrored ball position."""
+    home = renderer.render(football(possession="home", yard_line=25)).convert("RGB")
+    away = renderer.render(football(possession="away", yard_line=25)).convert("RGB")
+    hx, ax = ball_x(home, renderer), ball_x(away, renderer)
+    assert hx is not None and ax is not None
+    # home on its own 25 -> prog 25 (left); away with yardLine 25 is on the
+    # home 25, i.e. prog 75 (right).
+    assert hx < ax, f"home ball at {hx} should sit left of away ball at {ax}"
+
+
+def test_ball_marker_advances_with_progress(renderer):
+    near = ball_x(renderer.render(football(possession="home", yard_line=10)).convert("RGB"), renderer)
+    far = ball_x(renderer.render(football(possession="home", yard_line=90)).convert("RGB"), renderer)
+    assert near < far
+
+
+def test_line_to_gain_is_drawn_and_guarded(renderer):
+    with_lg = renderer.render(football(yard_line=50, distance=10)).convert("RGB")
+    x0, x1 = renderer.odds_start + 4, with_lg.width - 4
+    assert has_color(with_lg, x0, x1, 15, 22, GOLD)
+    # ESPN sends -1 between drives; the plugin maps that to None, but the
+    # renderer must survive either.
+    for bad in (None, -1, 0):
+        img = renderer.render(football(yard_line=50, distance=bad)).convert("RGB")
+        assert not has_color(img, x0, x1, 15, 22, GOLD), f"line-to-gain drawn for distance={bad}"
+
+
+def test_field_bar_guards(renderer):
+    base = odds_band(renderer.render(football(yard_line=None)).convert("RGB"), renderer)
+    for kwargs, why in [
+        ({"yard_line": -5}, "negative yard line"),
+        ({"yard_line": 140}, "yard line past 100"),
+        ({"yard_line": "35"}, "string yard line"),
+        ({"possession": ""}, "unknown possession"),
+    ]:
+        img = renderer.render(football(**kwargs)).convert("RGB")
+        assert odds_band(img, renderer) == base, f"field bar drawn despite {why}"
+
+
+def test_field_bar_is_football_only(renderer):
+    """Baseball uses this slot for the batter; soccer for possession."""
+    bb = baseball()
+    bb["extras"].update({"yard_line": 50, "distance": 10})
+    before = renderer.render(baseball()).convert("RGB")
+    after = renderer.render(bb).convert("RGB")
+    assert list(before.getdata()) == list(after.getdata())
+
+
+def test_field_bar_centres_itself_without_kalshi(renderer):
+    d = football()
+    d["kalshi"] = None
+    img = renderer.render(d).convert("RGB")
+    assert odds_band(img, renderer) > 0

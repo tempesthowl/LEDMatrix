@@ -651,6 +651,17 @@ class GameModeRenderer:
                 draw, batter, payout_left_end, payout_right_start, row2_y,
             )
 
+        # --- Field position (football): the broadcast field strip in the row-2
+        # gap — the same slot soccer uses for possession and baseball for the
+        # batter. Live only; football has neither of those, so no collision.
+        if (data.get("sport") == "football"
+                and data.get("status_state") == "in"
+                and isinstance(extras, dict)):
+            self._render_field_bar(
+                draw, right_x, row2_y, right_w, data, extras,
+                payout_left_end, payout_right_start,
+            )
+
         # --- Row 3: ESPN traditional lines (WHITE font per Eric's feedback) ---
         if espn_odds:
             spread = espn_odds.get("spread")
@@ -721,6 +732,74 @@ class GameModeRenderer:
             draw.rectangle([x0, y, x0 + aw - 1, y + h], fill=tuple(away_color))
         if aw < bar_w:
             draw.rectangle([x0 + aw, y, x1, y + h], fill=tuple(home_color))
+
+    def _render_field_bar(self, draw, right_x, y, right_w, data, extras,
+                          left_end, right_start) -> None:
+        """Broadcast field-position strip in the payout-row gap — the slot soccer
+        uses for its possession bar and baseball for the at-bat batter. Football
+        has neither, so the three can never collide.
+
+        The possessing team ALWAYS attacks right, so the ball's distance from the
+        right edge reads as "yards to go" no matter who has it. ESPN's yardLine
+        is absolute (0 = home goal line, 100 = away goal line), so we mirror it
+        for an away possession and everything below is side-agnostic.
+        """
+        poss = extras.get("possession")
+        if poss not in ("home", "away"):
+            return
+        yard_line = extras.get("yard_line")
+        if not isinstance(yard_line, int) or isinstance(yard_line, bool):
+            return
+        if not 0 <= yard_line <= 100:
+            return
+
+        PAD = 6
+        MIN_BAR_W = 24
+        if left_end is not None and right_start is not None:
+            x0, x1 = left_end + PAD, right_start - PAD
+        else:
+            span = int(right_w * 0.6)            # no Kalshi labels -> centre it
+            x0 = right_x + (right_w - span) // 2
+            x1 = x0 + span
+        if x1 - x0 < MIN_BAR_W:
+            return
+
+        prog = yard_line if poss == "home" else 100 - yard_line
+
+        home_color = tuple(data.get("home_color") or COLOR_WHITE)
+        away_color = tuple(data.get("away_color") or COLOR_WHITE)
+        own_color = home_color if poss == "home" else away_color
+        target_color = away_color if poss == "home" else home_color
+
+        h = 6
+        EZ = 3
+        fx0, fx1 = x0 + EZ, x1 - EZ
+        fw = fx1 - fx0
+        if fw < 8:
+            return
+
+        # own end zone | field | the end zone they're driving toward
+        draw.rectangle([x0, y, x0 + EZ - 1, y + h], fill=own_color)
+        draw.rectangle([fx0, y, fx1, y + h], fill=(18, 18, 18))
+        draw.rectangle([x1 - EZ + 1, y, x1, y + h], fill=target_color)
+
+        # midfield tick
+        mid = fx0 + fw // 2
+        draw.rectangle([mid, y + 1, mid, y + h - 1], fill=(70, 70, 70))
+
+        # line to gain — gold, only when there is a real distance still on the field
+        dist = extras.get("distance")
+        if isinstance(dist, int) and not isinstance(dist, bool) and 0 < dist <= 100:
+            lg = prog + dist
+            if 0 < lg < 100:
+                lgx = fx0 + int(round(fw * lg / 100.0))
+                lgx = max(fx0, min(lgx, fx1))
+                draw.rectangle([lgx, y, lgx, y + h], fill=(255, 190, 40))
+
+        # ball marker — white, 2px, drawn last so it wins every overlap
+        bx = fx0 + int(round(fw * prog / 100.0))
+        bx = max(fx0, min(bx, fx1 - 1))
+        draw.rectangle([bx, y, bx + 1, y + h], fill=COLOR_WHITE)
 
     def _render_batter_name(self, draw, batter, left_end, right_start, y) -> None:
         """Draw "AB <name>" centered in the payout-row gap (the possession-bar
