@@ -157,8 +157,16 @@ def test_red_zone_colors_the_down_distance_and_prints_no_redzone_word(renderer):
     x0, x1 = renderer.div1_x + 4, renderer.div2_x
     assert has_color(img, x0, x1, 9, 17, RED), "down & distance should turn red"
     # The old standalone "REDZONE" string lived at y=26, where the timeout bars
-    # now sit. Nothing red may remain down there.
-    assert not has_color(img, x0, x1, 24, 32, RED), "standalone REDZONE text still drawn"
+    # now sit. Nothing but black, white or dim-grey (the timeout bar colours)
+    # may appear down there -- any other colour, e.g. a differently-shaded
+    # "REDZONE" label, is a stray we must catch.
+    allowed = {(0, 0, 0), (255, 255, 255), (80, 80, 80)}
+    stray = {
+        img.getpixel((x, y))
+        for y in range(24, 32)
+        for x in range(x0, x1)
+    } - allowed
+    assert not stray, f"unexpected pixels below the ball spot: {sorted(stray)}"
 
 
 def test_no_duplicate_possession_label_in_the_extras_panel(renderer):
@@ -182,6 +190,22 @@ def test_each_extras_row_is_independently_guarded(renderer):
     """A partial ESPN situation must degrade row by row, never crash."""
     img = renderer.render(
         football(down_distance="", ball_spot="", away_timeouts=0, home_timeouts=0)
+    ).convert("RGB")
+    assert row_band(img, renderer, 9, 24) == 0      # no text rows
+    assert row_band(img, renderer, 24, 32) > 0      # dim timeout bars still drawn
+
+
+def test_each_extras_row_tolerates_none_values(renderer):
+    """Between drives ESPN drops these keys entirely -- they arrive as None,
+    not "" / 0. The panel must degrade the same way, never raise."""
+    img = renderer.render(
+        football(
+            down_distance=None,
+            ball_spot=None,
+            is_redzone=None,
+            away_timeouts=None,
+            home_timeouts=None,
+        )
     ).convert("RGB")
     assert row_band(img, renderer, 9, 24) == 0      # no text rows
     assert row_band(img, renderer, 24, 32) > 0      # dim timeout bars still drawn
