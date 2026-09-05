@@ -419,45 +419,45 @@ class GameModeRenderer:
     def _render_football_extras(
         self, draw: ImageDraw.Draw, extras: Dict[str, Any], x: int, w: int
     ) -> None:
-        """Render football extras: down/distance, possession, timeouts, redzone."""
+        """Football extras: down & distance, ball spot, timeouts.
+
+        Possession is deliberately NOT repeated here — the scorebug already
+        marks the possessing team with the football icon (_draw_possession_icon),
+        and the old triangle + AWAY/HOME label said the same thing twice while
+        eating the panel's middle row. The red zone is likewise signalled once,
+        by colouring the down & distance red, not by a second "REDZONE" string.
+
+        Rows are independently guarded: ESPN serves a partial situation between
+        drives, and the panel must degrade row by row.
+        """
         color_on = (255, 255, 255)
         color_dim = (80, 80, 80)
+        color_spot = (200, 200, 200)
         cx = x + w // 2
 
-        # Row 1: Down & distance (centered)
-        dd_text = extras.get("down_distance", "")
+        def _centered(text: str, y: int, fill) -> None:
+            b = self.fonts["status"].getbbox(text)
+            draw.text(
+                (cx - (b[2] - b[0]) // 2, y), text, fill=fill, font=self.fonts["status"]
+            )
+
+        # Row A: down & distance, uppercased to match the display language.
+        dd_text = (extras.get("down_distance") or "").upper()
         if dd_text:
-            is_rz = extras.get("is_redzone", False)
-            dd_color = (255, 60, 60) if is_rz else color_on
-            dd_bbox = self.fonts["status"].getbbox(dd_text)
-            dd_w = dd_bbox[2] - dd_bbox[0]
-            draw.text((cx - dd_w // 2, 2), dd_text, fill=dd_color, font=self.fonts["status"])
+            dd_color = (255, 60, 60) if extras.get("is_redzone") else color_on
+            _centered(dd_text, 10, dd_color)
 
-        # Row 2: Possession indicator
-        possession = extras.get("possession", "")
-        if possession:
-            poss_label = "HOME" if possession == "home" else "AWAY"
-            tri_y = 11
-            tri_s = 3
-            if possession == "home":
-                draw.polygon(
-                    [(x + 2, tri_y), (x + 2 + tri_s, tri_y + tri_s), (x + 2, tri_y + tri_s * 2)],
-                    fill=color_on,
-                )
-            else:
-                draw.polygon(
-                    [(x + 2 + tri_s, tri_y), (x + 2, tri_y + tri_s), (x + 2 + tri_s, tri_y + tri_s * 2)],
-                    fill=color_on,
-                )
-            draw.text((x + 2 + tri_s + 3, 10), poss_label, fill=color_on, font=self.fonts["status"])
+        # Row B: where the ball actually is ("KC 35").
+        spot = (extras.get("ball_spot") or "").upper()
+        if spot:
+            _centered(spot, 17, color_spot)
 
-        # Row 3: Timeout bars (3 per side: away left, home right)
-        timeout_y = 20
-        bar_w = 4
-        bar_h = 2
-        spacing = 1
-        away_to = extras.get("away_timeouts", 0)
-        home_to = extras.get("home_timeouts", 0)
+        # Row C: timeouts — away on the left, home on the right, matching the
+        # scorebug's away-over-home row order.
+        timeout_y = 26
+        bar_w, bar_h, spacing = 4, 2, 1
+        away_to = extras.get("away_timeouts") or 0
+        home_to = extras.get("home_timeouts") or 0
         for i in range(3):
             bx = x + i * (bar_w + spacing)
             draw.rectangle(
@@ -470,13 +470,6 @@ class GameModeRenderer:
                 [bx, timeout_y, bx + bar_w, timeout_y + bar_h],
                 fill=color_on if i < home_to else color_dim,
             )
-
-        # Row 4: Redzone indicator
-        if extras.get("is_redzone", False):
-            rz_text = "REDZONE"
-            rz_bbox = self.fonts["status"].getbbox(rz_text)
-            rz_w = rz_bbox[2] - rz_bbox[0]
-            draw.text((cx - rz_w // 2, 26), rz_text, fill=(255, 40, 40), font=self.fonts["status"])
 
     def _render_basketball_extras(
         self, img: Image.Image, data: Dict[str, Any], x: int, w: int

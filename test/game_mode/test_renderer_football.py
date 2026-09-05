@@ -128,3 +128,60 @@ def test_football_situational_extras_are_suppressed_pre_and_post(renderer):
         assert band_pixels(img, x0, x1, *EXTRAS_STATE) > 0, f"{status}: state missing"
         # ...but down & distance, ball spot and timeout bars do not.
         assert band_pixels(img, x0, x1, 9, 32) == 0, f"{status}: situational extras drawn"
+
+
+RED = (255, 60, 60)
+
+
+def row_band(img, renderer, y0, y1):
+    return band_pixels(img, renderer.div1_x + 4, renderer.div2_x, y0, y1)
+
+
+def has_color(img, x0, x1, y0, y1, rgb):
+    return any(
+        img.getpixel((x, y)) == rgb
+        for y in range(y0, min(y1, img.height))
+        for x in range(x0, min(x1, img.width))
+    )
+
+
+def test_down_distance_is_uppercased(renderer):
+    """The display language is all caps; ESPN sends '3rd & 7'."""
+    lower = renderer.render(football(down_distance="3rd & 7")).convert("RGB")
+    upper = renderer.render(football(down_distance="3RD & 7")).convert("RGB")
+    assert list(lower.getdata()) == list(upper.getdata())
+
+
+def test_red_zone_colors_the_down_distance_and_prints_no_redzone_word(renderer):
+    img = renderer.render(football(is_redzone=True)).convert("RGB")
+    x0, x1 = renderer.div1_x + 4, renderer.div2_x
+    assert has_color(img, x0, x1, 9, 17, RED), "down & distance should turn red"
+    # The old standalone "REDZONE" string lived at y=26, where the timeout bars
+    # now sit. Nothing red may remain down there.
+    assert not has_color(img, x0, x1, 24, 32, RED), "standalone REDZONE text still drawn"
+
+
+def test_no_duplicate_possession_label_in_the_extras_panel(renderer):
+    """The scorebug icon already marks possession; the panel must not repeat it."""
+    away = renderer.render(football(possession="away")).convert("RGB")
+    home = renderer.render(football(possession="home")).convert("RGB")
+    x0, x1 = renderer.div1_x + 4, renderer.div2_x
+    # Panel pixels must be identical regardless of who has the ball.
+    assert [away.getpixel((x, y)) for y in range(32) for x in range(x0, x1)] == \
+           [home.getpixel((x, y)) for y in range(32) for x in range(x0, x1)]
+
+
+def test_ball_spot_renders_below_the_down_distance(renderer):
+    with_spot = renderer.render(football(ball_spot="KC 35")).convert("RGB")
+    without = renderer.render(football(ball_spot="")).convert("RGB")
+    assert row_band(with_spot, renderer, 17, 24) > 0
+    assert row_band(without, renderer, 17, 24) == 0
+
+
+def test_each_extras_row_is_independently_guarded(renderer):
+    """A partial ESPN situation must degrade row by row, never crash."""
+    img = renderer.render(
+        football(down_distance="", ball_spot="", away_timeouts=0, home_timeouts=0)
+    ).convert("RGB")
+    assert row_band(img, renderer, 9, 24) == 0      # no text rows
+    assert row_band(img, renderer, 24, 32) > 0      # dim timeout bars still drawn
