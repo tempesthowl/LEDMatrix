@@ -213,11 +213,11 @@ class GameModeRenderer:
         away_score_color = COLOR_WHITE
         home_score_color = COLOR_WHITE
 
-        # Baseball uses a bigger 2-row scorebug: the inning state (T8/B5) moves
-        # to the extras top-right, freeing the third row for larger logos, team
-        # names, and scores. Other sports keep the compact 3-row layout with the
-        # state centered on the bottom row.
-        big = data.get("sport") == "baseball"
+        # Baseball and football use a bigger 2-row scorebug: the game state
+        # (T8/B5, Q3 - 8:42) moves to the extras top-right, freeing the third
+        # row for larger logos, team names, and scores. Sports without an extras
+        # panel keep the compact 3-row layout with the state on the bottom row.
+        big = data.get("sport") in ("baseball", "football")
         if big:
             logo_size = 14
             team_font = self.fonts["team_big"]
@@ -343,7 +343,13 @@ class GameModeRenderer:
             if data.get("status_state") == "in":
                 self._render_baseball_extras(draw, extras, x, w)
         elif sport == "football":
-            self._render_football_extras(draw, extras, x, w)
+            # Game state (Q3 - 8:42 / FINAL / kickoff time) sits in the extras
+            # top-right, same as baseball — the big 2-row scorebug has no row 3.
+            self._draw_extras_state(draw, data, x, w)
+            # Down & distance, the ball spot and timeouts only exist while the
+            # ball is in play. Drawing them pre/post painted dim stub bars.
+            if data.get("status_state") == "in":
+                self._render_football_extras(draw, extras, x, w)
         elif sport == "basketball":
             self._render_basketball_extras(img, data, x, w)
 
