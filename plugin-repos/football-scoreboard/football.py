@@ -14,6 +14,44 @@ class Football(SportsCore):
         self.data_source = ESPNDataSource(logger)
         self.sport = "football"
 
+    @staticmethod
+    def _situation_fields(situation, state):
+        """Field-position fields from an ESPN live `situation` object.
+
+        ESPN routinely serves a PARTIAL situation during a live game — between
+        drives it drops possessionText/shortDownDistanceText entirely and sends
+        `distance: -1`. Every field is therefore independently optional, and a
+        -1 distance means "no distance", not minus one yard.
+
+        `yardLine` is an ABSOLUTE field coordinate: 0 = the home team's goal
+        line, 100 = the away team's. Verified live 2026-09-04 (UTEP @ OU): OU
+        (home) on its own 36 -> 36; UTEP (away) on its own 42 -> 58.
+        """
+        blank = {"yard_line": None, "ball_spot": None, "down": None, "distance": None}
+        if not situation or state != "in":
+            return blank
+
+        yard_line = situation.get("yardLine")
+        if not isinstance(yard_line, int) or isinstance(yard_line, bool):
+            yard_line = None
+        elif not 0 <= yard_line <= 100:
+            yard_line = None
+
+        distance = situation.get("distance")
+        if not isinstance(distance, int) or isinstance(distance, bool) or distance < 0:
+            distance = None
+
+        down = situation.get("down")
+        if not isinstance(down, int) or isinstance(down, bool):
+            down = None
+
+        return {
+            "yard_line": yard_line,
+            "ball_spot": situation.get("possessionText") or None,
+            "down": down,
+            "distance": distance,
+        }
+
     def _extract_game_details(self, game_event: Dict) -> Optional[Dict]:
         """Extract relevant game details from ESPN NCAA FB API response."""
         details, home_team, away_team, status, situation = self._extract_game_details_common(game_event)
@@ -101,6 +139,7 @@ class Football(SportsCore):
                 "possession": posession, # ID of team with possession
                 "possession_indicator": possession_indicator, # Added for easy home/away check
                 "scoring_event": scoring_event, # Track scoring events (TOUCHDOWN, FIELD GOAL, PAT)
+                **self._situation_fields(situation, status["type"]["state"]),
             })
 
             # Basic validation (can be expanded)

@@ -3698,6 +3698,12 @@ class FootballScoreboardPlugin(BasePlugin if BasePlugin else object):
                 "is_redzone": game.get("is_redzone", False),
                 "home_timeouts": game.get("home_timeouts", 0),
                 "away_timeouts": game.get("away_timeouts", 0),
+                # Field position. yard_line is absolute (0 = home goal line,
+                # 100 = away goal line); the renderer mirrors it so the
+                # possessing team always drives to the right.
+                "ball_spot": game.get("ball_spot") or "",
+                "yard_line": game.get("yard_line"),
+                "distance": game.get("distance"),
             },
         }
         focus_data["pre_game_label"] = (
