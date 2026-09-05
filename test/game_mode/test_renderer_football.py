@@ -370,3 +370,180 @@ def test_line_to_gain_guarded_past_the_target_end_zone(renderer):
     img = renderer.render(football(possession="home", yard_line=95, distance=10)).convert("RGB")
     x0, x1 = renderer.odds_start + 4, img.width - 4
     assert not has_color(img, x0, x1, 15, 22, GOLD)
+
+
+# ---------------------------------------------------------------------------
+# Task 6: the 4x pixel-proof render exposed three defects no test caught --
+# the extras panel is 38px usable (x = div1_x+4 .. div2_x-1) and none of the
+# strings below were ever checked against that width.
+# ---------------------------------------------------------------------------
+
+DD_ROW = (9, 17)  # down & distance row band, just below EXTRAS_STATE
+
+
+def _extras_overflow_pixels(img, renderer, y0, y1):
+    """Non-black pixels in [y0, y1) that fall outside the extras panel's
+    intended bounds (div1_x+4 .. div2_x-1). Scanned from div1_x+2 -- past the
+    2px divider itself (div1_x, div1_x+1) -- so the divider's own pixels
+    aren't mistaken for a bleed, but any encroachment into the panel's 2px
+    breathing-room gap (div1_x+2, div1_x+3) still counts as overflow. Stops
+    before div2_x so the second divider's own pixels are likewise excluded."""
+    scan_x0, scan_x1 = renderer.div1_x + 2, renderer.div2_x
+    allowed_x0, allowed_x1 = renderer.div1_x + 4, renderer.div2_x - 1
+    return [
+        (x, y)
+        for y in range(y0, y1)
+        for x in range(scan_x0, scan_x1)
+        if img.getpixel((x, y)) != (0, 0, 0) and not (allowed_x0 <= x <= allowed_x1)
+    ]
+
+
+def test_state_shrinks_to_fit_the_extras_panel(renderer):
+    """'Q4 - 15:00' measures 39px against the 38px extras panel -- Task 2's
+    regression, since baseball's T8/B5/FINAL never came close. Unfixed,
+    _draw_extras_state right-aligns at x + w - sw and starts one pixel left
+    of the panel; the shrink ladder's step 2 (collapse the separator to a
+    single space, 'Q4 15:00' @ 33px) must bring it back inside."""
+    data = football()
+    data["period_label"] = "Q4"
+    data["game_clock"] = "15:00"
+    img = renderer.render(data).convert("RGB")
+    overflow = _extras_overflow_pixels(img, renderer, *EXTRAS_STATE)
+    assert overflow == [], f"state text bled outside the panel: {overflow}"
+
+
+def test_short_states_keep_their_separator_unshrunk(renderer):
+    """'Q3 - 8:42' (35px) already fits the 38px panel -- the shrink ladder
+    must never fire for it, i.e. the ' - ' separator must survive intact.
+    Proven by ink: a frame drawn with the literal 'Q3 8:42' (separator
+    already collapsed, as if the ladder had wrongly fired) has strictly less
+    ink in the extras-state band than the real 'Q3 - 8:42' frame, since the
+    hyphen itself is drawn ink the collapsed string lacks."""
+    dashed = renderer.render(football()).convert("RGB")  # default: Q3, 8:42
+
+    collapsed_data = football()
+    collapsed_data["period_label"] = "Q3 8:42"
+    collapsed_data["game_clock"] = ""
+    collapsed = renderer.render(collapsed_data).convert("RGB")
+
+    x0, x1 = renderer.div1_x + 4, renderer.div2_x
+    dashed_ink = band_pixels(dashed, x0, x1, *EXTRAS_STATE)
+    collapsed_ink = band_pixels(collapsed, x0, x1, *EXTRAS_STATE)
+    assert dashed_ink > collapsed_ink, (
+        f"'Q3 - 8:42' ink ({dashed_ink}) should exceed the separator-collapsed "
+        f"'Q3 8:42' ink ({collapsed_ink}) -- the shrink ladder must not fire "
+        f"for a state that already fits"
+    )
+
+
+def test_baseball_state_shrink_path_never_fires(renderer):
+    """Baseball states (T8/B5/FINAL) are all short enough that the football
+    shrink ladder added to the shared _draw_extras_state must never engage.
+    Proven by geometry: the state's left edge must land exactly where the
+    un-shrunk formula (x + w - sw, using _state_text's own width) puts it --
+    if the ladder had substituted a shorter or different string, sw (and so
+    the left edge) would differ."""
+    data = baseball()
+    img = renderer.render(data).convert("RGB")
+
+    state_text = renderer._state_text(data)
+    font = renderer.fonts["status"]
+    sb = font.getbbox(state_text)
+    sw = sb[2] - sb[0]
+    x, w = renderer.div1_x + 4, renderer.extras_w - 6
+    expected_x0 = x + w - sw
+
+    # A live baseball game also draws the bases-diamond icon in this same
+    # y-band (EXTRAS_STATE), left-of-center in the panel; it never reaches
+    # within 12px of the panel's right edge, so scanning just that margin
+    # isolates the state text from the diamond instead of confounding them.
+    scan_x0 = x + w - 12
+    cols = [
+        col
+        for col in range(scan_x0, x + w)
+        for row in range(*EXTRAS_STATE)
+        if img.getpixel((col, row)) != (0, 0, 0)
+    ]
+    assert cols, "expected the baseball state to render some ink"
+    assert min(cols) == expected_x0, (
+        f"baseball state left edge at {min(cols)}, expected {expected_x0} -- "
+        f"the shrink ladder must not fire for short baseball states"
+    )
+
+
+def test_goal_to_go_shrinks_to_fit_the_extras_panel(renderer):
+    """'1ST & GOAL' through '4TH & GOAL' measure 41-43px against the 38px
+    panel; each must shrink (trailing GOAL -> G) to fit."""
+    for dd in ("1st & Goal", "2nd & Goal", "3rd & Goal", "4th & Goal"):
+        img = renderer.render(football(down_distance=dd)).convert("RGB")
+        overflow = _extras_overflow_pixels(img, renderer, *DD_ROW)
+        assert overflow == [], f"{dd!r}: down & distance bled outside the panel: {overflow}"
+
+
+def test_ordinary_down_distance_keeps_its_spaces(renderer):
+    """'3RD & 7' (29px) already fits -- the goal-to-go shrink ladder must not
+    fire and collapse its spaces."""
+    spaced = renderer.render(football(down_distance="3rd & 7")).convert("RGB")
+    literal = renderer.render(football(down_distance="3RD & 7")).convert("RGB")
+    collapsed = renderer.render(football(down_distance="3RD&7")).convert("RGB")
+    assert list(spaced.getdata()) == list(literal.getdata()), (
+        "'3rd & 7' should render identically to the literal '3RD & 7'"
+    )
+    assert list(spaced.getdata()) != list(collapsed.getdata()), (
+        "'3RD & 7' must not have been collapsed to '3RD&7'"
+    )
+
+
+WHITE = (255, 255, 255)
+DIM = (80, 80, 80)
+
+
+def _color_runs(img, y, x0, x1, color):
+    """Lengths of consecutive `color` runs across row y, x0..x1 (exclusive),
+    left to right -- lets a test count discrete bars instead of just a pixel
+    total, which can't tell one merged block from several separate ones."""
+    runs = []
+    run_len = 0
+    for x in range(x0, x1):
+        if img.getpixel((x, y)) == color:
+            run_len += 1
+        else:
+            if run_len:
+                runs.append(run_len)
+            run_len = 0
+    if run_len:
+        runs.append(run_len)
+    return runs
+
+
+def test_timeouts_are_countable_as_separate_bars(renderer):
+    """draw.rectangle is inclusive on both ends, so the old bx + bar_w made
+    each bar bar_w+1 px wide -- exactly the i-to-i+1 stride -- so three
+    timeouts in the same state merged into one solid block. bx + bar_w - 1
+    must leave a 1px gap between them. home_timeouts=0 keeps the home side
+    entirely dim so the away side's three white bars are the only white runs
+    in the whole panel."""
+    img = renderer.render(football(away_timeouts=3, home_timeouts=0)).convert("RGB")
+    x0, x1 = renderer.div1_x + 4, renderer.div2_x
+    y = 27
+    runs = _color_runs(img, y, x0, x1, WHITE)
+    assert runs == [4, 4, 4], f"expected three separate 4px white bars, got {runs}"
+
+
+def test_timeout_states_still_read_correctly(renderer):
+    """With one away timeout left, the away side must read as one lit bar
+    followed by two separate dim bars, in that order -- not a merged run of
+    either color."""
+    img = renderer.render(football(away_timeouts=1, home_timeouts=0)).convert("RGB")
+    y = 27
+    x0 = renderer.div1_x + 4
+    away_x1 = x0 + 3 * (4 + 1)  # away side only: 3 bars, stride bar_w+spacing=5
+
+    white_runs = _color_runs(img, y, x0, away_x1, WHITE)
+    dim_runs = _color_runs(img, y, x0, away_x1, DIM)
+    assert white_runs == [4], f"expected exactly one 4px white bar, got {white_runs}"
+    assert dim_runs == [4, 4], f"expected exactly two separate 4px dim bars, got {dim_runs}"
+
+    first_white_x = next(x for x in range(x0, away_x1) if img.getpixel((x, y)) == WHITE)
+    first_dim_x = next(x for x in range(x0, away_x1) if img.getpixel((x, y)) == DIM)
+    assert first_white_x < first_dim_x, "the lit timeout bar should come before the dim ones"

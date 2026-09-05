@@ -356,15 +356,42 @@ class GameModeRenderer:
     def _draw_extras_state(self, draw: ImageDraw.Draw, data: Dict[str, Any], x: int, w: int) -> None:
         """Draw the game state (T8 / FINAL / kickoff time) in the extras top-right
         — the spot the scorebug's third row used to hold before baseball went
-        2-row."""
+        2-row.
+
+        Baseball's states (T8/B5/FINAL) are all short enough to always fit —
+        this shrink ladder exists for football, whose "Q4 - 15:00" (39px) does
+        not fit the 38px panel for roughly the first ten minutes of every
+        quarter. Shrink only as far as needed: collapse the separator, then
+        drop the period and show just the clock, then truncate from the right.
+        """
         status_state = data.get("status_state", "")
         state_text = self._state_text(data)
         if not state_text:
             return
+        font = self.fonts["status"]
+
+        def _fits(s: str) -> bool:
+            b = font.getbbox(s)
+            return (b[2] - b[0]) <= w
+
+        if not _fits(state_text):
+            collapsed = state_text.replace(STATE_SEP, " ")
+            if _fits(collapsed):
+                state_text = collapsed
+            else:
+                clock_only = data.get("game_clock", "") or ""
+                if clock_only and _fits(clock_only):
+                    state_text = clock_only
+                else:
+                    candidate = clock_only or collapsed
+                    while len(candidate) > 1 and not _fits(candidate):
+                        candidate = candidate[:-1]
+                    state_text = candidate
+
         state_color = COLOR_GOLD if status_state == "in" else COLOR_GRAY
-        sb = self.fonts["status"].getbbox(state_text)
+        sb = font.getbbox(state_text)
         sw = sb[2] - sb[0]
-        draw.text((x + w - sw, 2), state_text, fill=state_color, font=self.fonts["status"])
+        draw.text((x + w - sw, 2), state_text, fill=state_color, font=font)
 
     def _render_baseball_extras(
         self, draw: ImageDraw.Draw, extras: Dict[str, Any], x: int, w: int
@@ -441,8 +468,26 @@ class GameModeRenderer:
                 (cx - (b[2] - b[0]) // 2, y), text, fill=fill, font=self.fonts["status"]
             )
 
+        def _fits(text: str) -> bool:
+            b = self.fonts["status"].getbbox(text)
+            return (b[2] - b[0]) <= w
+
         # Row A: down & distance, uppercased to match the display language.
+        # Goal-to-go ("1ST & GOAL" .. "4TH & GOAL") measures 41-43px against
+        # the 38px panel; shrink it to fit with the standard scoreboard
+        # compression before centering.
         dd_text = (extras.get("down_distance") or "").upper()
+        if dd_text and not _fits(dd_text):
+            if dd_text.endswith("GOAL"):
+                shrunk = dd_text[:-4] + "G"
+                if _fits(shrunk):
+                    dd_text = shrunk
+            if not _fits(dd_text):
+                shrunk = dd_text.replace(" & ", "&")
+                if _fits(shrunk):
+                    dd_text = shrunk
+            while len(dd_text) > 1 and not _fits(dd_text):
+                dd_text = dd_text[:-1]
         if dd_text:
             dd_color = (255, 60, 60) if extras.get("is_redzone") else color_on
             _centered(dd_text, 10, dd_color)
@@ -453,7 +498,11 @@ class GameModeRenderer:
             _centered(spot, 17, color_spot)
 
         # Row C: timeouts — away on the left, home on the right, matching the
-        # scorebug's away-over-home row order.
+        # scorebug's away-over-home row order. draw.rectangle is inclusive on
+        # both ends, so bx + bar_w would make each bar bar_w+1 px wide -- the
+        # same as the i-to-i+1 stride -- leaving zero gap between timeouts and
+        # making three adjacent bars in the same state read as one block.
+        # bx + bar_w - 1 keeps each bar bar_w px wide with a 1px gap.
         timeout_y = 26
         bar_w, bar_h, spacing = 4, 2, 1
         away_to = extras.get("away_timeouts") or 0
@@ -461,13 +510,13 @@ class GameModeRenderer:
         for i in range(3):
             bx = x + i * (bar_w + spacing)
             draw.rectangle(
-                [bx, timeout_y, bx + bar_w, timeout_y + bar_h],
+                [bx, timeout_y, bx + bar_w - 1, timeout_y + bar_h],
                 fill=color_on if i < away_to else color_dim,
             )
         for i in range(3):
             bx = x + w - (3 - i) * (bar_w + spacing)
             draw.rectangle(
-                [bx, timeout_y, bx + bar_w, timeout_y + bar_h],
+                [bx, timeout_y, bx + bar_w - 1, timeout_y + bar_h],
                 fill=color_on if i < home_to else color_dim,
             )
 
