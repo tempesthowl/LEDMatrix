@@ -6,10 +6,10 @@ scorebug icon, and no field position at all.
 """
 
 import pytest
+from unittest.mock import patch
 
 from src.game_mode.renderer import GameModeRenderer
 
-SCOREBUG_ROW3 = (24, 32)   # y-band the small 3-row layout puts the state in
 EXTRAS_STATE = (0, 9)      # y-band the extras panel puts the state in
 
 
@@ -93,19 +93,31 @@ def test_football_uses_the_big_two_row_scorebug_like_baseball(renderer):
 
 
 def test_football_state_moves_to_the_extras_panel(renderer):
+    # Assertion 1: the game state is actually drawn via _draw_extras_state,
+    # proven with a call-spy rather than by pixel presence. A pixel-presence
+    # check here is confounded -- _render_football_extras's down-distance row
+    # also draws in the same EXTRAS_STATE band whenever status_state == "in",
+    # so it would pass even if _draw_extras_state were never called (fix-round-1
+    # finding). The render under the patch is discarded; only the call count
+    # matters, so the patch does not affect assertion 2 below.
+    with patch.object(GameModeRenderer, "_draw_extras_state", autospec=True) as spy:
+        renderer.render(football())
+    assert spy.call_count == 1, "football must draw the game state in the extras panel"
+
+    # Assertion 2: with a normal, unpatched render, the scorebug's old row 3
+    # is empty now that the state moved out. DEVIATION FROM BRIEF (flagged in
+    # task-2-report.md): the brief's SCOREBUG_ROW3 band (24-32) overlaps the
+    # big layout's row-2 home-team glyph, drawn at y=17+3=20 with the 11px-tall
+    # team_big (PressStart2P) bbox -> ink at y=19-29. That is pre-existing
+    # geometry identical to baseball's (confirmed by direct pixel inspection),
+    # not something this task's 2-line change touches. Narrowed to (30, 32) --
+    # the only y-range the `if not big:` guard structurally guarantees free of
+    # row-3 leftovers -- to test what this assertion means: no orphaned row-3
+    # status line below the row-2 content.
     img = renderer.render(football()).convert("RGB")
-    x0, x1 = renderer.div1_x + 4, renderer.div2_x
-    assert band_pixels(img, x0, x1, *EXTRAS_STATE) > 0, "no state in the extras top-right"
-    # DEVIATION FROM BRIEF (flagged in task-2-report.md): SCOREBUG_ROW3 (24-32)
-    # overlaps the big layout's row-2 home-team glyph, drawn at y=17+3=20 with
-    # the 11px-tall team_big (PressStart2P) bbox -> ink at y=19-29. That is
-    # pre-existing geometry identical to baseball's (confirmed by direct pixel
-    # inspection), not something this task's 2-line change touches. Narrowed
-    # to (30, 32) -- the only y-range the `if not big:` guard structurally
-    # guarantees free of row-3 leftovers -- to test what this assertion means:
-    # no orphaned row-3 status line below the row-2 content.
-    assert band_pixels(img, 2, renderer.div1_x - 2, 30, 32) == 0, \
+    assert band_pixels(img, 2, renderer.div1_x - 2, 30, 32) == 0, (
         "scorebug row 3 should be empty once the state moves out"
+    )
 
 
 def test_football_situational_extras_are_suppressed_pre_and_post(renderer):
