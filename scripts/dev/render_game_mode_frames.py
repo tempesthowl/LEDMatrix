@@ -48,6 +48,30 @@ def football(**over):
     return d
 
 
+def ncaa(away, home, **over):
+    """A real NCAA matchup, with real logos and possession set.
+
+    NCAA is where the big 2-row scorebug breaks down: 96 of the 220 files in
+    assets/sports/ncaa_logos have 4+ character abbrevs (Texas A&M ships as
+    TAMU / TA&M / AANDM), and at 10px/char starting from text_x = 19 they run
+    into the score column at x = 63. The two scenes below are the proof frames
+    for that fix -- TAMU, which fits on the 8px fallback font WITH its
+    possession icon, and AANDM, which is wide enough that the icon has to be
+    dropped rather than drawn on the score.
+    """
+    d = football(**over)
+    d.update({
+        "league": "ncaa_fb", "away_team": away, "home_team": home,
+        "away_score": 21, "home_score": 17,
+        "away_logo": logo("ncaa_logos", away), "home_logo": logo("ncaa_logos", home),
+        "kalshi": {**d["kalshi"], "fav_team": away},
+        "espn_odds": {"spread": -3.5, "home_ml": 150, "away_ml": -180,
+                      "over_under": 51.5},
+        "extras": {**d["extras"], "ball_spot": f"{away} 35"},
+    })
+    return d
+
+
 def baseball():
     return {
         "sport": "baseball", "league": "mlb", "game_id": "2",
@@ -106,6 +130,28 @@ SCENES = [
                                       "yard_line": None, "distance": None,
                                       "home_timeouts": 0, "away_timeouts": 0})),
     ("football_final", football(status_state="post", game_clock="", period_label="")),
+    # F2: a not-today kickoff. "Sat 11:00 AM" is 48px against the 38px panel;
+    # the pre/post ladder drops the weekday rather than substituting game_clock,
+    # which the plugin fills with status.displayClock = "0:00" for a scheduled
+    # game -- and with VS in the score slot and no row 3, that "0:00" was the
+    # only thing standing in for a kickoff time that then appeared nowhere.
+    ("football_pre_tomorrow", football(status_state="pre", away_score=0, home_score=0,
+                                       game_clock="0:00", period_label="", kalshi=None,
+                                       pre_game_label="Sat 11:00 AM",
+                                       extras={"possession": "", "down_distance": "",
+                                               "is_redzone": False, "ball_spot": "",
+                                               "yard_line": None, "distance": None,
+                                               "home_timeouts": 0, "away_timeouts": 0})),
+    # F4: halftime. ESPN keeps state == "in" but sends no situation, so the
+    # plugin stub zeroes the timeouts; the panel must show the clock alone, not
+    # six dim bars claiming neither team has a timeout left.
+    ("football_halftime", football(game_clock="0:00", period_label="HALF",
+                                   extras={"possession": "", "down_distance": "",
+                                           "is_redzone": False, "ball_spot": "",
+                                           "yard_line": None, "distance": None,
+                                           "home_timeouts": 0, "away_timeouts": 0})),
+    ("football_ncaa_tamu", ncaa("TAMU", "CLEM")),
+    ("football_ncaa_aandm", ncaa("AANDM", "MICH")),
     ("baseball_live", baseball()),
     ("soccer_live", soccer()),
 ]
