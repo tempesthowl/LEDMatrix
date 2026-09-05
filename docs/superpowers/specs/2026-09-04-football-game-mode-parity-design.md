@@ -178,16 +178,23 @@ so the bar is drawn in mirrored space and needs no branch below this line.
 
 Elements, left to right, in a 6px-tall bar spanning the gap:
 
-- **own end zone** — 3px cap at the left, possessing team's raw brand color, dimmed
+- **own end zone** — 3px cap at the left, possessing team's raw brand color
 - **field** — `(18,18,18)` with a 1px `(70,70,70)` midfield tick at 50
 - **line to gain** — 1px gold `(255,190,40)` column at `prog + distance`, drawn only
   when `distance` is a positive int and the marker lands inside the field
 - **ball** — 2px white column at `prog`, drawn last so it wins any overlap
 - **target end zone** — 3px cap at the right, defending team's raw brand color
 
-Raw `data["away_color"]/["home_color"]` are used, not `readable_label_color` —
-matching the possession bar's rule (`renderer.py:639`), since these are bar fills,
-not labels on black. No frame (the 2026-06-19 restyle removed frames).
+Both caps are the RAW `data["away_color"]/["home_color"]`, at full brightness —
+neither is dimmed. `readable_label_color` is deliberately not used, matching the
+possession bar's rule (`renderer.py:639`): these are bar fills, not labels on
+black, and brightening one of a pair to stay legible as text would make the two
+end zones no longer read as the two teams' actual colors. Dimming the possessing
+team's own cap was considered and dropped for the same reason — possession is
+already carried by the scorebug's football icon and by which side the ball marker
+is driving toward, so a second, subtler encoding of it only costs color fidelity.
+Pinned by `test_end_zone_colors_are_raw_not_label`. No frame (the 2026-06-19
+restyle removed frames).
 
 ### 5. Casing
 

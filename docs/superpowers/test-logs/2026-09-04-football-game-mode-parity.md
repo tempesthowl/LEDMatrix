@@ -131,7 +131,11 @@ is mixed case, and the pre-game frame still paints timeout bars.
 | 4 | `football_between_drives` | The partial-ESPN shape. Only the state and the timeout bars survive; no down-distance, no spot, **no field strip**. |
 | 5 | `football_pre` | `VS` in the score slot, `7:20 PM` in the panel, no situational rows, no field strip. |
 | 6 | `football_final` | `FINAL` in the panel, no situational rows, no field strip. |
-| 7 | `baseball_live` | Unchanged — byte-identical to its pre-branch render (verified by SHA-256 against `3eda21b7`). |
+| 6a | `football_pre_tomorrow` | F2 — a not-today kickoff. `11:00 AM` in the panel (the weekday dropped to fit 38px), **not** `0:00` and **not** `Sat 11:00`. |
+| 6b | `football_halftime` | F4 — ESPN keeps `state == "in"` at halftime but sends no `situation`. `HALF 0:00` alone; **no** six-dim-bar timeout stub. |
+| 6c | `football_ncaa_tamu` | F1 — TAMU/CLEM with real logos and possession. Labels on the 8px fallback font, football icon intact and clear of the score column. |
+| 6d | `football_ncaa_aandm` | F1 extreme — AANDM/MICH. Even the fallback leaves no icon room, so the icon is dropped rather than drawn on the `2` of `21`. Also shows a **pre-existing, out-of-scope** defect: with 5-char abbrevs the ESPN odds line overflows its panel both ways (2px left over the divider, clipped right). Reproduces identically at `cd6aefbd`. |
+| 7 | `baseball_live` | Unchanged — byte-identical to its pre-branch render (verified by SHA-256 against `3eda21b7`). **Live frame only:** that check covered `status_state == "in"` and nothing else, and it missed a real regression — baseball's PRE-game frame with a not-today kickoff label was changed by the shared shrink ladder (F3 below). |
 | 8 | `soccer_live` | Unchanged. |
 
 ---
@@ -193,9 +197,18 @@ the work is that the extras make sense.
 - **Float `yardLine`.** If a feed ever sends `65.0`, both the extractor and the
   renderer reject it identically and the strip silently never draws. Consistent
   by design, never observed in live payloads, not handled.
-- **Shrink-ladder steps 3 and 4** (drop-the-period, truncate) are implemented but
-  unreachable by any string in the table above — every overflow resolves at step
-  2. Kept deliberately as a backstop; see the ruling in the SDD ledger.
+- **Shrink-ladder steps 3 and 4 were claimed unreachable. That was wrong.**
+  The table above only enumerated live "period - clock" strings. A pre-game
+  kickoff label for a not-today game ("Sat 11:00 AM", 48px) also runs through
+  this ladder, reaches step 3, and step 3 substitutes `data["game_clock"]` —
+  which the football plugin fills from `status.displayClock` = `"0:00"` for a
+  scheduled game. So the reachable-but-undocumented path was actively producing
+  a WRONG value: `0:00` where the kickoff time belongs, and (since the score
+  slot holds `VS` and the big layout has no row 3) the kickoff time nowhere at
+  all. Baseball, whose `game_clock` is `""`, fell through to step 4 instead and
+  lost the AM/PM. Fixed by making the ladder state-aware: pre/post shrink by
+  dropping the leading weekday token, never by substituting the clock. Proof
+  frame `football_pre_tomorrow`.
 - **`homeTimeouts`/`awayTimeouts` default to `3`** when ESPN omits them
   (`football.py`), fabricating "all timeouts remaining". Pre-existing, flagged,
   not changed.
@@ -218,3 +231,50 @@ EMULATOR=true python scripts/dev/render_game_mode_frames.py <out_dir>
 Python-only (renderer + plugin + base class). `git pull` then
 `sudo systemctl restart ledmatrix.service` — a hard restart, since
 `/api/v3/display/restart` is a soft reload that will not pick up changed Python.
+
+---
+
+## Final review fix wave (2026-09-04, after `cd6aefbd`)
+
+A whole-branch review found six defects. All six are fixed; every fix was
+mutation-verified (revert the fix, confirm the new test FAILS, restore).
+
+| id | defect | fix | proof |
+|---|---|---|---|
+| F1 | With a logo the big scorebug starts labels at `text_x = 19` and `team_big` is ~10px/char, so a 4+ char NCAA abbrev collides with the score column at x=63. `TAMU`'s possession icon landed on the `2` of `21`; `AANDM` overran the score outright. 96 of the 220 `ncaa_logos` files are 4+ chars; Texas A&M ships as `TAMU`/`TA&M`/`AANDM`. Survived six reviews because **every** fixture set `away_logo`/`home_logo` to `None`, moving `text_x` to 4 and hiding 15px of the overflow. | Fall back to the 8px `fonts["team"]` for the LABELS only — decided once from the wider abbrev and the wider score string so the two rows never disagree — keeping the 14px logos and the big score font, and reserving the possession icon's 8px grid + 3px lead-in in that decision. Where even the fallback leaves no room the icon is dropped rather than drawn on the score. | `football_ncaa_tamu`, `football_ncaa_aandm`; `test_long_ncaa_abbrev_never_enters_the_score_column`, `test_possession_icon_never_lands_on_the_score`, `test_tamu_keeps_its_possession_icon`, `test_both_rows_share_one_label_font`, plus md5 goldens of the NFL and MLB frames captured from `cd6aefbd` |
+| F2 | Ladder step 3 substituted `data["game_clock"]`, which the football plugin fills from `status.displayClock` = `"0:00"` for a scheduled game, so a focused upcoming game showed `0:00` where the kickoff time belongs — and with `VS` in the score slot and no row 3, the kickoff time appeared nowhere. Reachable today via the FOCUS button on `/v3/remote` upcoming rows. | Ladder is state-aware: pre/post shrink by dropping the leading weekday token (`"Sat 11:00 AM"` → `"11:00 AM"`, 32px), never by substituting the clock. Live steps unchanged and all still reachable. | `football_pre_tomorrow`; `test_pre_game_kickoff_time_is_not_replaced_by_the_game_clock`, `test_live_ladder_still_collapses_then_falls_back_to_the_clock` |
+| F3 | Baseball's `game_clock` is `""`, so the same label fell through to truncation: `"Sat 11:00 AM"` → `"Sat 11:00"`, losing AM/PM — the one non-football frame this branch changed, against its own non-goals. | Same state-aware ladder; baseball now renders `11:00 AM`. | `test_baseball_pre_game_keeps_am_pm`, `test_baseball_short_states_are_drawn_unshrunk` |
+| F4 | At halftime ESPN reports `state == "in"` with no `situation`, so the plugin stub zeroes both timeout counts and the panel painted six dim bars asserting neither team had a timeout left, for 12-15 minutes. | Skip the timeout row when there is no situation at all (both counts falsy AND no `down_distance` AND no `ball_spot`). A real late-game 0/0 still draws — it arrives with a down & distance. | `football_halftime`; `test_halftime_draws_no_timeout_stub`, `test_late_game_zero_timeouts_still_draws_the_bars`, `test_ball_spot_alone_still_draws_the_timeout_bars` |
+| F5 | Spec §4 said the possessing team's own end-zone cap is "dimmed"; the code draws both caps in raw brand color. | **Spec corrected, code unchanged** — the raw-color rule was a deliberate, ledgered deviation matching `_render_possession_bar`. | spec §4 |
+| F6 | The extras-overflow helper allowed `x <= div2_x - 1` (134), four columns past the panel's real right edge (130), so a right-side bleed was invisible. | Tightened to the region `_render_extras_section` is actually handed (`div1_x + 4` .. `+ extras_w - 6 - 1`). | Mutation-proven: a 4px right shift of the state text FAILS 3 tests under the tight bound and PASSES all 4 under the old loose one |
+| F7 | Nothing asserted that the PLUGIN copy (`plugin-repos/football-scoreboard/football.py` — the one the Pi runs) still spreads `**self._situation_fields(...)`. The existing lockstep test compares the METHOD's source, not its call site, so deleting the spread from the plugin copy left the whole suite green while the feature died on hardware. | Source-text assertion over the call site in BOTH copies. | `test_both_copies_actually_call_situation_fields` |
+
+### Regression evidence
+
+- Seven of the eleven proof frames re-render **byte-identical** to `cd6aefbd`.
+- NFL (`KC`/`HOU`) and MLB (`HOU`/`WSH`) focus frames are pinned by md5 goldens
+  captured from the pre-fix renderer, so the F1 fallback cannot leak into a
+  sport whose abbrevs already fit. NBA, 3-digit MLB scores and logo-less frames
+  were checked the same way during development.
+- Full suite: `7 failed, 784 passed, 29 skipped, 22 errors` — the same seven
+  pre-existing failures (`test_web_api` ×3, `test_layout_manager`,
+  `test_basketball_scoreboard`, `test_visual_rendering`,
+  `test_pga_game_mode::test_parse_golf_score_handles_all_espn_formats`) and the
+  same 22 pre-existing collection errors as on `cd6aefbd`. 764 → 784 is the 20
+  tests this wave added.
+
+### Known-unfixed, found during this wave
+
+- **ESPN odds line overflows for 5-char abbrevs.** In `football_ncaa_aandm` the
+  bottom odds row bleeds 2px left over the second divider and is clipped on the
+  right. Reproduces identically at `cd6aefbd`, so it is pre-existing and belongs
+  to the odds panel, not this branch's scorebug/extras work. Not fixed here.
+- **F3's "identical to the base commit" acceptance bar could not be met, and
+  should not have been.** At `c6144451` a baseball pre-game with
+  `"Sat 11:00 AM"` draws the full 48px string right-aligned in a 38px panel —
+  ink from x=85, i.e. bleeding over the `div1_x = 89` divider into the
+  scorebug. Any in-panel result therefore differs from base by construction.
+  The fix keeps what F3 actually asked for (AM/PM survives) and the test asserts
+  that plus in-panel containment, rather than reproducing a broken baseline.
+  Frames base rendered correctly (live `T8`, `FINAL`, a same-day `7:20 PM`) are
+  asserted unchanged.
