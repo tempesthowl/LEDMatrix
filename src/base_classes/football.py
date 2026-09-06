@@ -114,15 +114,25 @@ class Football(SportsCore):
             # Format period/quarter
             period = status.get("period", 0)
             period_text = ""
-            if status["type"]["state"] == "in":
+            # Halftime FIRST: ESPN reports it as state "in" with name
+            # STATUS_HALFTIME (period 2, clock 0:00), so the generic "in"
+            # branch below would claim it and render "Q2 - 0:00" -- the old
+            # halftime elif after it was unreachable dead code. The clock is
+            # blanked too so the status line reads "HALFTIME", not
+            # "HALFTIME - 0:00".
+            is_half = (
+                status["type"]["state"] == "halftime"
+                or status["type"].get("name") == "STATUS_HALFTIME"
+            )
+            if is_half:
+                period_text = "HALFTIME"
+            elif status["type"]["state"] == "in":
                 if period == 0:
                     period_text = "Start" # Before kickoff
                 elif period >= 1 and period <= 4:
                     period_text = f"Q{period}" # OT starts after Q4
                 elif period > 4:
                     period_text = f"OT{period - 4}" # OT starts after Q4
-            elif status["type"]["state"] == "halftime" or status["type"]["name"] == "STATUS_HALFTIME": # Check explicit halftime state
-                period_text = "HALF"
             elif status["type"]["state"] == "post":
                  if period > 4 : period_text = "Final/OT"
                  else: period_text = "Final"
@@ -132,7 +142,7 @@ class Football(SportsCore):
             details.update({
                 "period": period,
                 "period_text": period_text, # Formatted quarter/status
-                "clock": status.get("displayClock", "0:00"),
+                "clock": "" if is_half else status.get("displayClock", "0:00"),
                 "home_timeouts": home_timeouts,
                 "away_timeouts": away_timeouts,
                 "down_distance_text": down_distance_text, # Added Down/Distance

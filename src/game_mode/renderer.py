@@ -631,11 +631,22 @@ class GameModeRenderer:
             b = self.fonts["status"].getbbox(text)
             return (b[2] - b[0]) <= w
 
+        # Rows A and B describe the CURRENT drive. ESPN keeps serving the last
+        # play's down/distance/spot frozen through halftime while dropping
+        # `possession` entirely -- so without a possessing team there is no
+        # current drive and this is stale data from a series that already
+        # ended. The field strip already refuses to draw for the same reason
+        # (it cannot orient itself), so suppressing these keeps the panel
+        # internally consistent instead of showing a red-zone down & distance
+        # for a drive that is over. Timeouts (row C) are game state, not drive
+        # state, and still render.
+        drive_known = extras.get("possession") in ("home", "away")
+
         # Row A: down & distance, uppercased to match the display language.
         # Goal-to-go ("1ST & GOAL" .. "4TH & GOAL") measures 41-43px against
         # the 38px panel; shrink it to fit with the standard scoreboard
         # compression before centering.
-        dd_text = (extras.get("down_distance") or "").upper()
+        dd_text = (extras.get("down_distance") or "").upper() if drive_known else ""
         if dd_text and not _fits(dd_text):
             if dd_text.endswith("GOAL"):
                 shrunk = dd_text[:-4] + "G"
@@ -651,8 +662,8 @@ class GameModeRenderer:
             dd_color = (255, 60, 60) if extras.get("is_redzone") else color_on
             _centered(dd_text, 10, dd_color)
 
-        # Row B: where the ball actually is ("KC 35").
-        spot = (extras.get("ball_spot") or "").upper()
+        # Row B: where the ball actually is ("KC 35"). Same drive gate as row A.
+        spot = (extras.get("ball_spot") or "").upper() if drive_known else ""
         if spot:
             _centered(spot, 17, color_spot)
 
