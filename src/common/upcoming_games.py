@@ -90,6 +90,16 @@ def normalize_upcoming_game(
         "start_label": label,
         "away_logo_url": raw.get("away_logo_url", ""),
         "home_logo_url": raw.get("home_logo_url", ""),
+        # ESPN's real team colors, carried through so the controller's
+        # _attach_team_colors() can fall back to them for teams missing from
+        # the curated team_colors.py table. Without these an upcoming college
+        # game resolves to grey-on-white and the scorebug is illegible -- the
+        # live path forwards them, and this one must match it. Absent for
+        # plugins that do not capture them, which is a harmless no-op.
+        "away_espn_color": raw.get("away_espn_color"),
+        "home_espn_color": raw.get("home_espn_color"),
+        "away_espn_alt_color": raw.get("away_espn_alt_color"),
+        "home_espn_alt_color": raw.get("home_espn_alt_color"),
     }
 
 
