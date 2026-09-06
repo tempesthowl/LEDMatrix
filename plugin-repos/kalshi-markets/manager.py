@@ -663,7 +663,25 @@ class KalshiMarketsPlugin(BasePlugin):
         "nfl": "KXNFLGAME",
         "nba": "KXNBAGAME",
         "nhl": "KXNHLGAME",
-        "ncaa_fb": "KXNCAAFBGAME",
+        # College football per-game 2-way markets. Verified 2026-09-06:
+        # KXNCAAFBGAME (with the "B") has zero open events —
+        # /events?series_ticker=KXNCAAFBGAME&status=open returns none. The
+        # real series is KXNCAAFGAME (no "B"), confirmed against live open
+        # events e.g. KXNCAAFGAME-26SEP12ASUTXAM "Arizona St. vs Texas A&M".
+        "ncaa_fb": "KXNCAAFGAME",
+        # NOT verified / left as-is 2026-09-06: KXNCAABBGAME has zero open
+        # events right now, but that's inconclusive (NCAA hoops is out of
+        # season in September) — AND the Kalshi series list shows
+        # KXNCAABBGAME's actual title is "College Baseball Game", not
+        # basketball. There's no single unambiguous basketball replacement
+        # either: candidates are KXNCAABGAME ("College Basketball Game"),
+        # KXNCAAMBGAME ("Men's College Basketball Men's Game"), and
+        # KXNCAAWBGAME ("College Basketball Women's Game"), all currently
+        # showing zero open events too. Separately, no plugin in this repo
+        # ever calls fetch_game_odds with league="ncaa_bb" — basketball-
+        # scoreboard uses "ncaam"/"ncaaw" and baseball-scoreboard uses
+        # "ncaa_baseball" — so this key appears to be dead code today.
+        # Left unchanged pending a real basketball-season verification.
         "ncaa_bb": "KXNCAABBGAME",
         # UFC fight-winner markets. Verified 2026-04-17 against
         # /events?series_ticker=KXUFCFIGHT — returns per-fight events with
@@ -688,6 +706,15 @@ class KalshiMarketsPlugin(BasePlugin):
         "GS": "GSW",    # Golden State Warriors
         "NY": "NYK",    # New York Knicks
         "SA": "SAS",    # San Antonio Spurs
+        # NCAA Football — verified 2026-09-06 against live Kalshi event
+        # KXNCAAFGAME-26SEP12ASUTXAM, title "Arizona St. vs Texas A&M":
+        # ESPN sends Texas A&M as "TA&M" (college-football scoreboard
+        # team.abbreviation), but Kalshi's ticker and title both use
+        # "TXAM" — "ta&m" doesn't appear in either, so the game silently
+        # showed no odds bar. The other CFB tickers checked the same day
+        # (WSU/WASH, LOU/MISS, WIS/ND, TXSO/PV) already match ESPN's
+        # abbreviation directly and need no mapping.
+        "TA&M": "TXAM",  # Texas A&M
     }
 
     def fetch_game_odds(
