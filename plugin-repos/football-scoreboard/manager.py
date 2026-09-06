@@ -3553,7 +3553,13 @@ class FootballScoreboardPlugin(BasePlugin if BasePlugin else object):
             live_manager = registry.get("managers", {}).get("live")
             if not live_manager:
                 continue
-            game_list = getattr(live_manager, "games_list", []) or []
+            # Live managers publish to `live_games`; `games_list` is the
+            # recent/upcoming managers' attribute and is always empty on a live
+            # manager. Reading it meant football live games never reached the
+            # remote's LIVE list at all -- unnoticed because the NFL season had
+            # not started and NCAA FB was filtered out by favorites-only.
+            # Baseball and soccer already read `live_games`; this matches them.
+            game_list = getattr(live_manager, "live_games", []) or []
             for g in game_list:
                 if not g.get("is_live", False):
                     continue
