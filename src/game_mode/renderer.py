@@ -117,6 +117,24 @@ def _opposite_luminance_shadow(color) -> Tuple[int, int, int]:
     return COLOR_BLACK if luminance > _SHADOW_FLIP_LUMINANCE else COLOR_WHITE
 
 
+def _valid_rgb(value):
+    """Return `value` as an (r, g, b) int tuple, or None if it isn't one.
+
+    focus_data carries colors as tuples, but a plugin can leave them None (or
+    the controller can null them on a resolution failure), so the caller must
+    be able to tell "resolved" from "absent" and fall back rather than paint
+    a garbage color.
+    """
+    if not isinstance(value, (tuple, list)) or len(value) != 3:
+        return None
+    out = []
+    for c in value:
+        if isinstance(c, bool) or not isinstance(c, int) or not 0 <= c <= 255:
+            return None
+        out.append(c)
+    return tuple(out)
+
+
 class GameModeRenderer:
     """Renders a focused single-game display with Kalshi odds."""
 
@@ -259,16 +277,24 @@ class GameModeRenderer:
         away_score = data.get("away_score", 0)
         home_score = data.get("home_score", 0)
 
-        # Resolve team colors with collision detection so two similar primaries
-        # (e.g., both navy) don't render as indistinguishable blobs. Falls back
-        # to whatever the plugin already set on data if the helper is unavailable.
-        if get_contrasting_pair is not None and data.get("league"):
-            home_color, away_color = get_contrasting_pair(
-                home_team, away_team, data.get("league", "")
-            )
-        else:
-            away_color = data.get("away_color", COLOR_WHITE)
-            home_color = data.get("home_color", COLOR_WHITE)
+        # Team colors. PREFER what the plugin already resolved onto data: it
+        # called get_contrasting_pair() with the same collision detection AND
+        # with ESPN's per-team colors, which only the plugin has access to.
+        # Re-deriving here from the abbrev alone silently discarded those,
+        # so every college team -- 122 of 130+ FBS programs are absent from
+        # the curated table -- rendered grey-on-white no matter what the
+        # plugin resolved. Re-derivation stays as the fallback for callers
+        # that don't set colors.
+        away_color = _valid_rgb(data.get("away_color"))
+        home_color = _valid_rgb(data.get("home_color"))
+        if away_color is None or home_color is None:
+            if get_contrasting_pair is not None and data.get("league"):
+                home_color, away_color = get_contrasting_pair(
+                    home_team, away_team, data.get("league", "")
+                )
+            else:
+                away_color = data.get("away_color", COLOR_WHITE)
+                home_color = data.get("home_color", COLOR_WHITE)
 
         # Scores always white — possession icon (not color) indicates leading/active team
         away_score_color = COLOR_WHITE

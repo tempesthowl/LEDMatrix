@@ -33,7 +33,11 @@ def football(status="in", **extras_over):
     return {
         "sport": "football", "league": "nfl", "game_id": "1",
         "away_team": "KC", "home_team": "HOU",
-        "away_color": (227, 24, 55), "home_color": (0, 60, 160),
+        # Exactly what get_contrasting_pair("HOU","KC","nfl") returns, i.e.
+        # what a real focus_data carries. The renderer now honors these instead
+        # of re-deriving, so an unrealistic fixture would test a frame that can
+        # never occur in production.
+        "away_color": (255, 184, 28), "home_color": (167, 25, 48),
         "away_score": 17, "home_score": 14,
         "status_state": status,
         "game_clock": "8:42" if status == "in" else "",
@@ -51,7 +55,8 @@ def baseball():
     return {
         "sport": "baseball", "league": "mlb", "game_id": "2",
         "away_team": "HOU", "home_team": "WSH",
-        "away_color": (235, 110, 31), "home_color": (0, 50, 120),
+        # get_contrasting_pair("WSH","HOU","mlb") -> what real focus_data holds.
+        "away_color": (235, 110, 31), "home_color": (171, 0, 3),
         "away_score": 3, "home_score": 5,
         "status_state": "in", "game_clock": "", "period_label": "B7",
         "status_detail": "", "away_logo": None, "home_logo": None,
@@ -357,17 +362,27 @@ def test_end_zone_colors_are_raw_not_label(renderer):
     """Own end zone (left) must be the possessing team's raw color; the target
     end zone (right, the defense driving-toward zone) must be the other
     team's raw color -- never readable_label_color, which for HOU/nfl returns
-    (167, 25, 48), visibly different from the raw navy (0, 60, 160)."""
+    (167, 25, 48).
+
+    This test sets its own colors rather than using the shared fixture: the
+    fixture now carries HOU's real resolved color, which happens to EQUAL
+    readable_label_color("HOU","nfl"), so it could no longer tell the two
+    apart. Distinct raw values keep the assertion meaningful."""
     AWAY = (227, 24, 55)
     HOME = (0, 60, 160)
 
-    away_poss = renderer.render(football(possession="away")).convert("RGB")
+    def _f(**kw):
+        d = football(**kw)
+        d["away_color"], d["home_color"] = AWAY, HOME
+        return d
+
+    away_poss = renderer.render(_f(possession="away")).convert("RGB")
     lo, hi = _field_bar_span(away_poss, renderer)
     assert lo is not None and hi is not None
     assert away_poss.getpixel((lo - 1, 18)) == AWAY, "away possession: own (left) end zone should be raw away color"
     assert away_poss.getpixel((hi + 1, 18)) == HOME, "away possession: target (right) end zone should be raw home color"
 
-    home_poss = renderer.render(football(possession="home")).convert("RGB")
+    home_poss = renderer.render(_f(possession="home")).convert("RGB")
     lo, hi = _field_bar_span(home_poss, renderer)
     assert lo is not None and hi is not None
     assert home_poss.getpixel((lo - 1, 18)) == HOME, "home possession: own (left) end zone should be raw home color"
@@ -399,8 +414,13 @@ def test_ball_marker_never_overlaps_end_zone_at_extremes(renderer):
             f"ball marker at {bx} should stay within the field [{fx0}, {fx1}] "
             f"for yard_line={yard_line}"
         )
-        assert img.getpixel((fx0 - 1, 18)) == (0, 60, 160), f"own end zone overwritten at yard_line={yard_line}"
-        assert img.getpixel((fx1 + 1, 18)) == (227, 24, 55), f"target end zone overwritten at yard_line={yard_line}"
+        # Derived from the fixture, not hardcoded: the renderer now honors the
+        # colors focus_data carries, so a hardcoded RGB here would silently
+        # drift the moment the fixture changes.
+        _f = football(possession="home")
+        own, target = _f["home_color"], _f["away_color"]
+        assert img.getpixel((fx0 - 1, 18)) == own, f"own end zone overwritten at yard_line={yard_line}"
+        assert img.getpixel((fx1 + 1, 18)) == target, f"target end zone overwritten at yard_line={yard_line}"
 
 
 def test_line_to_gain_guarded_past_the_target_end_zone(renderer):
@@ -708,10 +728,19 @@ def test_short_abbrevs_keep_the_big_label_font(renderer):
         assert h >= 9, f"{why}: label shrank to {h}px tall; the fallback must not fire"
 
 
-# Captured by rendering these exact frames with the renderer at cd6aefbd -- the
-# branch HEAD before the F1 fix. Any change to these hashes means the
-# big-scorebug fallback leaked into a sport it must not touch.
-GOLDEN_NFL = "f9cc9245aae5c7fda7d99bce3b45dbf3"
+# Golden frames for NFL/MLB: the big-scorebug font fallback must never fire for
+# them, and these hashes catch it if it ever does.
+#
+# Regenerated 2026-09-06. The fixtures previously carried invented team colors
+# that the renderer discarded -- it re-derived the scorebug's colors from the
+# abbrev while the Kalshi bar used the fixture's, so the golden frame mixed two
+# different color sets and could not occur in production. The renderer now
+# honors the colors focus_data already resolved (which is how ESPN's colors
+# reach college teams at all), so the fixtures were corrected to the real
+# get_contrasting_pair() output. With realistic colors the old and new
+# renderers agree by construction: re-derivation returns exactly these values,
+# and the bar already used them.
+GOLDEN_NFL = "49a24f59e3a59d53ec7f0ac9b12f4196"
 GOLDEN_MLB = "9127f05e1a57992cedf8e6a11fc6980a"
 
 
