@@ -236,6 +236,91 @@ class NCAAFBLiveManager(BaseNCAAFBManager, FootballLive):  # Renamed class
                 "Initialized NCAAFBLiveManager in live mode"
             )  # Updated log message
 
+    # ESPN silently ignores the `groups` query param whenever `dates` is a
+    # multi-day range (verified against live ESPN traffic). The primary
+    # _fetch_todays_games() request above uses a yesterday-through-today
+    # range to catch overnight rollover, so it can never be scoped to a
+    # single division via `groups` and therefore misses FCS-only games
+    # (e.g. Texas Southern @ Prairie View A&M). Fetch FCS separately with
+    # a true single-day `dates` value, which is the only way ESPN honors
+    # `groups`, then merge into the primary result below.
+    FCS_GROUP_ID = "81"
+    # Single-day groups=81 requests run ~100-160 events on the biggest
+    # Saturdays; bound well clear of that with headroom, not the 1000-row
+    # ceiling the primary request uses.
+    FCS_FETCH_LIMIT = 300
+
+    def _fetch_fcs_games(self) -> Optional[Dict]:
+        """Fetch today's FCS (group 81) games via a single-day request.
+
+        Only ever called from this NCAA-FB live path; never touches the
+        shared _fetch_todays_games() used by NFLLiveManager. Fails soft:
+        any error here is logged and swallowed so the primary FBS/live
+        fetch is never affected.
+        """
+        try:
+            tz = pytz.timezone("America/New_York")
+            formatted_date = datetime.now(tz).strftime("%Y%m%d")
+            self.logger.debug(
+                f"Fetching FCS (group {self.FCS_GROUP_ID}) games for {formatted_date}"
+            )
+            response = self.session.get(
+                ESPN_NCAAFB_SCOREBOARD_URL,
+                params={
+                    "dates": formatted_date,
+                    "groups": self.FCS_GROUP_ID,
+                    "limit": self.FCS_FETCH_LIMIT,
+                },
+                headers=self.headers,
+                timeout=10,
+            )
+            response.raise_for_status()
+            data = response.json()
+            events = data.get("events", [])
+            self.logger.info(f"Fetched {len(events)} FCS games for {formatted_date}")
+            return {"events": events}
+        except Exception as e:
+            self.logger.warning(
+                f"FCS games fetch failed, continuing without them: {e}"
+            )
+            return None
+
+    @staticmethod
+    def _merge_events_by_id(
+        primary_events: List[dict], secondary_events: List[dict]
+    ) -> List[dict]:
+        """Merge two ESPN event lists, deduping by event id (primary wins)."""
+        merged = list(primary_events)
+        seen_ids = {event.get("id") for event in primary_events}
+        for event in secondary_events:
+            event_id = event.get("id")
+            if event_id is not None and event_id in seen_ids:
+                continue
+            merged.append(event)
+            if event_id is not None:
+                seen_ids.add(event_id)
+        return merged
+
+    def _fetch_data(self) -> Optional[Dict]:
+        """Fetch live NCAA FB games: the existing FBS/live range request,
+        plus a supplemental single-day FCS (group 81) request, merged and
+        deduped by ESPN event id. FCS failures never affect the primary
+        result (see _fetch_fcs_games).
+        """
+        primary = self._fetch_todays_games()
+        if primary is None:
+            return None
+
+        fcs = self._fetch_fcs_games()
+        fcs_events = fcs.get("events", []) if fcs else []
+        if not fcs_events:
+            return primary
+
+        merged_events = self._merge_events_by_id(
+            primary.get("events", []), fcs_events
+        )
+        return {"events": merged_events}
+
 
 class NCAAFBRecentManager(BaseNCAAFBManager, SportsRecent):  # Renamed class
     """Manager for recently completed NCAA FB games."""  # Updated docstring
