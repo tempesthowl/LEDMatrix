@@ -3772,7 +3772,16 @@ class FootballScoreboardPlugin(BasePlugin if BasePlugin else object):
                 mgr = registry.get("managers", {}).get(mgr_type)
                 if not mgr:
                     continue
-                game_list = getattr(mgr, "games_list", []) or []
+                # Live managers publish to `live_games`; recent/upcoming use
+                # `games_list`. Reading only games_list made every LIVE game
+                # invisible here, so _get_league_for_game() returned None and
+                # get_game_focus_data() fell back to "nfl" -- sending college
+                # matchups to the KXNFLGAME series, where they never match, so
+                # the focus view's Kalshi bar was blank. Matches baseball/soccer.
+                if mgr_type == "live":
+                    game_list = getattr(mgr, "live_games", []) or []
+                else:
+                    game_list = getattr(mgr, "games_list", []) or []
                 for g in game_list:
                     if str(g.get("id", "")) == str(game_id):
                         return g
@@ -3787,7 +3796,16 @@ class FootballScoreboardPlugin(BasePlugin if BasePlugin else object):
                 mgr = registry.get("managers", {}).get(mgr_type)
                 if not mgr:
                     continue
-                game_list = getattr(mgr, "games_list", []) or []
+                # Live managers publish to `live_games`; recent/upcoming use
+                # `games_list`. Reading only games_list made every LIVE game
+                # invisible here, so _get_league_for_game() returned None and
+                # get_game_focus_data() fell back to "nfl" -- sending college
+                # matchups to the KXNFLGAME series, where they never match, so
+                # the focus view's Kalshi bar was blank. Matches baseball/soccer.
+                if mgr_type == "live":
+                    game_list = getattr(mgr, "live_games", []) or []
+                else:
+                    game_list = getattr(mgr, "games_list", []) or []
                 for g in game_list:
                     if str(g.get("id", "")) == str(game_id):
                         return league_id
