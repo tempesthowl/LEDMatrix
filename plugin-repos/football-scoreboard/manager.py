@@ -3569,6 +3569,13 @@ class FootballScoreboardPlugin(BasePlugin if BasePlugin else object):
                     "league": league_id,
                     "away_logo_url": g.get("away_logo_url", ""),
                     "home_logo_url": g.get("home_logo_url", ""),
+                    # ESPN's real team colors — fallback for teams missing
+                    # from the curated team_colors.py table (see
+                    # _attach_team_colors in display_controller.py).
+                    "away_espn_color": g.get("away_espn_color"),
+                    "home_espn_color": g.get("home_espn_color"),
+                    "away_espn_alt_color": g.get("away_espn_alt_color"),
+                    "home_espn_alt_color": g.get("home_espn_alt_color"),
                 })
 
         return games
@@ -3665,7 +3672,13 @@ class FootballScoreboardPlugin(BasePlugin if BasePlugin else object):
         _away_abbr = game.get("away_abbr", "")
         _home_abbr = game.get("home_abbr", "")
         if get_contrasting_pair is not None:
-            _home_color, _away_color = get_contrasting_pair(_home_abbr, _away_abbr, _league_key)
+            _home_color, _away_color = get_contrasting_pair(
+                _home_abbr, _away_abbr, _league_key,
+                home_espn_color=game.get("home_espn_color"),
+                away_espn_color=game.get("away_espn_color"),
+                home_espn_alt_color=game.get("home_espn_alt_color"),
+                away_espn_alt_color=game.get("away_espn_alt_color"),
+            )
         elif get_team_color is not None:
             _home_color = get_team_color(_home_abbr, _league_key)
             _away_color = get_team_color(_away_abbr, _league_key)

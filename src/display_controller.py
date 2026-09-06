@@ -1356,11 +1356,20 @@ class DisplayController:
         """
         try:
             home_rgb, away_rgb = get_contrasting_pair(
-                game.get("home_team", ""), game.get("away_team", ""), game.get("league", "")
+                game.get("home_team", ""), game.get("away_team", ""), game.get("league", ""),
+                home_espn_color=game.get("home_espn_color"),
+                away_espn_color=game.get("away_espn_color"),
+                home_espn_alt_color=game.get("home_espn_alt_color"),
+                away_espn_alt_color=game.get("away_espn_alt_color"),
             )
             game["away_color"] = self._rgb_to_hex(away_rgb)
             game["home_color"] = self._rgb_to_hex(home_rgb)
-        except Exception:
+        except Exception as e:  # pylint: disable=broad-except
+            # Log it: a silent None here renders as grey/white team names, the
+            # exact symptom that hid the missing NCAA colors for months.
+            logger.debug("team color resolution failed for %s@%s (%s): %s",
+                         game.get("away_team"), game.get("home_team"),
+                         game.get("league"), e)
             game["away_color"] = None
             game["home_color"] = None
         return game

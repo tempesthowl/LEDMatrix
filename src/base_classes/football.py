@@ -141,6 +141,15 @@ class Football(SportsCore):
                 "possession": posession, # ID of team with possession
                 "possession_indicator": possession_indicator, # Added for easy home/away check
                 "scoring_event": scoring_event, # Track scoring events (TOUCHDOWN, FIELD GOAL, PAT)
+                # ESPN's real team colors, captured as a fallback for the
+                # curated team_colors.py table (only ~8 NCAA programs are
+                # hand-tuned there; ESPN supplies color/alternateColor for
+                # every team). Hex strings arrive WITHOUT a leading '#' and
+                # are parsed defensively downstream in team_colors.py.
+                "home_espn_color": home_team.get("team", {}).get("color"),
+                "home_espn_alt_color": home_team.get("team", {}).get("alternateColor"),
+                "away_espn_color": away_team.get("team", {}).get("color"),
+                "away_espn_alt_color": away_team.get("team", {}).get("alternateColor"),
                 **self._situation_fields(situation, status["type"]["state"]),
             })
 

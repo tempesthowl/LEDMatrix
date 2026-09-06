@@ -12,6 +12,8 @@ side can be swapped to its secondary brand color so the two team
 rows remain readable on a 4mm LED panel.
 """
 
+from typing import Optional
+
 # MLB Teams — primary
 MLB_COLORS = {
     "ARI": (167, 25, 48),     # Sedona Red
@@ -475,7 +477,35 @@ def _rgb_distance(a: tuple, b: tuple) -> float:
     return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2) ** 0.5
 
 
-def get_contrasting_pair(home_abbrev: str, away_abbrev: str, league: str) -> tuple:
+def _parse_espn_hex(hex_str) -> Optional[tuple]:
+    """Parse a bare ESPN hex color (e.g. "500000") into an (r, g, b) tuple.
+
+    ESPN's scoreboard API supplies `color`/`alternateColor` as hex WITHOUT a
+    leading '#'. Anything that doesn't match that exact contract — None,
+    empty, non-hex characters, wrong length, or a stray '#' prefix (which
+    makes the string 7 chars, not 6) — is treated as malformed and yields
+    None so the caller falls through to the next color source. Never raises.
+    """
+    if not isinstance(hex_str, str):
+        return None
+    s = hex_str.strip()
+    if len(s) != 6:
+        return None
+    try:
+        return (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
+    except ValueError:
+        return None
+
+
+def get_contrasting_pair(
+    home_abbrev: str,
+    away_abbrev: str,
+    league: str,
+    home_espn_color: Optional[str] = None,
+    away_espn_color: Optional[str] = None,
+    home_espn_alt_color: Optional[str] = None,
+    away_espn_alt_color: Optional[str] = None,
+) -> tuple:
     """Return (home_rgb, away_rgb), swapping to secondary if primaries collide.
 
     Threshold ~80 in RGB Euclidean distance: below that, two colors look similar
@@ -486,6 +516,14 @@ def get_contrasting_pair(home_abbrev: str, away_abbrev: str, league: str) -> tup
         home_abbrev: Home team abbreviation.
         away_abbrev: Away team abbreviation.
         league: League key (e.g., "mlb", "nfl", "nba").
+        home_espn_color: Home team's live ESPN `color` hex (no '#'), used ONLY
+            when the curated table above has no entry for this team. The
+            curated table is hand-tuned for LED contrast and always wins.
+        away_espn_color: Away team's live ESPN `color` hex. Same rule.
+        home_espn_alt_color: Home team's live ESPN `alternateColor` hex, used
+            as the collision-swap fallback when the curated secondary table
+            has no entry for this team (in place of the generic white).
+        away_espn_alt_color: Away team's live ESPN `alternateColor` hex.
 
     Returns:
         (home_rgb, away_rgb) tuple. One side may be the team's secondary
@@ -497,10 +535,26 @@ def get_contrasting_pair(home_abbrev: str, away_abbrev: str, league: str) -> tup
     primary_map = _get_league_map(league, secondary=False)
     secondary_map = _get_league_map(league, secondary=True)
 
-    home_primary = primary_map.get(home_key) or get_team_color(home_key, league)
-    away_primary = primary_map.get(away_key) or get_team_color(away_key, league)
-    home_secondary = secondary_map.get(home_key, _DEFAULT_SECONDARY)
-    away_secondary = secondary_map.get(away_key, _DEFAULT_SECONDARY)
+    home_primary = (
+        primary_map.get(home_key)
+        or _parse_espn_hex(home_espn_color)
+        or get_team_color(home_key, league)
+    )
+    away_primary = (
+        primary_map.get(away_key)
+        or _parse_espn_hex(away_espn_color)
+        or get_team_color(away_key, league)
+    )
+    home_secondary = (
+        secondary_map.get(home_key)
+        or _parse_espn_hex(home_espn_alt_color)
+        or _DEFAULT_SECONDARY
+    )
+    away_secondary = (
+        secondary_map.get(away_key)
+        or _parse_espn_hex(away_espn_alt_color)
+        or _DEFAULT_SECONDARY
+    )
 
     # A near-black/grey primary (e.g. Germany 40,40,40) is invisible on the black
     # LED panel — swap to the brighter secondary kit before collision detection.
