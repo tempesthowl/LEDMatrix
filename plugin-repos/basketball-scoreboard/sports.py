@@ -2507,8 +2507,18 @@ class SportsLive(SportsCore):
             if str(details.get("id", "")) != str(game_id):
                 continue
 
+            # Carry ESPN odds across the refresh. _extract_game_details does
+            # NOT populate odds -- they come from the separate async _fetch_odds
+            # run by the live/upcoming cycles -- so `details` has no "odds" key.
+            # Returning it as-is blanks Game Mode's SPR/ML/O-U row, and writing
+            # it into live_games below also destroys the odds the live cycle had
+            # already attached, keeping the row blank until the next full
+            # update(). Copy them forward rather than re-fetching: _fetch_odds
+            # can block up to 2s and this runs in the focus render path.
             for i, g in enumerate(self.live_games):
                 if str(g.get("id", "")) == str(game_id):
+                    if not details.get("odds") and g.get("odds"):
+                        details["odds"] = g["odds"]
                     self.live_games[i] = details
                     break
             self.last_update = now
