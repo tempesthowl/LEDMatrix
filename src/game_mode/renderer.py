@@ -88,6 +88,35 @@ def _text_w(font, text: str) -> int:
     return b[2] - b[0]
 
 
+_SHADOW_FLIP_LUMINANCE = 210  # near-white only; see _opposite_luminance_shadow
+
+
+def _opposite_luminance_shadow(color) -> Tuple[int, int, int]:
+    """Pick an emboss shadow color with opposite luminance from `color`.
+
+    A team color's resolved shadow must never match the color itself — when
+    it does (e.g. NCAAFB's grey/white fallbacks), the 1px down-right emboss
+    duplicate fuses with the fill into an illegible blob instead of adding
+    depth. Relative luminance (Rec. 709 luma weights, matching human
+    perception of brightness) decides light vs dark, NOT a naive channel
+    average — a bright, fully-saturated color like pure green (0, 255, 0)
+    reads as light under this formula even though a plain sum/3 average can
+    sit near the naive midpoint, so the (weighted) relative-luminance test is
+    the one that actually predicts whether white or black recedes into it.
+
+    Threshold is deliberately high (210, near-white only). The shadow exists
+    to create an edge; a white shadow only fails to do that once the fill is
+    itself near-white. Lower thresholds would also flip established brand
+    colors that render correctly today -- KC gold (255,184,28) sits at 187.8
+    and Michigan maize (255,203,5) at 199.8 -- restyling approved scorebugs
+    to fix a bug they never had. Fixing the reported blob does not require
+    touching them.
+    """
+    r, g, b = color[0], color[1], color[2]
+    luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    return COLOR_BLACK if luminance > _SHADOW_FLIP_LUMINANCE else COLOR_WHITE
+
+
 class GameModeRenderer:
     """Renders a focused single-game display with Kalshi odds."""
 
@@ -338,8 +367,18 @@ class GameModeRenderer:
 
         away_disp = _fit_name(away_team, data.get("away_name", ""), str(away_score))
         home_disp = _fit_name(home_team, data.get("home_name", ""), str(home_score))
-        self._draw_shadowed(draw, (text_x, row1_y + text_dy), away_disp, away_color, team_font, COLOR_WHITE)
-        self._draw_shadowed(draw, (text_x, row2_y + text_dy), home_disp, home_color, team_font, COLOR_WHITE)
+        # Shadow follows the RESOLVED color's own luminance, not a hardcoded
+        # white — a light team color (white/near-white fallback grey) needs a
+        # dark shadow or the emboss duplicate fuses with the fill (see
+        # _opposite_luminance_shadow). Colors themselves are untouched.
+        self._draw_shadowed(
+            draw, (text_x, row1_y + text_dy), away_disp, away_color, team_font,
+            _opposite_luminance_shadow(away_color),
+        )
+        self._draw_shadowed(
+            draw, (text_x, row2_y + text_dy), home_disp, home_color, team_font,
+            _opposite_luminance_shadow(home_color),
+        )
 
         # --- Possession icon: draw after the possessing team's abbrev (live only) ---
         if _icon_grid is not None:
