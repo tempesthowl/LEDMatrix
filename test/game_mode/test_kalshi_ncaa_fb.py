@@ -51,6 +51,7 @@ def _make_plugin(events_by_series, markets_by_ticker):
     plugin.cache_manager.set.return_value = None
     plugin.LEAGUE_SERIES_MAP = K.LEAGUE_SERIES_MAP
     plugin.KALSHI_ABBREV_MAP = K.KALSHI_ABBREV_MAP
+    plugin.KALSHI_ABBREV_MAP_BY_LEAGUE = K.KALSHI_ABBREV_MAP_BY_LEAGUE
 
     def _get(url, **kwargs):
         if "/events" in url:
@@ -88,8 +89,12 @@ def test_ncaa_fb_series_ticker_is_not_typoed():
 
 
 def test_kalshi_abbrev_map_maps_texas_am():
-    """ESPN's "TA&M" must map to Kalshi's "TXAM" for Texas A&M."""
-    assert K.KALSHI_ABBREV_MAP["TA&M"] == "TXAM"
+    """ESPN's "TA&M" must map to Kalshi's "TXAM" for Texas A&M.
+
+    The entry moved to the league-namespaced map on 2026-09-07 when the rest
+    of the college-football mismatches landed; see test_kalshi_cfb_abbrev.py
+    for why college codes must not sit in the shared cross-league map."""
+    assert K.KALSHI_ABBREV_MAP_BY_LEAGUE["ncaa_fb"]["TA&M"] == "TXAM"
 
 
 def test_fetch_game_odds_matches_wsu_at_washington():
@@ -152,3 +157,50 @@ def test_fetch_game_odds_matches_texas_am_via_abbrev_map():
     assert result["market_ticker"] == tk
     assert result["fav_pct"] == 72
     assert result["dog_pct"] == 28
+
+
+def test_fetch_game_odds_matches_oklahoma_via_league_map():
+    """ESPN sends Oklahoma as "OU"; Kalshi's ticker/title use "OKLA".
+
+    Same shape as the Texas A&M bug, one of 44 such mismatches found on
+    2026-09-07 once FCS coverage was turned on."""
+    tk = _today_ticker("MICHOKLA")
+    events = {
+        "KXNCAAFGAME": [
+            {"event_ticker": tk, "title": "Michigan vs Oklahoma"},
+        ],
+    }
+    markets = {tk: _win_markets(tk, "MICH", 0.45, "OKLA", 0.55)}
+    plugin = _make_plugin(events, markets)
+
+    result = K.fetch_game_odds(plugin, "MICH", "OU", "ncaa_fb")
+
+    assert result is not None
+    assert result["market_ticker"] == tk
+    assert result["fav_pct"] == 55
+    assert result["dog_pct"] == 45
+
+
+def test_college_mapping_does_not_leak_into_nfl_reverse_lookup():
+    """Regression guard for the collision that forced league namespacing.
+
+    ESPN's Indiana Hoosiers are "IU" -> Kalshi "IND". Kalshi ALSO uses "IND"
+    for the Indianapolis Colts (live KXNFLGAME on 2026-09-07: "IND Colts vs
+    KC Chiefs"). fetch_game_odds inverts the abbreviation map to name the
+    favourite, so a flat map would resolve the Colts' "IND" suffix back to
+    "IU" and render the wrong team on the panel."""
+    ymmdd = datetime.now().strftime("%y%b%d").upper()
+    tk = f"KXNFLGAME-{ymmdd}KCIND"
+    events = {
+        "KXNFLGAME": [
+            {"event_ticker": tk, "title": "IND Colts vs KC Chiefs"},
+        ],
+    }
+    markets = {tk: _win_markets(tk, "KC", 0.38, "IND", 0.62)}
+    plugin = _make_plugin(events, markets)
+
+    result = K.fetch_game_odds(plugin, "KC", "IND", "nfl")
+
+    assert result is not None
+    assert result["fav_pct"] == 62
+    assert result["fav_team"] == "IND", "the Colts must not be labelled IU"

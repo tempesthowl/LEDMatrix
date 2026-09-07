@@ -706,15 +706,77 @@ class KalshiMarketsPlugin(BasePlugin):
         "GS": "GSW",    # Golden State Warriors
         "NY": "NYK",    # New York Knicks
         "SA": "SAS",    # San Antonio Spurs
-        # NCAA Football — verified 2026-09-06 against live Kalshi event
-        # KXNCAAFGAME-26SEP12ASUTXAM, title "Arizona St. vs Texas A&M":
-        # ESPN sends Texas A&M as "TA&M" (college-football scoreboard
-        # team.abbreviation), but Kalshi's ticker and title both use
-        # "TXAM" — "ta&m" doesn't appear in either, so the game silently
-        # showed no odds bar. The other CFB tickers checked the same day
-        # (WSU/WASH, LOU/MISS, WIS/ND, TXSO/PV) already match ESPN's
-        # abbreviation directly and need no mapping.
-        "TA&M": "TXAM",  # Texas A&M
+        # NCAA Football entries live in KALSHI_ABBREV_MAP_BY_LEAGUE below,
+        # NOT here — college abbreviations collide with professional ones.
+    }
+
+    # Per-league abbreviation overrides, consulted BEFORE KALSHI_ABBREV_MAP.
+    #
+    # Why this is namespaced rather than merged into the flat map above:
+    # college and professional abbreviations collide. ESPN's Indiana Hoosiers
+    # are "IU" and Kalshi calls them "IND" — but "IND" is also Kalshi's code
+    # for the Indianapolis Colts (verified 2026-09-07 on the live KXNFLGAME
+    # series: "IND Colts vs KC Chiefs", market suffix "IND"). fetch_game_odds
+    # inverts this map to label the favourite, so a flat "IU" -> "IND" entry
+    # would resolve every Colts game's favourite to "IU" on the panel.
+    # ESPN's "BUF" (Buffalo Bulls -> Kalshi "BUFF") collides with the Bills
+    # the same way.
+    #
+    # Derived 2026-09-07 by cross-referencing all 264 team codes appearing in
+    # open KXNCAAFGAME market tickers against ESPN's 759-team college-football
+    # index, then verifying each pair by school name. Teams where ESPN and
+    # Kalshi already agree are deliberately absent: an unnecessary entry is
+    # not harmless, it hijacks the reverse lookup for the team it names.
+    KALSHI_ABBREV_MAP_BY_LEAGUE: Dict[str, Dict[str, str]] = {
+        "ncaa_fb": {
+            "ACU": "AC",      # Abilene Christian Wildcats
+            "AF": "AFA",      # Air Force Falcons
+            "UAPB": "ARPB",   # Arkansas-Pine Bluff Golden Lions
+            "APSU": "PEAY",   # Austin Peay Governors
+            "BCU": "COOK",    # Bethune-Cookman Wildcats
+            "BOIS": "BSU",    # Boise State Broncos
+            "BUF": "BUFF",    # Buffalo Bulls (NOT the Bills — see note above)
+            "BTLR": "BUT",    # Butler Bulldogs
+            "CAM": "CAMP",    # Campbell Fighting Camels
+            "CLT": "CHAR",    # Charlotte 49ers
+            "UTC": "CHAT",    # Chattanooga Mocs
+            "CCU": "CCAR",    # Coastal Carolina Chanticleers
+            "COLU": "CLMB",   # Columbia Lions
+            "EKU": "EKY",     # Eastern Kentucky Colonels
+            "GWEB": "WEBB",   # Gardner-Webb Runnin' Bulldogs
+            "UIW": "IW",      # Incarnate Word Cardinals
+            "IU": "IND",      # Indiana Hoosiers (NOT the Colts)
+            "JXST": "JVST",   # Jacksonville State Gamecocks
+            "LIN": "LINW",    # Lindenwood Lions
+            "UL": "ULL",      # Louisiana Ragin' Cajuns
+            "MCN": "MCNS",    # McNeese Cowboys
+            "MERC": "MHU",    # Mercyhurst Lakers
+            "M-OH": "MOH",    # Miami (OH) RedHawks
+            "MTSU": "MTU",    # Middle Tennessee Blue Raiders
+            "MIZ": "MIZZ",    # Missouri Tigers
+            "MOST": "MOSU",   # Missouri State Bears
+            "MUR": "MURR",    # Murray State Racers
+            "NCSU": "NCST",   # NC State Wolfpack
+            "NHVN": "NHC",    # New Haven Chargers
+            "NU": "NW",       # Northwestern Wildcats
+            "OU": "OKLA",     # Oklahoma Sooners
+            "PRES": "PRE",    # Presbyterian Blue Hose
+            "SC": "SCAR",     # South Carolina Gamecocks
+            "STMN": "UST",    # St. Thomas Tommies
+            "STO": "STNH",    # Stonehill Skyhawks
+            "STBK": "STON",   # Stony Brook Seawolves
+            "TAR": "TARL",    # Tarleton State Texans
+            # Verified 2026-09-06 against KXNCAAFGAME-26SEP12ASUTXAM,
+            # "Arizona St. vs Texas A&M": ESPN sends "TA&M", which appears
+            # in neither Kalshi's ticker nor its title.
+            "TA&M": "TXAM",   # Texas A&M Aggies
+            "TOW": "TOWS",    # Towson Tigers
+            "UALB": "ALBY",   # UAlbany Great Danes
+            "VAL": "VALP",    # Valparaiso Beacons
+            "UWF": "UWFL",    # West Florida Argonauts
+            "WGA": "UWGA",    # West Georgia Wolves
+            "W&M": "WM",      # William & Mary Tribe
+        },
     }
 
     def fetch_game_odds(
@@ -729,7 +791,8 @@ class KalshiMarketsPlugin(BasePlugin):
             Dict with keys: fav_team, fav_pct, dog_pct, fav_payout,
             dog_payout, market_ticker — or None if not found.
         """
-        series_prefix = self.LEAGUE_SERIES_MAP.get(league.lower().replace(" ", "_"))
+        league_key = league.lower().replace(" ", "_")
+        series_prefix = self.LEAGUE_SERIES_MAP.get(league_key)
         if not series_prefix:
             self.logger.debug("No Kalshi series prefix for league: %s", league)
             return None
@@ -775,9 +838,13 @@ class KalshiMarketsPlugin(BasePlugin):
             # Match event to our game by title/ticker + today's date
             away_terms = [away_team.lower()]
             home_terms = [home_team.lower()]
-            # Add Kalshi-specific abbreviations
-            kalshi_away = self.KALSHI_ABBREV_MAP.get(away_team, away_team).lower()
-            kalshi_home = self.KALSHI_ABBREV_MAP.get(home_team, home_team).lower()
+            # Add Kalshi-specific abbreviations. Per-league overrides win over
+            # the shared map so college codes never reach a pro league.
+            league_aliases = self.KALSHI_ABBREV_MAP_BY_LEAGUE.get(league_key, {})
+            kalshi_away = league_aliases.get(
+                away_team, self.KALSHI_ABBREV_MAP.get(away_team, away_team)).lower()
+            kalshi_home = league_aliases.get(
+                home_team, self.KALSHI_ABBREV_MAP.get(home_team, home_team)).lower()
             away_terms.append(kalshi_away)
             home_terms.append(kalshi_home)
 
@@ -869,6 +936,7 @@ class KalshiMarketsPlugin(BasePlugin):
 
             # Map Kalshi suffix back to ESPN team abbreviation
             reverse_map = {v.lower(): k for k, v in self.KALSHI_ABBREV_MAP.items()}
+            reverse_map.update({v.lower(): k for k, v in league_aliases.items()})
             fav_team = reverse_map.get(fav_suffix, fav_suffix).upper()
             dog_team = reverse_map.get(dog_suffix, dog_suffix).upper()
 

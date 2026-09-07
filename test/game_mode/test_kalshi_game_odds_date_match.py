@@ -45,6 +45,7 @@ def _make_plugin(events_payload, markets_by_ticker):
     # the series_prefix / abbrev lookups.
     plugin.LEAGUE_SERIES_MAP = {"mlb": "KXMLBGAME"}
     plugin.KALSHI_ABBREV_MAP = {}
+    plugin.KALSHI_ABBREV_MAP_BY_LEAGUE = {}
 
     def _get(url, **kwargs):
         if "/events" in url:
