@@ -4,7 +4,6 @@ Pure and deterministic by design -- it takes `elapsed` rather than reading a
 clock -- so every phase of the animation can be pixel-tested.
 """
 
-import pytest
 from PIL import Image
 
 from src.game_mode.touchdown import TD_DURATION, render_touchdown
@@ -77,11 +76,29 @@ def test_no_frame_outside_the_window():
 
 
 def test_fades_in_and_out():
-    """Start and end are darker than the middle."""
-    def brightness(img):
-        return sum(sum(img.getpixel((x, y))) for x in range(0, 320, 4) for y in range(0, 32, 4))
-    assert brightness(_frame(elapsed=0.02)) < brightness(_frame(elapsed=2.0))
-    assert brightness(_frame(elapsed=TD_DURATION - 0.05)) < brightness(_frame(elapsed=2.0))
+    """The fade dims a pure-background pixel; the ripple can't hide that.
+
+    (318, 1) is pure team-colour background at every elapsed value -- the
+    score text ends by x=315 and sits vertically around y=10-20, and the
+    rippling word never reaches x=318 or row 1 -- so this pixel isolates the
+    fade envelope from the ripple's motion. A sum-of-channels comparison on
+    it can't be satisfied by ripple phase alone, only by the fade actually
+    dimming toward black.
+    """
+    def strength(elapsed):
+        return sum(_frame(elapsed=elapsed).getpixel((318, 1)))
+
+    full = sum(TEAM)
+    assert strength(2.0) == full, "at full strength the pixel is the team colour exactly"
+
+    fade_in_deep = strength(0.02)
+    assert fade_in_deep < full, "deep in fade-in the pixel must be darker than full strength"
+
+    fade_out_deep = strength(TD_DURATION - 0.05)
+    assert fade_out_deep < full, "deep in fade-out the pixel must be darker than full strength"
+
+    fade_in_later = strength(0.30)
+    assert fade_in_deep < fade_in_later, "the fade-in ramp must be monotonic, not merely 'not full'"
 
 
 def test_survives_a_missing_logo():
@@ -91,7 +108,7 @@ def test_survives_a_missing_logo():
 
 def test_ripple_stays_inside_the_panel():
     """Amplitude must not push glyphs off the top or bottom edge."""
-    for e in [i / 20.0 for i in range(1, 90)]:
+    for e in [i / 20.0 for i in range(0, 100)]:  # 0.00 .. 4.95: the whole [0, TD_DURATION) window
         img = render_touchdown(width=320, height=32, color=TEAM, logo=_logo(),
                                score_text="WASH 17", elapsed=e, duration=TD_DURATION)
         if img is None:
