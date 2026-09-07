@@ -62,6 +62,20 @@ except ImportError:
     normalize_upcoming_game = None
     format_kickoff_label = None
 
+# How old a stored score baseline may be and still describe "the previous
+# frame". get_game_focus_data() runs only while a game is the focused game,
+# and _rotate_game_mode (src/display_controller.py) swaps
+# game_focus_game_id every `rotation_interval` seconds -- 60 in
+# config/config.json -- whenever more than one game is in rotation, which is
+# what the remote's GAME MODE button produces. So a game's baseline is
+# routinely a whole rotation cycle old (~9 minutes on an NFL Sunday with ten
+# games), and any 6-8 point drift accumulated in that gap looks identical to
+# one play. Derived as ~2x the focused-game ESPN refresh window
+# (refresh_focused_game uses max_age=10s): a genuine frame-to-frame delta
+# always lands well inside it, while anything spanning a rotation gap does
+# not.
+TD_BASELINE_MAX_AGE = 30.0
+
 # Import the copied manager classes
 from nfl_managers import NFLLiveManager, NFLRecentManager, NFLUpcomingManager
 from ncaa_fb_managers import (
@@ -130,6 +144,7 @@ class FootballScoreboardPlugin(BasePlugin if BasePlugin else object):
         # trigger baseline and the animation clock live here.
         self._td_last_scores: Dict[str, tuple] = {}
         self._td_active: Dict[str, dict] = {}
+        self._td_focus_game_id: Optional[str] = None
         self._focus_renderer = None
 
         # League configurations (defaults come from schema via plugin_manager merge)
@@ -3644,26 +3659,44 @@ class FootballScoreboardPlugin(BasePlugin if BasePlugin else object):
                                         home_team, home_score):
         """Track scores per game; return a celebration record for a touchdown.
 
-        Fires on a delta of 6-8 for exactly one side. Deliberately NOT keyed off
-        details["scoring_event"], which is keyword-scraped from ESPN's status
-        text and unreliable; a score delta cannot misfire on a wording change.
-        The +1 PAT that follows lands as a delta of 1 and is ignored, and a
-        delta above 8 is treated as an ESPN correction rather than a play.
+        Fires on a delta of 6-8 for exactly one side, and only when the
+        baseline it is measured against was observed within
+        TD_BASELINE_MAX_AGE seconds. The recency requirement is what makes the
+        delta mean "one play": this method only sees a game while that game is
+        focused, and the Game Mode rotation moves focus away for a full
+        rotation cycle at a time, so an unqualified delta can describe minutes
+        of football -- a touchdown that finished a minute ago (replayed over
+        the live down-and-distance the viewer just came back to see), or a
+        composite drift such as TD+PAT, two field goals, or FG+safety+safety.
+        A stale baseline is re-seeded and reported as no play.
+
+        Deliberately NOT keyed off details["scoring_event"], which is
+        keyword-scraped from ESPN's status text and unreliable; a score delta
+        cannot misfire on a wording change. The +1 PAT that follows lands as a
+        delta of 1 and is ignored, and a delta above 8 is treated as an ESPN
+        correction rather than a play.
         """
         import time
 
         key = str(game_id)
+        now = time.monotonic()
         prev = self._td_last_scores.get(key)
-        self._td_last_scores[key] = (int(away_score), int(home_score))
+        # Re-seeding unconditionally is also the "too old" recovery path: the
+        # next observation measures against this fresh baseline.
+        self._td_last_scores[key] = (int(away_score), int(home_score), now)
 
         active = self._td_active.get(key)
         if active is not None:
-            if time.monotonic() - active["started_at"] < TD_DURATION:
+            if now - active["started_at"] < TD_DURATION:
                 return active
             del self._td_active[key]
 
         if prev is None:
             # First sight of this game -- no baseline, so never celebrate.
+            return None
+        if now - prev[2] > TD_BASELINE_MAX_AGE:
+            # Baseline predates a focus rotation: whatever changed since is not
+            # a single play we can honestly celebrate.
             return None
 
         d_away = int(away_score) - prev[0]
@@ -3677,9 +3710,27 @@ class FootballScoreboardPlugin(BasePlugin if BasePlugin else object):
         else:
             return None
 
-        rec = {"team": team, "score_text": text, "started_at": time.monotonic()}
+        rec = {"team": team, "score_text": text, "started_at": now}
         self._td_active[key] = rec
         return rec
+
+    def _td_note_focus(self, game_id) -> None:
+        """Cancel in-flight celebrations belonging to any other game.
+
+        The spec keys the celebration to the focused game: switching focus
+        cancels it rather than resuming a stale one. This method is the focus
+        signal -- get_game_focus_data() is called only for the currently
+        focused game -- so a game_id change means focus moved, and every other
+        game's takeover is over regardless of how much of its 5s window was
+        left. Without this, focusing away at t=1s and back at t=3s resumed the
+        animation mid-ripple.
+        """
+        key = str(game_id)
+        if self._td_focus_game_id == key:
+            return
+        self._td_focus_game_id = key
+        for other in [k for k in self._td_active if k != key]:
+            del self._td_active[other]
 
     def get_game_focus_data(self, game_id: str) -> Optional[Dict[str, Any]]:
         """Build a GameFocusData dict for a specific game ID.
@@ -3691,7 +3742,12 @@ class FootballScoreboardPlugin(BasePlugin if BasePlugin else object):
         so the scorebug stays in sync with Kalshi odds (which fetch
         inline). Falls back to the cached game dict if no refresh is
         available.
+
+        Also the focus signal for the touchdown celebration: see
+        _td_note_focus().
         """
+        self._td_note_focus(game_id)
+
         fresh: Optional[Dict] = None
         live_mgr = self._find_live_manager_for_game(game_id)
         if live_mgr is not None and hasattr(live_mgr, "refresh_focused_game"):

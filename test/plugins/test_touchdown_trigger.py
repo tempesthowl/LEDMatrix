@@ -164,11 +164,11 @@ def test_renderer_is_cached_not_rebuilt_per_frame():
 
 
 def test_init_sets_touchdown_celebration_state(PluginClass):
-    """`__init__` must set _td_last_scores/_td_active/_focus_renderer.
+    """`__init__` must set the four touchdown/renderer state attributes.
 
-    Every other test in this file uses the `plugin` fixture, which bypasses
-    `__init__` entirely (`PluginClass.__new__` + hand-injected state) -- so
-    nothing else here would catch these three lines being deleted from
+    Every other test in this file uses the `plugin` or `focus_plugin` fixture,
+    both of which bypass `__init__` entirely (`PluginClass.__new__` +
+    hand-injected state) -- so nothing else here would catch these lines being deleted from
     `__init__` itself, and production would AttributeError on the first
     focus frame. Construct a real instance through `__init__` (mocked
     display/cache/plugin managers -- NFL and NCAA FB are both disabled by
@@ -188,6 +188,7 @@ def test_init_sets_touchdown_celebration_state(PluginClass):
 
     assert plugin_instance._td_last_scores == {}
     assert plugin_instance._td_active == {}
+    assert plugin_instance._td_focus_game_id is None
     assert plugin_instance._focus_renderer is None
 
 
@@ -265,3 +266,212 @@ def test_stale_score_baseline_is_pruned_when_game_goes_non_live():
         "self._td_active.pop(str(game_id), None)\n"
         "            self._td_last_scores.pop(str(game_id), None)"
     ) in src, "the non-live branch must prune both _td_active and _td_last_scores"
+
+
+# --- Baseline recency -------------------------------------------------------
+#
+# _note_score_and_maybe_celebrate only ever sees a game while that game is the
+# focused one, and _rotate_game_mode (src/display_controller.py) swaps
+# game_focus_game_id every `rotation_interval` seconds -- 60 in
+# config/config.json -- whenever more than one game is in rotation. So a delta
+# measured against an unqualified baseline can span a whole rotation cycle of
+# football, and these tests pin the recency requirement that makes it mean
+# "one play" again.
+
+
+def test_a_stale_baseline_does_not_replay_an_old_touchdown(plugin, monkeypatch):
+    """A +7 first seen a rotation cycle later must not take over the panel.
+
+    This is the ordinary two-games-in-rotation cadence, not an edge case: the
+    viewer taps back to a game to see the live down-and-distance and instead
+    gets a full 5-second celebration of a play that ended a minute ago.
+    """
+    clock = {"t": 6_000.0}
+    monkeypatch.setattr(time, "monotonic", lambda: clock["t"])
+
+    _note(plugin, away=0, home=0)                   # baseline observed at t=6000
+    clock["t"] = 6_000.0 + 60.0                     # one rotation_interval later
+    assert _note(plugin, away=0, home=7) is None
+    assert plugin._td_active == {}
+
+
+def test_a_stale_observation_reseeds_the_baseline(plugin, monkeypatch):
+    """Rejecting a stale delta must still record what was just seen."""
+    clock = {"t": 6_500.0}
+    monkeypatch.setattr(time, "monotonic", lambda: clock["t"])
+
+    _note(plugin, away=0, home=0)
+    clock["t"] = 6_500.0 + 60.0
+    _note(plugin, away=0, home=7)                   # rejected as stale
+
+    stored = plugin._td_last_scores["1"]
+    assert stored[0] == 0 and stored[1] == 7, "scores must be re-seeded"
+    assert stored[2] == 6_560.0, "the observation time must be re-seeded too"
+
+
+def test_the_same_delta_seen_promptly_still_fires(plugin, monkeypatch):
+    """The guard must not break the real case: +7 five seconds later."""
+    clock = {"t": 7_000.0}
+    monkeypatch.setattr(time, "monotonic", lambda: clock["t"])
+
+    _note(plugin, away=0, home=0)
+    clock["t"] = 7_000.0 + 5.0
+    rec = _note(plugin, away=0, home=7)
+    assert rec is not None
+    assert rec["team"] == "home"
+    assert rec["score_text"] == "WASH 7"
+
+
+def test_a_touchdown_against_a_reseeded_baseline_fires_normally(plugin, monkeypatch):
+    """Re-seeding must restore the detector, not disable it for the game."""
+    clock = {"t": 8_000.0}
+    monkeypatch.setattr(time, "monotonic", lambda: clock["t"])
+
+    _note(plugin, away=0, home=0)
+    clock["t"] = 8_000.0 + 60.0
+    assert _note(plugin, away=0, home=7) is None      # stale -> re-seeded at 0-7
+
+    clock["t"] = 8_000.0 + 65.0
+    rec = _note(plugin, away=0, home=14)               # a genuine next touchdown
+    assert rec is not None
+    assert rec["score_text"] == "WASH 14"
+
+
+def test_composite_drift_across_a_rotation_gap_does_not_fire(plugin, monkeypatch):
+    """Two field goals in the gap (0 -> 3 -> 6) read as a +6 delta.
+
+    Only the recency requirement separates this from a touchdown; the 6-8
+    point band cannot.
+    """
+    clock = {"t": 9_000.0}
+    monkeypatch.setattr(time, "monotonic", lambda: clock["t"])
+
+    _note(plugin, away=0, home=0)
+    clock["t"] = 9_000.0 + 60.0
+    assert _note(plugin, away=0, home=6) is None
+
+
+def test_the_baseline_max_age_is_a_named_constant(manager_module):
+    """A bare inlined number would lose the derivation comment explaining why
+    30s (~2x the focused-game ESPN refresh window) is the right value."""
+    assert manager_module.TD_BASELINE_MAX_AGE == pytest.approx(30.0)
+
+
+# --- Focus changes and the stamped payload ----------------------------------
+
+_HOME_COLOR = (11, 22, 33)
+_AWAY_COLOR = (200, 210, 220)
+
+
+class _FakeLiveManager:
+    """A live manager with no refresh_focused_game, so the cached dict wins."""
+
+    def __init__(self, games):
+        self.live_games = games
+
+
+def _live_game(gid):
+    return {
+        "id": gid,
+        "away_abbr": "WSU",
+        "home_abbr": "WASH",
+        "away_score": 0,
+        "home_score": 0,
+        "is_live": True,
+        "is_final": False,
+    }
+
+
+@pytest.fixture
+def focus_plugin(PluginClass, manager_module, monkeypatch):
+    """A plugin wired just far enough to run get_game_focus_data() for real.
+
+    Two live games ("A" and "B") whose score dicts the test mutates, fixed
+    home/away colours, and logos that name their own side -- so the stamped
+    touchdown payload can be checked against the team that actually scored.
+    """
+    p = PluginClass.__new__(PluginClass)
+    p._td_last_scores = {}
+    p._td_active = {}
+    p._td_focus_game_id = None
+    p.logger = MagicMock()
+    p.plugin_manager = None                      # skips the Kalshi enrichment
+    p.config = {"timezone": "America/Chicago"}
+
+    games = {"A": _live_game("A"), "B": _live_game("B")}
+    p._league_registry = {
+        "nfl": {"enabled": True,
+                "managers": {"live": _FakeLiveManager(list(games.values()))}}
+    }
+    p._load_game_logo = lambda game, side: side.upper() + "_LOGO"
+    monkeypatch.setattr(manager_module, "get_contrasting_pair",
+                        lambda *a, **k: (_HOME_COLOR, _AWAY_COLOR))
+    return p, games
+
+
+def test_home_touchdown_stamps_the_home_colour_and_logo(focus_plugin):
+    """A swapped home/away pair would flood the panel with the wrong team's
+    colour and logo, silently: the trigger tests only look at rec["team"], the
+    routing tests hand-build the payload, and the contract test greps for key
+    names, so nothing else here would catch the exchange."""
+    p, games = focus_plugin
+
+    p.get_game_focus_data("A")                    # baseline at 0-0
+    games["A"]["home_score"] = 7
+    data = p.get_game_focus_data("A")
+
+    td = data["touchdown"]
+    assert td["score_text"] == "WASH 7"
+    assert td["color"] == _HOME_COLOR
+    assert td["logo"] == "HOME_LOGO"
+
+
+def test_away_touchdown_stamps_the_away_colour_and_logo(focus_plugin):
+    p, games = focus_plugin
+
+    p.get_game_focus_data("A")
+    games["A"]["away_score"] = 7
+    data = p.get_game_focus_data("A")
+
+    td = data["touchdown"]
+    assert td["score_text"] == "WSU 7"
+    assert td["color"] == _AWAY_COLOR
+    assert td["logo"] == "AWAY_LOGO"
+
+
+def test_switching_focus_cancels_an_in_flight_celebration(focus_plugin, monkeypatch):
+    """Spec: one celebration at a time, keyed to the focused game -- switching
+    focus cancels it rather than resuming a stale one. Tapping FOCUS away at
+    t=1s and back at t=3s used to resume the animation at elapsed 3.0."""
+    p, games = focus_plugin
+    clock = {"t": 10_000.0}
+    monkeypatch.setattr(time, "monotonic", lambda: clock["t"])
+
+    p.get_game_focus_data("A")                     # baseline
+    games["A"]["home_score"] = 7
+    assert "touchdown" in p.get_game_focus_data("A"), "A celebrates at t=10000"
+
+    clock["t"] = 10_001.0
+    p.get_game_focus_data("B")                     # FOCUS away, 1s in
+    assert p._td_active == {}, "leaving A must cancel A's takeover"
+
+    clock["t"] = 10_003.0
+    back = p.get_game_focus_data("A")              # FOCUS back, still inside 5s
+    assert "touchdown" not in back, "a cancelled celebration must not resume"
+
+
+def test_refocusing_the_same_game_does_not_cancel_its_own_celebration(focus_plugin, monkeypatch):
+    """The cancel must key off a focus *change*: consecutive frames of the same
+    focused game are not a switch, and every frame calls get_game_focus_data()."""
+    p, games = focus_plugin
+    clock = {"t": 11_000.0}
+    monkeypatch.setattr(time, "monotonic", lambda: clock["t"])
+
+    p.get_game_focus_data("A")
+    games["A"]["home_score"] = 7
+    assert "touchdown" in p.get_game_focus_data("A")
+
+    clock["t"] = 11_002.0
+    still = p.get_game_focus_data("A")             # the next frame, 2s in
+    assert "touchdown" in still
+    assert still["touchdown"]["elapsed"] == pytest.approx(2.0)

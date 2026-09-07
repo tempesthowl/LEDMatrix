@@ -105,13 +105,13 @@ is fragile and already known to be unreliable. A score delta is self-evident.
 | element | position |
 |---|---|
 | logo chip | 28×28 rounded rect, fill `(12,12,12)`, at x=3, vertically centred; logo thumbnailed to 22×22 inside it |
-| `TOUCHDOWN` | PressStart2P 14px (144px wide), white with a 1px black shadow, centred in the space between the chip and the score |
+| `TOUCHDOWN` | PressStart2P 14px (126px wide), white with a 1px black shadow, centred in the space between the chip and the score |
 | score (`WASH 17`) | PressStart2P 10px, white, right-aligned at x = width−5 |
 | background | team primary, full panel |
 
 The score string is `"{abbrev} {points}"` for the scoring team only — the panel
 is about that team's touchdown, and both teams' scores would not fit beside a
-144px word.
+126px word.
 
 ---
 
