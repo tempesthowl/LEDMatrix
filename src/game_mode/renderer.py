@@ -17,6 +17,7 @@ from typing import Any, Dict, Optional, Tuple
 from PIL import Image, ImageDraw, ImageFont
 
 from src.common.text_helper import draw_emboss
+from src.game_mode.touchdown import render_touchdown
 
 try:
     from src.game_mode.team_colors import get_contrasting_pair, contrasting_text_color, readable_label_color
@@ -191,6 +192,23 @@ class GameModeRenderer:
         Layout: scorebug | sport extras | Kalshi odds + ESPN
         Returns a PIL Image of size (self.width, self.height).
         """
+        # Touchdown celebration takes over the whole panel. Football only, and
+        # only while the plugin says a celebration is running -- the plugin owns
+        # the clock and stamps `elapsed`, because this renderer is rebuilt on
+        # every frame and cannot hold state. render_touchdown() returns None
+        # once the window has closed, and we fall through to the normal layout.
+        td = data.get("touchdown")
+        if data.get("sport") == "football" and isinstance(td, dict):
+            frame = render_touchdown(
+                self.width, self.height,
+                color=td.get("color") or COLOR_WHITE,
+                logo=td.get("logo"),
+                score_text=td.get("score_text") or "",
+                elapsed=td.get("elapsed"),
+            )
+            if frame is not None:
+                return frame
+
         img = Image.new("RGB", (self.width, self.height), COLOR_BG)
         draw = ImageDraw.Draw(img)
 
