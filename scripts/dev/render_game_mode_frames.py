@@ -108,6 +108,17 @@ def soccer():
     }
 
 
+def touchdown(team_color, logo_name, score_text, elapsed):
+    d = football()
+    d["touchdown"] = {
+        "color": team_color,
+        "logo": logo("ncaa_logos", logo_name),
+        "score_text": score_text,
+        "elapsed": elapsed,
+    }
+    return d
+
+
 SCENES = [
     ("football_live", football()),
     ("football_redzone", football(extras={"possession": "home",
@@ -154,6 +165,10 @@ SCENES = [
     ("football_ncaa_aandm", ncaa("AANDM", "MICH")),
     ("baseball_live", baseball()),
     ("soccer_live", soccer()),
+    ("touchdown_wash_start", touchdown((51, 0, 111), "WASH", "WASH 17", 0.15)),
+    ("touchdown_wash_mid", touchdown((51, 0, 111), "WASH", "WASH 17", 1.30)),
+    ("touchdown_tamu_mid", touchdown((80, 0, 0), "TA&M", "TA&M 14", 1.30)),
+    ("touchdown_wash_end", touchdown((51, 0, 111), "WASH", "WASH 17", 4.75)),
 ]
 
 
