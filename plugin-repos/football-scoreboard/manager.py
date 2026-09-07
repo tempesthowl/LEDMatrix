@@ -3801,6 +3801,7 @@ class FootballScoreboardPlugin(BasePlugin if BasePlugin else object):
                 }
         else:
             self._td_active.pop(str(game_id), None)
+            self._td_last_scores.pop(str(game_id), None)
 
         # Kalshi odds
         if kalshi_match_game and self.plugin_manager:
