@@ -902,10 +902,10 @@ class GameModeRenderer:
             def _sml(v):  # signed moneyline, e.g. -132 / +112
                 return f"+{v}" if v > 0 else f"{v}"
 
-            # Build label/value pairs: labels in gold, values in white
-            segments = []  # list of (text, color)
+            # Build the three label/value groups: labels gold, values white.
             # Spread — name the favored team. ESPN's `spread` is the HOME line
             # (negative => home favored), so a bare "-1.5" never says for whom.
+            spr_group = []
             if spread is not None:
                 if spread < 0:
                     fav, mag = home_abbr, -spread
@@ -913,30 +913,78 @@ class GameModeRenderer:
                     fav, mag = away_abbr, spread
                 else:
                     fav, mag = "", 0
-                segments.append(("SPR ", COLOR_GOLD))
-                segments.append((f"{fav} -{mag:g}" if fav else "PK", COLOR_WHITE))
+                spr_group = [("SPR ", COLOR_GOLD),
+                             (f"{fav} -{mag:g}" if fav else "PK", COLOR_WHITE)]
             # Moneyline — label each side (away then home, matching the scorebug
             # rows) so "-140/+120" isn't ambiguous about which team is which.
+            ml_group = []
             if _is_valid_american_ml(home_ml) and _is_valid_american_ml(away_ml):
-                if segments:
-                    segments.append(("  ", COLOR_WHITE))
-                segments.append(("ML ", COLOR_GOLD))
-                segments.append(
-                    (f"{away_abbr} {_sml(away_ml)} {home_abbr} {_sml(home_ml)}", COLOR_WHITE)
-                )
+                ml_group = [
+                    ("ML ", COLOR_GOLD),
+                    (f"{away_abbr} {_sml(away_ml)} {home_abbr} {_sml(home_ml)}", COLOR_WHITE),
+                ]
+            ou_group = []
             if ou is not None:
-                if segments:
-                    segments.append(("  ", COLOR_WHITE))
-                segments.append(("O/U ", COLOR_GOLD))
-                segments.append((f"{ou:g}", COLOR_WHITE))
+                ou_group = [("O/U ", COLOR_GOLD), (f"{ou:g}", COLOR_WHITE)]
 
-            # Measure total width for centering
-            total_w = sum(self.fonts["odds_detail"].getbbox(t)[2] - self.fonts["odds_detail"].getbbox(t)[0] for t, _ in segments)
-            cursor_x = right_x + (right_w - total_w) // 2
-            for text, color in segments:
-                draw.text((cursor_x, row3_y), text, fill=color, font=self.fonts["odds_detail"])
-                bbox = self.fonts["odds_detail"].getbbox(text)
-                cursor_x += bbox[2] - bbox[0]
+            self._draw_espn_line(
+                draw, right_x, row3_y, right_w, spr_group, ml_group, ou_group,
+                has_kalshi=bool(kalshi),
+            )
+
+    def _espn_line_width(self, segments) -> int:
+        f = self.fonts["odds_detail"]
+        return sum(f.getbbox(t)[2] - f.getbbox(t)[0] for t, _ in segments)
+
+    def _draw_espn_line(self, draw, right_x, y, right_w, spr, ml, ou, *, has_kalshi):
+        """Draw the ESPN spread/moneyline/over-under line, shrinking to fit.
+
+        The full line overflows the 175px odds panel for lopsided college games
+        -- four-digit moneylines push "SPR WASH -23.5  ML WSU +1300 WASH -2800
+        O/U 51.5" to 199px -- so it bled over the divider on the left and was
+        clipped on the right. NFL and MLB sit at 168-169px and always fit,
+        which is why this never showed before college football.
+
+        Ladder, widest first:
+          1. everything, double-spaced (unchanged whenever it fits)
+          2. single-spaced separators (saves ~4px, rescues the near-misses)
+          3. drop the MONEYLINE when Kalshi is up -- the probability bar
+             directly above already encodes the same thing, so this is the
+             least information lost
+          4. otherwise drop the over/under, keeping spread + moneyline
+          5. spread alone, then whatever still fits
+        """
+        def join(groups, sep):
+            out = []
+            for g in groups:
+                if not g:
+                    continue
+                if out:
+                    out.append((sep, COLOR_WHITE))
+                out.extend(g)
+            return out
+
+        drop_ml_first = has_kalshi and ml and (spr or ou)
+        candidates = [
+            join([spr, ml, ou], "  "),
+            join([spr, ml, ou], " "),
+            join([spr, ou], "  ") if drop_ml_first else join([spr, ml], "  "),
+            join([spr, ou], " ") if drop_ml_first else join([spr, ml], " "),
+            spr or ml or ou,
+            ml or ou or spr,
+        ]
+        segments = next(
+            (c for c in candidates if c and self._espn_line_width(c) <= right_w),
+            None,
+        )
+        if not segments:
+            return
+
+        cursor_x = right_x + (right_w - self._espn_line_width(segments)) // 2
+        for text, color in segments:
+            draw.text((cursor_x, y), text, fill=color, font=self.fonts["odds_detail"])
+            bbox = self.fonts["odds_detail"].getbbox(text)
+            cursor_x += bbox[2] - bbox[0]
 
     def _render_possession_bar(self, draw, right_x, y, right_w, away_pos, home_pos,
                                away_color, home_color, left_end, right_start) -> None:
