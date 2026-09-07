@@ -48,11 +48,13 @@ try:
     from src.game_mode.renderer import GameModeRenderer
     from src.game_mode.kalshi_matcher import match_game as kalshi_match_game
     from src.game_mode.team_colors import get_team_color, get_contrasting_pair
+    from src.game_mode.touchdown import TD_DURATION
 except ImportError:
     GameModeRenderer = None
     kalshi_match_game = None
     get_team_color = None
     get_contrasting_pair = None
+    TD_DURATION = 5.0
 
 try:
     from src.common.upcoming_games import normalize_upcoming_game, format_kickoff_label
@@ -121,6 +123,14 @@ class FootballScoreboardPlugin(BasePlugin if BasePlugin else object):
         else:
             self.display_width = getattr(display_manager, "width", 128)
             self.display_height = getattr(display_manager, "height", 32)
+
+        # Touchdown celebration state. This plugin instance is the only thing
+        # that persists across frames -- _display_game_focus builds a new
+        # GameModeRenderer on every one of ~125 frames per second -- so the
+        # trigger baseline and the animation clock live here.
+        self._td_last_scores: Dict[str, tuple] = {}
+        self._td_active: Dict[str, dict] = {}
+        self._focus_renderer = None
 
         # League configurations (defaults come from schema via plugin_manager merge)
         # Debug: Log what config we received
@@ -3630,6 +3640,47 @@ class FootballScoreboardPlugin(BasePlugin if BasePlugin else object):
                     return mgr
         return None
 
+    def _note_score_and_maybe_celebrate(self, game_id, away_team, away_score,
+                                        home_team, home_score):
+        """Track scores per game; return a celebration record for a touchdown.
+
+        Fires on a delta of 6-8 for exactly one side. Deliberately NOT keyed off
+        details["scoring_event"], which is keyword-scraped from ESPN's status
+        text and unreliable; a score delta cannot misfire on a wording change.
+        The +1 PAT that follows lands as a delta of 1 and is ignored, and a
+        delta above 8 is treated as an ESPN correction rather than a play.
+        """
+        import time
+
+        key = str(game_id)
+        prev = self._td_last_scores.get(key)
+        self._td_last_scores[key] = (int(away_score), int(home_score))
+
+        active = self._td_active.get(key)
+        if active is not None:
+            if time.monotonic() - active["started_at"] < TD_DURATION:
+                return active
+            del self._td_active[key]
+
+        if prev is None:
+            # First sight of this game -- no baseline, so never celebrate.
+            return None
+
+        d_away = int(away_score) - prev[0]
+        d_home = int(home_score) - prev[1]
+        if d_away and d_home:
+            return None                      # both moved: a resync, not a play
+        if 6 <= d_away <= 8:
+            team, text = "away", f"{away_team} {int(away_score)}"
+        elif 6 <= d_home <= 8:
+            team, text = "home", f"{home_team} {int(home_score)}"
+        else:
+            return None
+
+        rec = {"team": team, "score_text": text, "started_at": time.monotonic()}
+        self._td_active[key] = rec
+        return rec
+
     def get_game_focus_data(self, game_id: str) -> Optional[Dict[str, Any]]:
         """Build a GameFocusData dict for a specific game ID.
 
@@ -3732,6 +3783,24 @@ class FootballScoreboardPlugin(BasePlugin if BasePlugin else object):
             )
             if status_state == "pre" else ""
         ) if format_kickoff_label is not None else ""
+
+        # Touchdown celebration. Live games only -- a final-score correction
+        # must never celebrate.
+        if status_state == "in":
+            _td = self._note_score_and_maybe_celebrate(
+                game_id, _away_abbr, focus_data["away_score"],
+                _home_abbr, focus_data["home_score"],
+            )
+            if _td:
+                import time as _time
+                focus_data["touchdown"] = {
+                    "color": _home_color if _td["team"] == "home" else _away_color,
+                    "logo": home_logo if _td["team"] == "home" else away_logo,
+                    "score_text": _td["score_text"],
+                    "elapsed": _time.monotonic() - _td["started_at"],
+                }
+        else:
+            self._td_active.pop(str(game_id), None)
 
         # Kalshi odds
         if kalshi_match_game and self.plugin_manager:
@@ -3875,8 +3944,14 @@ class FootballScoreboardPlugin(BasePlugin if BasePlugin else object):
         if not focus_data:
             return False
 
-        renderer = GameModeRenderer(self.display_width, self.display_height)
-        frame = renderer.render(focus_data)
+        # Cache the renderer: this runs inside a ~125 FPS loop and building one
+        # per frame reloaded all six fonts every time. The celebration animates
+        # in that loop, so the churn is now a smoothness problem too.
+        if (self._focus_renderer is None
+                or self._focus_renderer.width != self.display_width
+                or self._focus_renderer.height != self.display_height):
+            self._focus_renderer = GameModeRenderer(self.display_width, self.display_height)
+        frame = self._focus_renderer.render(focus_data)
 
         # Blit to display manager
         if hasattr(self.display_manager, "image"):
