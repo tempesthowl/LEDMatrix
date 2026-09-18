@@ -19,6 +19,7 @@ from logo_downloader import LogoDownloader, download_missing_logo
 from base_odds_manager import BaseOddsManager
 from data_sources import ESPNDataSource
 from src.common.text_helper import draw_emboss
+from src.common.espn_dates import fetch_espn_scoreboard
 
 
 class SportsCore(ABC):
@@ -885,14 +886,14 @@ class SportsCore(ABC):
                 f"Fetching games for {self.sport}/{self.league} over date range "
                 f"{formatted_date_yesterday}-{formatted_date}"
             )
-            response = self.session.get(
+            data = fetch_espn_scoreboard(
+                self.session,
                 url,
-                params={"dates": f"{formatted_date_yesterday}-{formatted_date}", "limit": 1000},
+                params={"dates": f"{formatted_date_yesterday}-{formatted_date}", "limit": 500},
                 headers=self.headers,
                 timeout=10,
+                logger=self.logger,
             )
-            response.raise_for_status()
-            data = response.json()
             events = data.get("events", [])
 
             self.logger.info(

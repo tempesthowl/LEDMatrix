@@ -29,6 +29,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 from src.logo_downloader import LogoDownloader, download_missing_logo
 from src.common.text_helper import draw_emboss
+from src.common.espn_dates import fetch_espn_scoreboard
 
 
 def _possession_pct(competitor: dict) -> int:
@@ -1033,17 +1034,17 @@ class SportsCore(ABC):
             yesterday = now - timedelta(days=1)
             formatted_date = now.strftime("%Y%m%d")
             formatted_date_yesterday = yesterday.strftime("%Y%m%d")
-            params = {"dates": f"{formatted_date_yesterday}-{formatted_date}", "limit": 1000}
+            params = {"dates": f"{formatted_date_yesterday}-{formatted_date}", "limit": 500}
             self.logger.debug(f"Fetching today's games for {self.sport}/{self.league} on date {formatted_date}")
             
-            response = self.session.get(
+            data = fetch_espn_scoreboard(
+                self.session,
                 url,
                 params=params,
                 headers=self.headers,
                 timeout=10,
+                logger=self.logger,
             )
-            response.raise_for_status()
-            data = response.json()
             events = data.get("events", [])
 
             self.logger.info(
