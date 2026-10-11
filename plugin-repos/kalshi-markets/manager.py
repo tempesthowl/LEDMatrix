@@ -777,6 +777,12 @@ class KalshiMarketsPlugin(BasePlugin):
             "WGA": "UWGA",    # West Georgia Wolves
             "W&M": "WM",      # William & Mary Tribe
         },
+        # Verified 2026-10-11 by diffing every open KXNFLGAME market suffix
+        # against ESPN's 32 NFL abbreviations: only JAX/JAC and WSH/WAS differ,
+        # and WSH->WAS is already in the shared map.
+        "nfl": {
+            "JAX": "JAC",     # Jacksonville Jaguars
+        },
     }
 
     def fetch_game_odds(
