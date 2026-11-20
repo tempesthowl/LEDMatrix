@@ -149,3 +149,69 @@ def test_live_fetch_never_asks_espn_for_more_than_500(plugin_dir_name, sport, le
     limits = [int(call["limit"]) for call in session.calls if "limit" in call]
     assert limits, f"{plugin_dir_name}: no ESPN request was made"
     assert max(limits) <= 500, f"{plugin_dir_name}: sent limit={max(limits)}"
+
+
+# ---------------------------------------------------------------------------
+# Recent/Upcoming: the 3-week window and the background season schedule.
+#
+# 2026-11-19: the 9/18 fix only covered the live path. `_get_weeks_data` (2 weeks
+# back, 1 ahead) and the season schedule each manager submits to
+# BackgroundDataService still sent raw ranges with limit=1000, so both 400'd,
+# the season cache never filled, and /v3/remote's Upcoming list was empty for
+# every sport -- tonight's IND @ HOU never showed as upcoming before kickoff.
+# ---------------------------------------------------------------------------
+
+
+def _chunk_ids_for_range(dates):
+    span = espn_dates.parse_espn_date_range(dates)
+    assert span is not None, f"expected a day range, got {dates!r}"
+    return {f"evt-{chunk}" for chunk in espn_dates.espn_date_chunks(*span)}
+
+
+@pytest.mark.parametrize("plugin_dir_name,sport,league", PLUGINS)
+def test_weeks_window_returns_every_day_when_espn_rejects_ranges(
+    plugin_dir_name, sport, league
+):
+    sports_mod = _load_plugin_sports(plugin_dir_name)
+    session = EspnSinceSept15()
+    manager = _fake_manager(sport, league, session)
+
+    result = sports_mod.SportsCore._get_weeks_data(manager)
+
+    assert result is not None, f"{plugin_dir_name}: weeks window returned None"
+    requested_range = session.calls[0]["dates"]
+    event_ids = {event["id"] for event in result["events"]}
+    assert event_ids == _chunk_ids_for_range(requested_range)
+    assert all(int(call.get("limit", 0)) <= 500 for call in session.calls)
+
+
+def test_background_season_fetch_recovers_when_espn_rejects_ranges():
+    from src.background_data_service import BackgroundDataService
+
+    cache_manager = MagicMock()
+    cache_manager.get.return_value = None
+    service = BackgroundDataService(cache_manager, max_workers=1)
+    session = EspnSinceSept15()
+    service.session = session
+    try:
+        request_id = service.submit_fetch_request(
+            sport="nfl",
+            year=2026,
+            url="https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard",
+            cache_key="nfl_schedule_2026",
+            params={"dates": "20260801-20270301", "limit": 1000},
+            max_retries=0,
+        )
+        service.executor.shutdown(wait=True)
+        result = service.get_result(request_id)
+    finally:
+        service.shutdown(wait=False)
+
+    assert result is not None and result.success, getattr(result, "error", None)
+    expected = _chunk_ids_for_range("20260801-20270301")
+    assert {event["id"] for event in result.data["events"]} == expected
+    cache_manager.set.assert_called_once()
+    cached_key, cached_data = cache_manager.set.call_args[0]
+    assert cached_key == "nfl_schedule_2026"
+    assert {event["id"] for event in cached_data["events"]} == expected
+    assert all(int(call.get("limit", 0)) <= 500 for call in session.calls)

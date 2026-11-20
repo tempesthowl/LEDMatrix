@@ -1086,14 +1086,14 @@ class SportsCore(ABC):
             end_date = now + timedelta(weeks=1)
             date_str = f"{start_date.strftime('%Y%m%d')}-{end_date.strftime('%Y%m%d')}"
             url = f"https://site.api.espn.com/apis/site/v2/sports/{self.sport}/{self.league}/scoreboard"
-            response = self.session.get(
+            data = fetch_espn_scoreboard(
+                self.session,
                 url,
-                params={"dates": date_str, "limit": 1000},
+                params={"dates": date_str, "limit": 500},
                 headers=self.headers,
                 timeout=10,
+                logger=self.logger,
             )
-            response.raise_for_status()
-            data = response.json()
             immediate_events = data.get("events", [])
 
             if immediate_events:
