@@ -653,3 +653,48 @@ def test_collect_upcoming_continues_when_a_plugin_raises():
     games, more = dc._collect_upcoming_games()
     assert [g["game_id"] for g in games] == ["f1"]
     assert more == 0
+
+
+# ---------------------------------------------------------------------------
+# Live priority must respect the Ticker Content toggle.
+#
+# 2026-11-19, IND @ HOU on Thursday Night Football: football-scoreboard was
+# toggled OFF in Ticker Content (ticker_enabled False), but every plugin loads
+# regardless of that toggle, so its has_live_content() still answered True.
+# _check_live_priority() switched the rotation to nfl_live, the rotation guard
+# skipped nfl_live as a disabled plugin, and the stay-on-live check kept it on
+# nfl_live: a no-sleep spin at 200% CPU and ~1,800 log lines a minute while the
+# panel froze on a stale F1 frame for the whole game.
+# ---------------------------------------------------------------------------
+
+
+def _live_football_plugin():
+    return SimpleNamespace(
+        plugin_id="football-scoreboard",
+        has_live_priority=lambda: True,
+        has_live_content=lambda: True,
+        get_live_modes=lambda: ["nfl_live"],
+    )
+
+
+def _controller_with_ticker_toggle(enabled):
+    football = _live_football_plugin()
+    dc = _make_controller_with_plugins({"nfl_live": football, "nfl_recent": football})
+    dc.plugin_manager = SimpleNamespace(ticker_enabled={"football-scoreboard": enabled})
+    return dc
+
+
+def test_ticker_disabled_plugin_does_not_claim_live_priority():
+    dc = _controller_with_ticker_toggle(False)
+    assert dc._check_live_priority() is None
+
+
+def test_ticker_disabled_plugin_does_not_hold_the_rotation():
+    dc = _controller_with_ticker_toggle(False)
+    assert dc._live_priority_holds("nfl_live") is False
+
+
+def test_ticker_enabled_plugin_still_claims_and_holds_live_priority():
+    dc = _controller_with_ticker_toggle(True)
+    assert dc._check_live_priority() == "nfl_live"
+    assert dc._live_priority_holds("nfl_live") is True

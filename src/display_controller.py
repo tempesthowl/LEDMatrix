@@ -2527,6 +2527,35 @@ class DisplayController:
         except Exception as e:
             logger.debug(f"Error logging memory stats: {e}")
 
+    def _claims_live_priority(self, plugin_instance) -> bool:
+        """True when a plugin has live content AND is in the ticker rotation.
+
+        Every plugin loads regardless of its Ticker Content toggle, so a
+        toggled-off plugin still reports live content. Letting it claim live
+        priority pulled the rotation onto a mode the rotation guard then
+        skipped, and the stay-on-live check held it there: a no-sleep spin
+        that froze the panel for a whole NFL game (2026-11-19).
+        """
+        if not (hasattr(plugin_instance, 'has_live_priority')
+                and hasattr(plugin_instance, 'has_live_content')):
+            return False
+        plugin_id = getattr(plugin_instance, 'plugin_id', None)
+        ticker_enabled = getattr(getattr(self, 'plugin_manager', None), 'ticker_enabled', None) or {}
+        if plugin_id and not ticker_enabled.get(plugin_id, True):
+            return False
+        return bool(plugin_instance.has_live_priority() and plugin_instance.has_live_content())
+
+    def _live_priority_holds(self, active_mode: str) -> bool:
+        """Whether live priority should keep the rotation on ``active_mode``."""
+        plugin_instance = self.plugin_modes.get(active_mode)
+        if plugin_instance is None:
+            return False
+        try:
+            return self._claims_live_priority(plugin_instance)
+        except Exception as e:  # pylint: disable=broad-except
+            logger.warning("Error checking live priority for %s: %s", active_mode, e)
+            return False
+
     def _check_live_priority(self):
         """
         Check all plugins for live priority content.
@@ -2535,7 +2564,7 @@ class DisplayController:
         for mode_name, plugin_instance in self.plugin_modes.items():
             if hasattr(plugin_instance, 'has_live_priority') and hasattr(plugin_instance, 'has_live_content'):
                 try:
-                    if plugin_instance.has_live_priority() and plugin_instance.has_live_content():
+                    if self._claims_live_priority(plugin_instance):
                         # Get the specific live mode from the plugin if available
                         if hasattr(plugin_instance, 'get_live_modes'):
                             live_modes = plugin_instance.get_live_modes()
@@ -3796,16 +3825,10 @@ class DisplayController:
 
                 # Check for live priority - don't rotate if current plugin has live content
                 should_rotate = True
-                if active_mode in self.plugin_modes:
-                    plugin_instance = self.plugin_modes[active_mode]
-                    if hasattr(plugin_instance, 'has_live_priority') and hasattr(plugin_instance, 'has_live_content'):
-                        try:
-                            if plugin_instance.has_live_priority() and plugin_instance.has_live_content():
-                                logger.info("Live priority active for %s - staying on current mode", active_mode)
-                                should_rotate = False
-                        except Exception as e:
-                            logger.warning("Error checking live priority for %s: %s", active_mode, e)
-                
+                if self._live_priority_holds(active_mode):
+                    logger.info("Live priority active for %s - staying on current mode", active_mode)
+                    should_rotate = False
+
                 if should_rotate:
                     # Guard against empty available_modes to prevent ZeroDivisionError.
                     # Toggling every Ticker Content plugin off via /v3/remote rebuilds
