@@ -32,6 +32,8 @@ import time
 from pathlib import Path
 from typing import Dict, Any, Set, Optional, Tuple, List
 
+from src.common.ncaa_conferences import live_game_team_fields
+
 from PIL import Image, ImageFont
 
 try:
@@ -3607,6 +3609,7 @@ class FootballScoreboardPlugin(BasePlugin if BasePlugin else object):
                     "home_espn_color": g.get("home_espn_color"),
                     "away_espn_alt_color": g.get("away_espn_alt_color"),
                     "home_espn_alt_color": g.get("home_espn_alt_color"),
+                    **live_game_team_fields(g, league_id),
                 })
 
         return games

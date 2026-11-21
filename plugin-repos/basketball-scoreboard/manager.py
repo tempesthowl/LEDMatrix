@@ -10,6 +10,8 @@ import time
 import threading
 from typing import Dict, Any, Set, Optional, List, Tuple
 
+from src.common.ncaa_conferences import live_game_team_fields
+
 from pathlib import Path
 
 from PIL import Image, ImageFont
@@ -3447,6 +3449,7 @@ class BasketballScoreboardPlugin(BasePlugin if BasePlugin else object):
                     "league": league_id,
                     "away_logo_url": g.get("away_logo_url", ""),
                     "home_logo_url": g.get("home_logo_url", ""),
+                    **live_game_team_fields(g, league_id),
                 })
 
         return games

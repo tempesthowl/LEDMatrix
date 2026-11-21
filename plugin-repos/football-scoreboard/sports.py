@@ -20,6 +20,7 @@ from base_odds_manager import BaseOddsManager
 from data_sources import ESPNDataSource
 from src.common.text_helper import draw_emboss
 from src.common.espn_dates import fetch_espn_scoreboard
+from src.common.ncaa_conferences import team_conference_id, team_rank
 
 
 class SportsCore(ABC):
@@ -833,6 +834,10 @@ class SportsCore(ABC):
                 / Path(f"{LogoDownloader.normalize_abbreviation(away_abbr)}.png"),
                 "away_logo_url": away_team["team"].get("logo"),
                 "is_within_window": True,  # Whether game is within display window
+                "home_rank": team_rank(home_team),
+                "away_rank": team_rank(away_team),
+                "home_conference_id": team_conference_id(home_team),
+                "away_conference_id": team_conference_id(away_team),
             }
             return details, home_team, away_team, status, situation
         except Exception as e:
