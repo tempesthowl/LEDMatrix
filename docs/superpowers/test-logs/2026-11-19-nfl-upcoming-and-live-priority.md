@@ -62,3 +62,43 @@ Full suite on clean HEAD (worktree) and on the fix: **7 failed / 22 errors, iden
 ## Deploy
 
 Python-only: `git pull` on the Pi, then `sudo systemctl restart ledmatrix`. The agent's `git pull` over SSH was blocked by the auto-mode classifier this time, so Eric runs both.
+
+## 2026-11-21: deployed to the Pi, verified read-only
+
+Eric's first deploy attempt on 11/19 didn't land: the Pi's reflog still ended at 10/11. His second did. `git pull --ff-only` to `50a8dfc2` at 13:10:52 CST, and `ledmatrix` restarted at 13:10:55 (PID 1839707, `NRestarts=0`). Everything below is read-only: `journalctl`, `top`, `ps`, `systemctl show` and the web API.
+
+| Check | Result | Evidence |
+|---|---|---|
+| Upcoming populated | **VERIFIED** | `/api/v3/games/live` at 13:13:39: `upcoming` 8 shown + `upcoming_more` 12 (MLS, NCAA FB, Serie A, Ligue 1, La Liga, NBA, EPL, Bundesliga). Live: 65 games, 58 of them NCAA FB. |
+| NFL upcoming | **VERIFIED on the panel** | `NFLUpcomingManager - Found 3 upcoming games within window for display`. `/api/v3/display/current` in mode `nfl_upcoming` shows TEN vs DAL, "Next Game 11/22 12:00PM". ![after deploy](assets/2026-11-19-nfl-upcoming/pi-panel-after-deploy-2026-11-21.png) NFL doesn't make the remote's top 8: the representation pick filled all 8 slots with 8 earlier-starting leagues, so NFL is inside `upcoming_more`. |
+| Season fetches recover | **VERIFIED** | `Recovering ... from a rejected date range`: soccer x16 (8 leagues x Recent+Upcoming), nfl x2, ncaa_fb x2, mlb x2. Completed: NFL 334, NCAA FB 950, MLB 2821, EPL 46, La Liga 36, Bundesliga 33, Serie A 33, Ligue 1 32, MLS 41, Liga Portugal 20 events. 0 `ESPN chunk ... failed`. |
+| No skip flood | **VERIFIED (no live NFL yet)** | 3 `skipping disabled plugin` lines in 15 min, all `pga-tour-leaderboard` about every 4 min (normal rotation). The 11/19 flood was 1,829 a minute. |
+| Freeze fix under a live NFL game | **NOT VERIFIED** | No NFL is live on a Saturday. The confirm is Sunday 11/22 from noon CT: no `skipping disabled plugin football-scoreboard` lines, Vegas keeps scrolling. |
+| CPU | Steady state OK | `top -H` at 13:14: the rt matrix-refresh thread ~93% (always one core), main loop 66%. 11/19 had main ~90%, with no pre-incident baseline. |
+
+### Correction to the 11/19 22:11 reading
+
+That night's "upcoming 0" (and my first two reads today at 13:11 and 13:12) parsed `upcoming_games`, a key the API doesn't have. The real keys are `games` and `upcoming`, so those reads printed 0 no matter what. The "not deployed" verdict that night still stands, on the Pi's reflog and service start time. The 19:16 reading at the top of this log used `d['upcoming']` and is valid.
+
+## Regression found: a startup fetch burst from `85f8c768`
+
+At 13:11:28, five plugins' first `update()` hit the plugin manager's 30s timeout: `f1-scoreboard`, `football-scoreboard`, `stock-ticker`, `soccer-scoreboard` and `odds-ticker`. football-scoreboard timed out again at 13:12:12. There were none from 13:13 onward. The 11/19 19:10 boot and the 10/11 boot have no `timed out after` lines.
+
+**Cause:** `_get_weeks_data` asks for 2 weeks back to 1 week ahead (`20261107-20261128` today). Before `85f8c768` ESPN 400'd that instantly and the call returned None. Now `fetch_espn_scoreboard` chunks it, and since the window never covers a whole calendar month, `espn_date_chunks` spells it out as **22 single-day requests**. Twenty Recent/Upcoming managers did that at once at boot (`Fetched N events 20261107-20261128` x20). That's ~440 ESPN requests, up to 6 in flight per manager, on top of the serialized season chunks. That starved even plugins that never touch ESPN (`stock-ticker`, `f1-scoreboard`). No chunk failed, and the data landed (football's NFL upcoming rendered).
+
+**Memory:** controller RSS was ~210 MB on 11/19 (season fetches failing since 9/15). After this boot it was 945 MB at 3.5 min, then flat at 919-929 MiB from 13:14:56 to 13:24:39 (30 samples, 20s apart, `NRestarts=0`). `MemoryMax` is 1400 MiB, so that's 66%. In July, with season fetches working, the plateau was ~1086 MB, so most of this is the season caches working again. How much of the jump is the startup burst (jemalloc keeping its peak) is unmeasured.
+
+**Will it recur?** The season cache is read with `cache_manager.get(cache_key)`, whose default `max_age` is 300s, and Recent/Upcoming update every 3600s. So every hourly update misses the cache, re-submits the season fetch and calls `_get_weeks_data` again: another 22-day burst per manager.
+
+**It recurs hourly. CONFIRMED at 14:11-14:13.** Every Recent/Upcoming manager re-submitted its season fetch (`Starting background fetch for 2026 season schedule...` for NFL, MLB, NCAA FB and all 8 soccer leagues) and re-ran the 22-day weeks fetch (`Fetched 154 events 20261107-20261128` etc.). That caused 3 timeouts in 14:05-14:15: `football-scoreboard` at 14:11:54 and 14:13:10, plus `plugin_baseball_scoreboard - Manager update timed out after 25s, still running: ['MLB Upcoming']`.
+
+**Memory ratchets with it.** RSS went from 919-929 MiB before the burst to **1422-1429 MiB** after it, and held there for 14:15:37-14:16:52 (6 samples, 15s apart). System `MemAvailable` dropped to ~227 MB, with 186 MB in zram swap. `NRestarts=0`.
+
+**`MemoryMax=1400M` is not enforced on this Pi.** The kernel has no memory cgroup controller (`/sys/fs/cgroup/system.slice/ledmatrix.service/` has no `memory.*` files, and `MemoryCurrent=[not set]`). That's why RSS can sit above 1400 MiB with no restart. The real ceiling is RAM (1845 MB) plus zram, and then the kernel OOM killer.
+
+**Verdict: a regression, introduced by `85f8c768`.** It's not just a boot blip. Every hour, about 20 managers each make 22 single-day ESPN requests (6 concurrent each) on top of the season re-fetch. That starves other plugins past their 30s update timeout, and the controller's RSS settles about 500 MiB higher. No data was lost and no chunk failed. Whether the next hourly burst adds another ~500 MiB or reuses the same peak is unmeasured as of 14:17. Check RSS after ~15:13.
+
+**Not fixed. Options for Eric:**
+1. *Fewer chunks:* have `_get_weeks_data` (4 plugin copies) ask for the whole month or months the 3-week window touches (`202611`; 1-2 requests instead of 22). It's interim data only, and each manager already filters to its own Recent/Upcoming window.
+2. *Stop the hourly re-fetch:* the season cache is read with the default `max_age=300`, but Recent/Upcoming run every 3600s, so every update is a cache miss. A longer `max_age` on the season read, or serving stale data while the background fetch refreshes, removes the hourly burst entirely. It's a bigger behaviour change (touches every `*_managers.py`).
+3. *Stopgap:* a `sudo systemctl restart ledmatrix` resets RSS to ~920 MiB, and the next hourly burst brings it back.
