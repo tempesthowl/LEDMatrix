@@ -439,14 +439,16 @@
         syncSelection();
     };
 
+    function liveGameIds() { return lastLiveGames.map(g => String(g.game_id)); }
+
     window.selectAllGames = function () {
-        allGameIds.forEach(id => selectedGameIds.add(String(id)));
+        selectedGameIds = window.LiveFilters.selectVisible(selectedGameIds, liveGameIds(), allGameIds);
         document.querySelectorAll('.game-check').forEach(cb => { cb.checked = true; });
         syncSelection();
     };
 
     window.selectNoGames = function () {
-        allGameIds.forEach(id => selectedGameIds.delete(String(id)));
+        selectedGameIds = window.LiveFilters.deselectVisible(selectedGameIds, liveGameIds(), allGameIds);
         document.querySelectorAll('.game-check').forEach(cb => { cb.checked = false; });
         syncSelection();
     };
@@ -510,8 +512,25 @@
         }
     }
 
+    // &nbsp; keeps "#24" on the same line as its team; a normal space let it
+    // wrap next to the score ("24 #24 / FLA") on a phone.
     function rankBadge(rank) {
-        return rank ? `<span class="team-rank">#${Number(rank)}</span> ` : '';
+        return rank ? `<span class="team-rank">#${Number(rank)}</span>&nbsp;` : '';
+    }
+
+    // The 2s poll rebuilds the tab/chip rows; carry their sideways scroll across
+    // or a swipe to reach ACC / Sun Belt snaps back to the left. With nothing to
+    // carry (first render, new tab) bring the active pill into view instead.
+    function restoreRowScroll(row, scrollLeft, activeSelector) {
+        if (!row) return;
+        if (scrollLeft !== null) { row.scrollLeft = scrollLeft; return; }
+        const active = row.querySelector(activeSelector);
+        if (!active) return;
+        const r = row.getBoundingClientRect();
+        const a = active.getBoundingClientRect();
+        if (a.left < r.left || a.right > r.right) {
+            row.scrollLeft += a.left - r.left - (r.width - a.width) / 2;
+        }
     }
 
     function renderLiveGames(games) {
@@ -618,7 +637,14 @@
             `;
         }).join('');
 
+        const prevTabs = el.querySelector('.live-tabs');
+        const prevChips = el.querySelector('.live-chips');
+        const tabsScroll = prevTabs ? prevTabs.scrollLeft : null;
+        const chipsScroll = (prevChips && el.dataset.chipTab === view.tab) ? prevChips.scrollLeft : null;
         el.innerHTML = tabBar + chipRow + toolbar + cards;
+        el.dataset.chipTab = view.tab;
+        restoreRowScroll(el.querySelector('.live-tabs'), tabsScroll, '.live-tab.is-active');
+        restoreRowScroll(el.querySelector('.live-chips'), chipsScroll, '.live-chip.is-active');
     }
 
     window.manualRefreshGames = async function () {

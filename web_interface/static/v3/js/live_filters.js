@@ -75,7 +75,30 @@
         return { tab, chip };
     }
 
-    const api = { TAB_ORDER, sportTab, buildTabs, buildChips, filterGames, resolveView };
+    // Select All / None act on the visible cards. Both first drop ids of games
+    // that are no longer live, so "None" in the All tab really empties the set
+    // (a leftover dead id would filter Game Mode's rotation to nothing).
+    function liveOnly(selected, liveIds) {
+        const live = new Set([...liveIds].map(String));
+        return new Set([...selected].map(String).filter(id => live.has(id)));
+    }
+
+    function selectVisible(selected, liveIds, visibleIds) {
+        const out = liveOnly(selected, liveIds);
+        visibleIds.forEach(id => out.add(String(id)));
+        return out;
+    }
+
+    function deselectVisible(selected, liveIds, visibleIds) {
+        const out = liveOnly(selected, liveIds);
+        visibleIds.forEach(id => out.delete(String(id)));
+        return out;
+    }
+
+    const api = {
+        TAB_ORDER, sportTab, buildTabs, buildChips, filterGames, resolveView,
+        selectVisible, deselectVisible,
+    };
     root.LiveFilters = api;
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

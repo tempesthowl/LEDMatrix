@@ -1,8 +1,8 @@
-// Pure tab/chip logic behind the remote's Live Games list. Run: node --test test/js/
+// Pure tab/chip logic behind the remote's Live Games list. Run: node --test test/js/live_filters.test.js
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-    sportTab, buildTabs, buildChips, filterGames, resolveView,
+    sportTab, buildTabs, buildChips, filterGames, resolveView, selectVisible, deselectVisible,
 } = require('../../web_interface/static/v3/js/live_filters.js');
 
 const cfb = (away, home, a = {}, h = {}) => ({
@@ -63,4 +63,23 @@ test('resolve view falls back when saved tab or chip is gone', () => {
         { tab: 'Football', chip: 'All' });
     assert.deepEqual(resolveView(games, { tab: 'Football', chips: { Football: 'SEC' } }),
         { tab: 'Football', chip: 'SEC' });
+});
+
+const ids = arr => [...arr].sort();
+
+test('None in the All tab clears everything, including ids of games that ended', () => {
+    const out = deselectVisible(new Set(['ended', 'a']), ['a', 'b'], ['a', 'b']);
+    assert.deepEqual(ids(out), []);
+});
+
+test('None under a chip keeps selections hidden by the filter', () => {
+    assert.deepEqual(ids(deselectVisible(new Set(['a', 'b']), ['a', 'b'], ['a'])), ['b']);
+});
+
+test('Select All under a chip adds the visible games and keeps hidden live selections', () => {
+    assert.deepEqual(ids(selectVisible(new Set(['b']), ['a', 'b', 'c'], ['a'])), ['a', 'b']);
+});
+
+test('Select All drops ids of games that ended', () => {
+    assert.deepEqual(ids(selectVisible(new Set(['ended']), ['a'], ['a'])), ['a']);
 });

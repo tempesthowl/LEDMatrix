@@ -1138,7 +1138,10 @@ class SportsCore(ABC):
                 "home_seed": home_seed,
                 "away_seed": away_seed,
             })
-            if is_tournament:
+            # curatedRank is the seed only in the NCAA tournament; early-season
+            # events and conference tournaments are TRNMNT too but carry AP ranks.
+            ncaa_headline = notes[0].get("headline", "") if notes else ""
+            if ncaa_headline.startswith("NCAA ") and "Basketball Championship" in ncaa_headline:
                 details["home_rank"] = None
                 details["away_rank"] = None
 

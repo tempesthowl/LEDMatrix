@@ -29,7 +29,8 @@ def _competitor(home_away, abbr, rank, conference_id):
     }
 
 
-def _event(competition_type=None, home_rank=24):
+def _event(competition_type=None, home_rank=24,
+           headline="NCAA Men's Basketball Championship - West Region - 1st Round"):
     competition = {
         "status": {"type": {"state": "in", "shortDetail": "Q3",
                             "name": "STATUS_IN_PROGRESS"}},
@@ -40,7 +41,7 @@ def _event(competition_type=None, home_rank=24):
     }
     if competition_type:
         competition["type"] = {"abbreviation": competition_type}
-        competition["notes"] = [{"headline": "Men's Basketball Championship - South Region - 1st Round"}]
+        competition["notes"] = [{"headline": headline}]
     return {"id": "401", "date": "2026-11-21T20:00Z", "competitions": [competition]}
 
 
@@ -89,3 +90,14 @@ def test_basketball_tournament_seed_is_not_a_rank():
 @pytest.mark.parametrize("plugin_dir_name", ["football-scoreboard", "basketball-scoreboard"])
 def test_get_live_games_passes_rank_and_conference(plugin_dir_name):
     assert "live_game_team_fields(g, league_id)" in _live_games_body(plugin_dir_name)
+
+
+@pytest.mark.parametrize("headline", [
+    "Players Era 16",                     # early-season event, AP ranks (2026-11-24)
+    "SEC Tournament - 2nd Round",         # conference tournament, AP ranks (2026-03-12)
+    "MAC Championship - Quarterfinal",
+])
+def test_basketball_non_ncaa_tournament_keeps_its_rank(headline):
+    details, *_ = _extract("basketball-scoreboard",
+                           _event(competition_type="TRNMNT", home_rank=14, headline=headline))
+    assert details["home_rank"] == 14
