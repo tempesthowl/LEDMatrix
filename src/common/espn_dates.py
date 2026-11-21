@@ -62,6 +62,7 @@ __all__ = [
     "clamp_espn_limit",
     "parse_espn_date_range",
     "espn_date_chunks",
+    "espn_whole_months_range",
     "merge_scoreboard_payloads",
     "fetch_espn_date_chunks",
     "fetch_espn_scoreboard",
@@ -149,6 +150,19 @@ def espn_date_chunks(start: date, end: date) -> List[str]:
             chunks.append(cursor.strftime("%Y%m%d"))
             cursor += timedelta(days=1)
     return chunks
+
+
+def espn_whole_months_range(start: date, end: date) -> str:
+    """Widen ``[start, end]`` to the calendar months it touches, as a day range.
+
+    ``espn_date_chunks`` asks for a whole month in one request but for a partial
+    month one day at a time, so a 3-week window costs 22 requests and the months
+    around it cost 1-2. Callers that only want "recent and upcoming games" and
+    filter by game state afterwards should ask for the months.
+    """
+    first = start.replace(day=1)
+    last = _first_of_next_month(end) - timedelta(days=1)
+    return f"{first:%Y%m%d}-{last:%Y%m%d}"
 
 
 def merge_scoreboard_payloads(payloads: List[Dict[str, Any]]) -> Dict[str, Any]:

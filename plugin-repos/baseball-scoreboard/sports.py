@@ -19,7 +19,7 @@ from logo_downloader import LogoDownloader, download_missing_logo
 from base_odds_manager import BaseOddsManager
 from data_sources import ESPNDataSource
 from src.common.text_helper import draw_emboss
-from src.common.espn_dates import fetch_espn_scoreboard
+from src.common.espn_dates import espn_whole_months_range, fetch_espn_scoreboard
 
 
 class SportsCore(ABC):
@@ -931,7 +931,9 @@ class SportsCore(ABC):
 
             start_date = now + timedelta(weeks=-2)
             end_date = now + timedelta(weeks=1)
-            date_str = f"{start_date.strftime('%Y%m%d')}-{end_date.strftime('%Y%m%d')}"
+            # Whole months: ESPN rejects day ranges, and a partial month gets
+            # fetched one day per request (22 for this window, every hour).
+            date_str = espn_whole_months_range(start_date, end_date)
             url = f"https://site.api.espn.com/apis/site/v2/sports/{self.sport}/{self.league}/scoreboard"
             data = fetch_espn_scoreboard(
                 self.session,

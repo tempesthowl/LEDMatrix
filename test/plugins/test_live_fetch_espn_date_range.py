@@ -185,6 +185,51 @@ def test_weeks_window_returns_every_day_when_espn_rejects_ranges(
     assert all(int(call.get("limit", 0)) <= 500 for call in session.calls)
 
 
+# 2026-11-21: on the Pi the 3-week window never covers a whole month, so it was
+# spelled out as 22 single-day requests per Recent/Upcoming manager. About 20
+# managers fire it at boot and again every hour (the season cache is read with
+# max_age=300 but they update every 3600s): ~440 requests a burst, five plugin
+# updates past the 30s timeout, controller RSS 920 -> 1422 MiB. A whole-month
+# request is at most 323 events (college football's November), under the cap.
+
+
+def _frozen_datetime(iso_day):
+    frozen = pytz.utc.localize(datetime.strptime(iso_day, "%Y-%m-%d").replace(hour=18))
+
+    class FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return frozen.astimezone(tz) if tz else frozen.replace(tzinfo=None)
+
+    return FrozenDatetime
+
+
+@pytest.mark.parametrize("plugin_dir_name,sport,league", PLUGINS)
+@pytest.mark.parametrize(
+    "today,expected_months",
+    [
+        ("2026-11-21", {"202611"}),  # window 11/07-11/28, inside one month
+        ("2026-11-03", {"202610", "202611"}),  # window 10/20-11/10 straddles two
+        ("2027-01-05", {"202612", "202701"}),  # window 12/22-01/12 crosses a year
+    ],
+)
+def test_weeks_window_asks_espn_for_whole_months_not_single_days(
+    monkeypatch, plugin_dir_name, sport, league, today, expected_months
+):
+    sports_mod = _load_plugin_sports(plugin_dir_name)
+    monkeypatch.setattr(sports_mod, "datetime", _frozen_datetime(today))
+    session = EspnSinceSept15()
+    manager = _fake_manager(sport, league, session)
+
+    result = sports_mod.SportsCore._get_weeks_data(manager)
+
+    assert result is not None, f"{plugin_dir_name}: weeks window returned None"
+    answered = [call["dates"] for call in session.calls if "-" not in call["dates"]]
+    assert sorted(answered) == sorted(expected_months), (
+        f"{plugin_dir_name}: {len(answered)} chunk requests for {today}: {answered}"
+    )
+
+
 def test_background_season_fetch_recovers_when_espn_rejects_ranges():
     from src.background_data_service import BackgroundDataService
 
