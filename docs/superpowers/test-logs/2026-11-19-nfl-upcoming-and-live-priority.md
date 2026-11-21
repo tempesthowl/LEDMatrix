@@ -102,3 +102,16 @@ At 13:11:28, five plugins' first `update()` hit the plugin manager's 30s timeout
 1. *Fewer chunks:* have `_get_weeks_data` (4 plugin copies) ask for the whole month or months the 3-week window touches (`202611`; 1-2 requests instead of 22). It's interim data only, and each manager already filters to its own Recent/Upcoming window.
 2. *Stop the hourly re-fetch:* the season cache is read with the default `max_age=300`, but Recent/Upcoming run every 3600s, so every update is a cache miss. A longer `max_age` on the season read, or serving stale data while the background fetch refreshes, removes the hourly burst entirely. It's a bigger behaviour change (touches every `*_managers.py`).
 3. *Stopgap:* a `sudo systemctl restart ledmatrix` resets RSS to ~920 MiB, and the next hourly burst brings it back.
+
+## 2026-11-21 evening: option 1 shipped (`3db1a6e0`). Code-verified, NOT deployed
+
+Eric picked "fewer chunks". `espn_whole_months_range` (`src/common/espn_dates.py`) widens the window to the calendar months it touches, and the four plugin `_get_weeks_data` copies (football, baseball, basketball, soccer `sports.py`) ask for that. A whole-month range chunks to `YYYYMM`, so a 3-week window is 1-2 requests instead of 22. The season fetch and the `max_age=300` cache read are untouched, so **the hourly re-fetch still happens.** It's just ~10 requests per manager instead of ~30.
+
+| Check | Result |
+|---|---|
+| Failing test first | `test_weeks_window_asks_espn_for_whole_months_not_single_days` (4 plugins x 3 dates: mid-month, month boundary, Dec->Jan). It failed with 22 single-day requests in every copy, and passes after the fix. The file is 25/25. |
+| Full suite | Before the fix, at `052b3cc9`: 7 failed / 991 passed / 22 errors. After: 7 / 1003 / 22, with the same failure names. After rebasing onto the remote tabs commits (`72c237bc`): 7 / 1015 / 22, still the same names. All pre-existing (pga game mode, web_api dotted keys, layout manager and others). |
+| Month answers are complete (live ESPN, read-only curl from the Pi) | `202611` at `limit=500`: college football 269 events (the 22-day window got 257), NBA 215, NFL 71, EPL 32. All under the 500 cap, and a capped month still falls back to days. `20261101-20261130` is still a 400. |
+| On the Pi | **NOT VERIFIED. Not deployed.** Eric deploys: `git pull` + `sudo systemctl restart ledmatrix`. The confirm is the next hourly burst after deploy: `Fetched N events 20261101-20261130` instead of `20261107-20261128`, no `timed out after` lines at the :11 mark, and an RSS step well under +500 MiB. |
+
+The other copies (`src/base_classes/sports.py` and baseball `data_manager.py`) aren't on the Pi's path and were left alone.
