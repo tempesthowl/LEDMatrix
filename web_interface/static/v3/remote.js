@@ -390,7 +390,34 @@
     // --- Zone: Live games ---
     let focusedGameId = null;
     let selectedGameIds = new Set(); // empty = all selected (default behavior)
-    let allGameIds = [];             // current live game IDs for Select All
+    let allGameIds = [];             // ids of the cards currently visible (Select All / None)
+
+    // Sport tab + filter chip (view-only), remembered per phone.
+    const LIVE_VIEW_KEY = 'remote.liveView';
+    let liveView = { tab: 'All', chips: {} };
+    try {
+        const saved = JSON.parse(localStorage.getItem(LIVE_VIEW_KEY) || 'null');
+        if (saved && typeof saved === 'object') {
+            liveView = { tab: saved.tab || 'All', chips: saved.chips || {} };
+        }
+    } catch (e) { /* private mode / blocked storage: default view */ }
+    let lastLiveGames = [];
+
+    function saveLiveView() {
+        try { localStorage.setItem(LIVE_VIEW_KEY, JSON.stringify(liveView)); } catch (e) { /* ignore */ }
+    }
+
+    window.setLiveTab = function (tab) {
+        liveView.tab = tab;
+        saveLiveView();
+        renderLiveGames(lastLiveGames);
+    };
+
+    window.setLiveChip = function (chip) {
+        liveView.chips[liveView.tab] = chip;
+        saveLiveView();
+        renderLiveGames(lastLiveGames);
+    };
 
     async function syncSelection() {
         try {
@@ -413,13 +440,13 @@
     };
 
     window.selectAllGames = function () {
-        selectedGameIds = new Set(allGameIds.map(String));
+        allGameIds.forEach(id => selectedGameIds.add(String(id)));
         document.querySelectorAll('.game-check').forEach(cb => { cb.checked = true; });
         syncSelection();
     };
 
     window.selectNoGames = function () {
-        selectedGameIds.clear();
+        allGameIds.forEach(id => selectedGameIds.delete(String(id)));
         document.querySelectorAll('.game-check').forEach(cb => { cb.checked = false; });
         syncSelection();
     };
@@ -473,100 +500,125 @@
             if (serverIds.length > 0) {
                 selectedGameIds = new Set(serverIds.map(String));
             }
-            // Track all current game IDs for Select All
-            allGameIds = games.map(g => String(g.game_id));
-
-            if (games.length === 0) {
-                el.classList.add('empty');
-                el.textContent = 'No live games right now.';
-                renderUpcoming(data);
-                return;
-            }
-            el.classList.remove('empty');
-
-            // Selection toolbar
-            const toolbar = `<div class="select-toolbar">
-                <button class="select-link" onclick="selectAllGames()">Select All</button>
-                <button class="select-link" onclick="selectNoGames()">None</button>
-            </div>`;
-
-            const cards = games.map(g => {
-                const gid = String(g.game_id);
-                const isFocused = gid === String(focusedGameId);
-                // Empty selection = nothing selected (placeholder state).
-                const isSelected = selectedGameIds.has(gid);
-                const m = sportMeta(g.league);
-                const accent = m ? m.color : 'var(--color-border-secondary)';
-                const leagueLabel = (m && m.label) || g.league || '';
-                const isGolf = String(g.league || '').toLowerCase() === 'pga';
-                // Sport-tinted card background (single source of truth: the
-                // SPORT_META accent). A left-weighted color wash over the dark
-                // base + the 4px accent bar makes each sport scannable at a
-                // glance. Skip the tint on the focused card so its blue
-                // highlight still reads; unknown leagues stay un-tinted.
-                const cardStyle = (m && !isFocused)
-                    ? `border-left-color:${accent};background:linear-gradient(90deg, ${accent}38 0%, ${accent}12 48%, transparent 80%), var(--rmt-surface)`
-                    : `border-left-color:${accent}`;
-
-                // Pulsing LIVE pill for in-progress games (ESPN status_state 'in').
-                const live = (g.status_state === 'in')
-                    ? '<span class="live-badge"><span class="live-dot"></span>LIVE</span>' : '';
-
-                // Golf is a tournament, not a two-team matchup: get_live_games
-                // returns a single "LEADER" sentinel with 0–0 scores. Render a
-                // tournament card (name + round · league) instead of the team
-                // template, which would otherwise show "LEADER 0 – 0" with a
-                // stray "LEADER" badge. period_label is "<Tournament> · <Round>".
-                let cardInfo;
-                if (isGolf) {
-                    const parts = String(g.period_label || '').split(/\s*·\s*/).filter(Boolean);
-                    const title = parts[0] || 'Leaderboard';
-                    const sub = parts.slice(1).concat(leagueLabel).filter(Boolean).join(' · ');
-                    cardInfo = `
-                            <div>
-                                <div class="game-score-line">${title}</div>
-                                <div class="game-meta-line">${live}<span>${sub}</span></div>
-                            </div>`;
-                } else {
-                    cardInfo = `
-                            <div class="game-logos">
-                                ${teamLogo(g.away_logo_url, g.away_team, accent)}
-                                ${teamLogo(g.home_logo_url, g.home_team, accent)}
-                            </div>
-                            <div>
-                                <div class="game-score-line">
-                                    <span class="team">${g.away_team}</span> <span class="score">${g.away_score ?? ''}</span>
-                                    <span class="dash">–</span>
-                                    <span class="score">${g.home_score ?? ''}</span> <span class="team">${g.home_team}</span>
-                                </div>
-                                <div class="game-meta-line">${live}<span>${[g.period_label, leagueLabel].filter(Boolean).join(' · ')}</span></div>
-                                ${kalshiBar(g)}
-                            </div>`;
-                }
-                return `
-                    <div class="game-card sport-accent" data-focused="${isFocused}" style="${cardStyle}">
-                        <div class="game-card-inner">
-                            <input type="checkbox" class="game-check"
-                                   ${isSelected ? 'checked' : ''}
-                                   onchange="toggleGameSelection('${gid}', this)">
-                            ${leagueLogo(g.league, accent)}
-                            ${cardInfo}
-                        </div>
-                        <button class="focus-btn" onclick="focusGame('${g.game_id}','${g.plugin_id || ''}','${g.league || ''}')"
-                                ${isFocused ? 'disabled' : ''}>
-                            ${isFocused ? 'FOCUSED' : 'FOCUS'}
-                        </button>
-                    </div>
-                `;
-            }).join('');
-
-            el.innerHTML = toolbar + cards;
+            lastLiveGames = games;
+            renderLiveGames(games);
             renderUpcoming(data);
         } catch (e) {
             el.classList.add('empty');
             el.textContent = 'Could not load live games.';
             renderUpcoming(null);
         }
+    }
+
+    function rankBadge(rank) {
+        return rank ? `<span class="team-rank">#${Number(rank)}</span> ` : '';
+    }
+
+    function renderLiveGames(games) {
+        const el = document.getElementById('live-games-content');
+        if (!el) return;
+        if (games.length === 0) {
+            allGameIds = [];
+            el.classList.add('empty');
+            el.textContent = 'No live games right now.';
+            return;
+        }
+        el.classList.remove('empty');
+
+        const LF = window.LiveFilters;
+        const view = LF.resolveView(games, liveView);
+        const shown = LF.filterGames(games, view.tab, view.chip);
+        allGameIds = shown.map(g => String(g.game_id));
+
+        // Names ride in data-* so a space or quote can't break the onclick JS.
+        const tabBar = '<div class="live-tabs">' + LF.buildTabs(games).map(t =>
+            `<button type="button" class="live-tab${t.key === view.tab ? ' is-active' : ''}"`
+            + ` data-tab="${escAttr(t.key)}" onclick="setLiveTab(this.dataset.tab)">`
+            + `${t.key}<span class="live-tab-count">${t.count}</span></button>`).join('') + '</div>';
+        const chipNames = LF.buildChips(games, view.tab);
+        const chipRow = chipNames.length
+            ? '<div class="live-chips">' + chipNames.map(c =>
+                `<button type="button" class="live-chip${c === view.chip ? ' is-active' : ''}"`
+                + ` data-chip="${escAttr(c)}" onclick="setLiveChip(this.dataset.chip)">${c}</button>`).join('') + '</div>'
+            : '';
+
+        // Selection toolbar
+        const toolbar = `<div class="select-toolbar">
+            <button class="select-link" onclick="selectAllGames()">Select All</button>
+            <button class="select-link" onclick="selectNoGames()">None</button>
+        </div>`;
+
+        const cards = shown.map(g => {
+            const gid = String(g.game_id);
+            const isFocused = gid === String(focusedGameId);
+            // Empty selection = nothing selected (placeholder state).
+            const isSelected = selectedGameIds.has(gid);
+            const m = sportMeta(g.league);
+            const accent = m ? m.color : 'var(--color-border-secondary)';
+            const leagueLabel = (m && m.label) || g.league || '';
+            const isGolf = String(g.league || '').toLowerCase() === 'pga';
+            // Sport-tinted card background (single source of truth: the
+            // SPORT_META accent). A left-weighted color wash over the dark
+            // base + the 4px accent bar makes each sport scannable at a
+            // glance. Skip the tint on the focused card so its blue
+            // highlight still reads; unknown leagues stay un-tinted.
+            const cardStyle = (m && !isFocused)
+                ? `border-left-color:${accent};background:linear-gradient(90deg, ${accent}38 0%, ${accent}12 48%, transparent 80%), var(--rmt-surface)`
+                : `border-left-color:${accent}`;
+
+            // Pulsing LIVE pill for in-progress games (ESPN status_state 'in').
+            const live = (g.status_state === 'in')
+                ? '<span class="live-badge"><span class="live-dot"></span>LIVE</span>' : '';
+
+            // Golf is a tournament, not a two-team matchup: get_live_games
+            // returns a single "LEADER" sentinel with 0–0 scores. Render a
+            // tournament card (name + round · league) instead of the team
+            // template, which would otherwise show "LEADER 0 – 0" with a
+            // stray "LEADER" badge. period_label is "<Tournament> · <Round>".
+            let cardInfo;
+            if (isGolf) {
+                const parts = String(g.period_label || '').split(/\s*·\s*/).filter(Boolean);
+                const title = parts[0] || 'Leaderboard';
+                const sub = parts.slice(1).concat(leagueLabel).filter(Boolean).join(' · ');
+                cardInfo = `
+                        <div>
+                            <div class="game-score-line">${title}</div>
+                            <div class="game-meta-line">${live}<span>${sub}</span></div>
+                        </div>`;
+            } else {
+                cardInfo = `
+                        <div class="game-logos">
+                            ${teamLogo(g.away_logo_url, g.away_team, accent)}
+                            ${teamLogo(g.home_logo_url, g.home_team, accent)}
+                        </div>
+                        <div>
+                            <div class="game-score-line">
+                                ${rankBadge(g.away_rank)}<span class="team">${g.away_team}</span> <span class="score">${g.away_score ?? ''}</span>
+                                <span class="dash">–</span>
+                                <span class="score">${g.home_score ?? ''}</span> ${rankBadge(g.home_rank)}<span class="team">${g.home_team}</span>
+                            </div>
+                            <div class="game-meta-line">${live}<span>${[g.period_label, leagueLabel].filter(Boolean).join(' · ')}</span></div>
+                            ${kalshiBar(g)}
+                        </div>`;
+            }
+            return `
+                <div class="game-card sport-accent" data-focused="${isFocused}" style="${cardStyle}">
+                    <div class="game-card-inner">
+                        <input type="checkbox" class="game-check"
+                               ${isSelected ? 'checked' : ''}
+                               onchange="toggleGameSelection('${gid}', this)">
+                        ${leagueLogo(g.league, accent)}
+                        ${cardInfo}
+                    </div>
+                    <button class="focus-btn" onclick="focusGame('${g.game_id}','${g.plugin_id || ''}','${g.league || ''}')"
+                            ${isFocused ? 'disabled' : ''}>
+                        ${isFocused ? 'FOCUSED' : 'FOCUS'}
+                    </button>
+                </div>
+            `;
+        }).join('');
+
+        el.innerHTML = tabBar + chipRow + toolbar + cards;
     }
 
     window.manualRefreshGames = async function () {
