@@ -1,0 +1,63 @@
+{
+  "status": "success",
+  "data": {
+    "game_mode_active": true,
+    "focused_game_id": "fx-byu-ku",
+    "selected_game_ids": [],
+    "auto_cycle": true,
+    "upcoming": [],
+    "upcoming_more": 0,
+    "games": [
+      {
+        "plugin_id": "football-scoreboard", "game_id": "fx-byu-ku", "league": "ncaa_fb",
+        "away_team": "BYU", "home_team": "KU", "away_score": 21, "home_score": 17,
+        "away_rank": 10, "home_rank": null, "away_conference": "Big 12", "home_conference": "Big 12",
+        "away_logo_url": "https://a.espncdn.com/i/teamlogos/ncaa/500/252.png",
+        "home_logo_url": "https://a.espncdn.com/i/teamlogos/ncaa/500/2305.png",
+        "away_color": "#002E5D", "home_color": "#0051BA",
+        "status_state": "in", "period_label": "Q4 5:32",
+        "kalshi": { "fav_team": "BYU", "fav_pct": 71.2, "dog_pct": 28.8, "fav_payout": 1.4, "dog_payout": 3.47 }
+      },
+      {
+        "plugin_id": "football-scoreboard", "game_id": "fx-fla-van", "league": "ncaa_fb",
+        "away_team": "FLA", "home_team": "VAN", "away_score": 3, "home_score": 0,
+        "away_rank": 24, "home_rank": null, "away_conference": "SEC", "home_conference": "SEC",
+        "away_logo_url": "https://a.espncdn.com/i/teamlogos/ncaa/500/57.png",
+        "home_logo_url": "https://a.espncdn.com/i/teamlogos/ncaa/500/238.png",
+        "status_state": "in", "period_label": "Q1 2:10"
+      },
+      {
+        "plugin_id": "soccer-scoreboard", "game_id": "fx-mar-usa", "league": "fifa.world",
+        "away_team": "MOROCCO", "home_team": "USA", "away_score": 1, "home_score": 1,
+        "away_logo_url": "", "home_logo_url": "",
+        "away_color": "#C1272D", "home_color": "#0A3161",
+        "status_state": "in", "period_label": "67'",
+        "kalshi": { "is_three_way": true, "away_pct": 30.4, "home_pct": 45.5, "draw_pct": 24.1, "fav_team": "USA" }
+      },
+      {
+        "plugin_id": "basketball-scoreboard", "game_id": "fx-mil-phi", "league": "nba",
+        "away_team": "MIL", "home_team": "PHI", "away_score": 112, "home_score": 108,
+        "away_logo_url": "https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/mil.png",
+        "home_logo_url": "https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/phi.png",
+        "status_state": "in", "period_label": "Q4 0:48"
+      },
+      {
+        "plugin_id": "baseball-scoreboard", "game_id": "fx-hou-sea", "league": "mlb",
+        "away_team": "HOU", "home_team": "SEA", "away_score": 4, "home_score": 3,
+        "away_logo_url": "https://a.espncdn.com/i/teamlogos/mlb/500/scoreboard/hou.png",
+        "home_logo_url": "https://a.espncdn.com/i/teamlogos/mlb/500/scoreboard/sea.png",
+        "status_state": "in", "period_label": "Top 9th · 2 outs · bases loaded"
+      },
+      {
+        "plugin_id": "pga-tour-leaderboard", "game_id": "The RSM Classic", "league": "pga",
+        "away_team": "LEADER", "home_team": "", "away_score": 0, "home_score": 0,
+        "status_state": "in", "period_label": "The RSM Classic · Round 3"
+      },
+      {
+        "plugin_id": "ufc-scoreboard", "game_id": "fx-ufc-330", "league": "ufc",
+        "away_team": "UFC TONIGHT", "home_team": "", "away_score": "", "home_score": "",
+        "status_state": "pre", "period_label": "UFC 330 · Main Card"
+      }
+    ]
+  }
+}
