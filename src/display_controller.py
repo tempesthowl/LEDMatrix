@@ -1519,6 +1519,19 @@ class DisplayController:
             self._attach_kalshi(g)
         return select_with_representation(unique, cap=8)
 
+    def _panel_game_id(self) -> Optional[str]:
+        """Id of the game on the panel: the user's FOCUS pick, else the
+        current rotation game while Game Mode runs, else None."""
+        if self._user_focused_game_id:
+            return str(self._user_focused_game_id)
+        rotation = self._game_mode_rotation_list
+        index = self._game_mode_current_index
+        if self._game_mode_active and 0 <= index < len(rotation):
+            game_id = rotation[index].get("game_id")
+            if game_id:
+                return str(game_id)
+        return None
+
     def _publish_live_games_cache(
         self,
         games: Optional[List[Dict[str, Any]]] = None,
@@ -1554,6 +1567,7 @@ class DisplayController:
             self.cache_manager.set("game_mode_live_games", {
                 "games": unique_live,
                 "game_mode_active": self._game_mode_active,
+                "focused_game_id": self._panel_game_id(),
             })
         except Exception as e:  # pylint: disable=broad-except
             logger.debug("failed to cache live games: %s", e)

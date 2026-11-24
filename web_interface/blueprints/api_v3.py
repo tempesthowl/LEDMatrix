@@ -1842,9 +1842,11 @@ def get_live_games():
         if cached and isinstance(cached, dict):
             unique = cached.get('games', [])
             game_mode_active = cached.get('game_mode_active', False)
+            focused_game_id = cached.get('focused_game_id')
         else:
             unique = []
             game_mode_active = False
+            focused_game_id = None
 
         # Also check on-demand state for game mode status (fresh read — see above)
         if not game_mode_active:
@@ -1883,6 +1885,7 @@ def get_live_games():
             'data': {
                 'games': unique,
                 'game_mode_active': game_mode_active,
+                'focused_game_id': focused_game_id,
                 'selected_game_ids': selected_ids,
                 'auto_cycle': auto_cycle,
                 'upcoming': upcoming,

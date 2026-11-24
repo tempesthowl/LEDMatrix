@@ -698,3 +698,47 @@ def test_ticker_enabled_plugin_still_claims_and_holds_live_priority():
     dc = _controller_with_ticker_toggle(True)
     assert dc._check_live_priority() == "nfl_live"
     assert dc._live_priority_holds("nfl_live") is True
+
+
+# --- focused_game_id: which game is on the panel (remote live-first) ---
+
+def _panel_controller(user_id=None, active=False, rotation=None, index=0):
+    dc = _make_controller_with_plugins({})
+    dc._user_focused_game_id = user_id
+    dc._game_mode_active = active
+    dc._game_mode_rotation_list = rotation if rotation is not None else []
+    dc._game_mode_current_index = index
+    return dc
+
+
+def test_panel_game_id_prefers_user_focus():
+    dc = _panel_controller(user_id='401', active=True, rotation=[{'game_id': '402'}])
+    assert dc._panel_game_id() == '401'
+
+
+def test_panel_game_id_uses_rotation_game_while_game_mode_active():
+    dc = _panel_controller(active=True, rotation=[{'game_id': 7}, {'game_id': 8}], index=1)
+    assert dc._panel_game_id() == '8'
+
+
+def test_panel_game_id_none_when_game_mode_inactive():
+    dc = _panel_controller(active=False, rotation=[{'game_id': '9'}])
+    assert dc._panel_game_id() is None
+
+
+def test_panel_game_id_none_when_index_out_of_range():
+    dc = _panel_controller(active=True, rotation=[{'game_id': '9'}], index=3)
+    assert dc._panel_game_id() is None
+
+
+def test_publish_live_games_includes_focused_game_id():
+    dc = _panel_controller(user_id='401', active=True)
+    dc._last_live_games_publish = 0.0
+    dc._live_games_publish_min_interval = 5.0
+    dc._selected_game_ids = set()
+    dc._auto_cycle = True
+    dc._publish_live_games_cache(games=[], force=True)
+    payloads = [c.args[1] for c in dc.cache_manager.set.call_args_list
+                if c.args and c.args[0] == "game_mode_live_games"]
+    assert len(payloads) == 1
+    assert payloads[0]["focused_game_id"] == '401'
