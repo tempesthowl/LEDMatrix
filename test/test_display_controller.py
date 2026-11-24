@@ -702,13 +702,60 @@ def test_ticker_enabled_plugin_still_claims_and_holds_live_priority():
 
 # --- focused_game_id: which game is on the panel (remote live-first) ---
 
-def _panel_controller(user_id=None, active=False, rotation=None, index=0):
+def _panel_controller(user_id=None, active=False, rotation=None, index=0, on_demand=True):
     dc = _make_controller_with_plugins({})
     dc._user_focused_game_id = user_id
     dc._game_mode_active = active
     dc._game_mode_rotation_list = rotation if rotation is not None else []
     dc._game_mode_current_index = index
+    dc.on_demand_active = on_demand
     return dc
+
+
+def test_panel_game_id_ignores_a_leftover_focus_once_on_demand_ends():
+    # On-demand expiry clears on-demand but leaves _user_focused_game_id set;
+    # the ticker is on the panel then, not that game.
+    dc = _panel_controller(user_id='401', on_demand=False)
+    assert dc._panel_game_id() is None
+
+
+def test_clear_on_demand_queues_a_live_games_publish():
+    dc = _panel_controller(user_id='401')
+    dc.on_demand_status = 'active'
+    dc.available_modes = []
+    dc.rotation_resume_index = None
+    dc.current_display_mode = 'game_focus'
+    dc.current_mode_index = 0
+    dc._live_games_publish_pending = False
+    dc._publish_on_demand_state = MagicMock()
+    dc._clear_on_demand(reason='requested-stop')
+    assert dc._live_games_publish_pending is True
+
+
+def test_exit_game_mode_queues_a_live_games_publish():
+    dc = _panel_controller(user_id='401', active=True, rotation=[{'game_id': '401'}], on_demand=False)
+    dc._live_games_publish_pending = False
+    dc._exit_game_mode('requested-stop')
+    assert dc._live_games_publish_pending is True
+
+
+def test_tick_publishes_a_queued_live_games_update_past_the_throttle():
+    # After a stop, game mode is off and no plugin may update for ~30s; the
+    # queued publish must still go out on the next tick, throttle or not.
+    dc = _panel_controller()
+    dc.plugin_manager = SimpleNamespace(plugin_last_update={'p': 1.0}, run_scheduled_updates=lambda: None)
+    dc._last_live_games_publish = time.monotonic()
+    dc._live_games_publish_min_interval = 5.0
+    dc._live_games_publish_pending = True
+    dc._selected_game_ids = set()
+    dc._auto_cycle = True
+    dc._collect_live_games = lambda: []
+    dc._collect_upcoming_games = lambda: ([], 0)
+    dc._publish_controller_stats = lambda: None
+    dc._tick_plugin_updates()
+    keys = [c.args[0] for c in dc.cache_manager.set.call_args_list if c.args]
+    assert "game_mode_live_games" in keys
+    assert dc._live_games_publish_pending is False
 
 
 def test_panel_game_id_prefers_user_focus():

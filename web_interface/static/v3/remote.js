@@ -180,10 +180,12 @@
     }
 
     // The 2s poll is mostly served from the browser cache (~5s), so right
-    // after a tap fetch one fresh frame. Never used on the regular poll.
+    // after a tap fetch one fresh frame. 'reload' (not 'no-store') also
+    // replaces the cached copy; otherwise the next poll repainted the
+    // pre-tap frame. Never used on the regular poll.
     async function refreshPanelNow() {
         try {
-            renderPanelPicture(await api('/display/current', { cache: 'no-store' }));
+            renderPanelPicture(await api('/display/current', { cache: 'reload' }));
         } catch (_) { /* next poll catches up */ }
     }
 

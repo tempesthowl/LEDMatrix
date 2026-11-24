@@ -308,6 +308,10 @@ class DisplayController:
         # remote UI stays in sync with the emulator's plugin state.
         self._last_live_games_publish = 0.0
         self._live_games_publish_min_interval = 5.0
+        # Set when what's on the panel changes outside game mode (a stop or
+        # on-demand clear). Game mode off means no 5s republish, so without
+        # this the remote kept reading the old focused game for up to ~30s.
+        self._live_games_publish_pending = False
         # Kalshi background warmer state.
         # _attach_kalshi() is a pure dict read — never calls kalshi_match_game().
         # The warmer thread fetches odds off the hot path every ~20s.
@@ -1255,8 +1259,10 @@ class DisplayController:
             # behind the emulator's rendered state (B2 vs T1 drift bug).
             # The existing 5s throttle in _publish_live_games_cache() keeps
             # the tick-frequent calls safe.
-            if any_updated or self._game_mode_active:
-                self._publish_live_games_cache()
+            pending = getattr(self, "_live_games_publish_pending", False)
+            if any_updated or self._game_mode_active or pending:
+                self._live_games_publish_pending = False
+                self._publish_live_games_cache(force=pending)
             # Publish per-process RSS + cache-entry count for /system/status.
             # Throttled to ~30s inside the method — safe to call every tick.
             self._publish_controller_stats()
@@ -1522,7 +1528,9 @@ class DisplayController:
     def _panel_game_id(self) -> Optional[str]:
         """Id of the game on the panel: the user's FOCUS pick, else the
         current rotation game while Game Mode runs, else None."""
-        if self._user_focused_game_id:
+        # An on-demand expiry leaves the user's pick set while the ticker
+        # runs, so it only counts while on-demand holds the panel.
+        if self._user_focused_game_id and self.on_demand_active:
             return str(self._user_focused_game_id)
         rotation = self._game_mode_rotation_list
         index = self._game_mode_current_index
@@ -2447,6 +2455,7 @@ class DisplayController:
         self.on_demand_last_error = None
         self.on_demand_last_event = reason or 'cleared'
         self.on_demand_schedule_override = False
+        self._live_games_publish_pending = True
         # Break out of the current plugin's scroll cycle so the render loop
         # transitions to the resumed rotation immediately.
         self.force_change = True
@@ -2918,6 +2927,7 @@ class DisplayController:
         self._game_mode_rotation_paused = False
         self._game_select_placeholder = False
         self._placeholder_text = 'SELECT A GAME'
+        self._live_games_publish_pending = True
 
         if self.on_demand_active:
             self._clear_on_demand(reason=f"game-mode-{reason}")

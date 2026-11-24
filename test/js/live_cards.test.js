@@ -178,6 +178,13 @@ test('team game is on the panel only when its id matches', () => {
     assert.equal(isOnPanel(m, null, 'game'), false);
 });
 
+test('a team game is never on the panel while golf is', () => {
+    // Golf focuses without a game_id, so the server can still report the
+    // team game focused before it.
+    const m = cardModel(teamGame({ game_id: '401' }));
+    assert.equal(isOnPanel(m, '401', 'golf'), false);
+});
+
 test('a fresh tap holds its game until the server agrees', () => {
     const pending = { id: '402', until: 20000 };
     assert.deepEqual(resolvePanelGame('401', pending, 10000), { id: '402', pending });

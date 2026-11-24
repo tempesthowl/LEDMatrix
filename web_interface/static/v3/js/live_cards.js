@@ -115,8 +115,11 @@
 
     // Golf focuses without a game_id, so the server can't name it: golf mode
     // being on is what puts the golf card on the panel.
+    // ...and the server can still name the team game focused before golf,
+    // so no team card is on the panel while golf is.
     function isOnPanel(model, panelGameId, activeMode) {
         if (model.league.toLowerCase() === 'pga') return activeMode === 'golf' || panelGameId === model.id;
+        if (activeMode === 'golf') return false;
         return panelGameId !== null && panelGameId === model.id;
     }
 

@@ -1780,7 +1780,9 @@ input[type="range"].remote-range::-moz-range-thumb {
 
 /* Live cards (≥700px) and tiles (<700px). Fixed height, one-line text,
    an odds track that is always there: nothing moves after first paint. */
-.lg-grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+/* 340px keeps a ranked team + odds + score readable (300 hid the name at
+   1024 and 1920). */
+.lg-grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); }
 .lg-card {
     box-sizing: border-box;
     height: 74px;
@@ -1819,11 +1821,12 @@ input[type="range"].remote-range::-moz-range-thumb {
 .lg-tag { display: none; margin-left: auto; flex: none; font-size: 9px; font-weight: 800; letter-spacing: .5px; color: #93C5FD; }
 .lg-away { grid-area: away; }
 .lg-home { grid-area: home; }
-.lg-team { display: flex; align-items: center; gap: 6px; min-width: 0; height: 22px; }
+.lg-team { display: flex; align-items: center; gap: 6px; min-width: 0; height: 22px; overflow: hidden; }
 .lg-team .live-team-logo, .lg-team .live-team-badge { flex: none; width: 20px; height: 20px; margin: 0; }
 .lg-rank { flex: none; font-size: 11px; font-weight: 600; color: var(--rmt-text-dim); font-variant-numeric: tabular-nums; }
-.lg-abbr { flex: 1; font-weight: 700; letter-spacing: .3px; }
-.lg-pct { flex: none; font-size: 11px; font-weight: 600; color: #E2E8F0; font-variant-numeric: tabular-nums; }
+/* The team name never shrinks; when space runs out the odds % gives way. */
+.lg-abbr { flex: 1 0 auto; font-weight: 700; letter-spacing: .3px; }
+.lg-pct { flex: 0 1 auto; font-size: 11px; font-weight: 600; color: #E2E8F0; font-variant-numeric: tabular-nums; }
 .lg-score { flex: none; min-width: 24px; text-align: right; font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .lg-title { grid-area: title; align-self: center; font-weight: 700; font-size: 15px; }
 .lg-odds { grid-area: odds; display: flex; height: 4px; border-radius: 2px; overflow: hidden; background: var(--rmt-surface-2); }
