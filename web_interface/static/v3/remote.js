@@ -187,12 +187,15 @@
         } catch (_) { /* next poll catches up */ }
     }
 
+    let controlsEnabled = true;
+
     function setControlsEnabled(enabled) {
-        document.querySelectorAll('.btn-big, .focus-btn, .toggle, #brightness-slider')
+        controlsEnabled = enabled;
+        document.querySelectorAll('.btn-big, .focus-btn, .toggle, #brightness-slider, .lg-card')
             .forEach(el => { el.disabled = !enabled; });
     }
 
-    // --- Zone: Mode buttons ---
+    // --- Zone: Mode ---
     // Track which of ticker|game|golf is active. 'game' = any Game Mode
     // EXCEPT the PGA one; 'golf' = on-demand pinned to pga-tour-leaderboard.
     let activeMode = 'ticker';
@@ -200,25 +203,16 @@
     // the optimistic value after a tap).
     let panelTakenOver = false;
 
-    // 2026-05-28: optimistic-mode lock. When the user taps Ticker/Game,
-    // we flip activeMode immediately for snappy UI. But refreshMode polls
-    // the server and overwrites activeMode from authoritative state —
-    // during the transition window the server hasn't fully flipped yet,
-    // so the UI flickers (Game → Ticker → Game) before settling. This
-    // timestamp lets refreshMode skip its overwrite while a recent
-    // user-initiated mode change is still propagating.
-    let _modeChangeLockUntilTs = 0;
-    const _MODE_CHANGE_LOCK_MS = 3000;  // give the chain 3s to settle
+    // Optimistic mode hold. A tap flips activeMode at once, but the server's
+    // on-demand status and game_mode_active lag it by up to ~12s (5s publish
+    // throttle + 2s web memory TTL + 5s browser cache). The old fixed 3s lock
+    // expired first, so Back to ticker flickered back on. The hold is the same
+    // one ON PANEL uses: kept until the server agrees or FOCUS_HOLD_MS passes.
+    let modePending = null; // null | { id: mode, until: ms }
+
+    function releaseModeHold() { modePending = null; }
 
     async function refreshMode() {
-        // 2026-05-28: honour the optimistic-mode lock. If the user just
-        // tapped Ticker/Game, the server's on-demand status + game_mode_active
-        // flags will lag behind the request by a couple of seconds. Without
-        // this guard, the next refreshMode poll snaps activeMode back to
-        // whatever the server still thinks is true, then the poll after
-        // that snaps it forward again — visible as button flicker.
-        const lockActive = Date.now() < _modeChangeLockUntilTs;
-
         try {
             // Primary signal: on-demand status knows the exact plugin.
             let pluginId = null;
@@ -230,20 +224,17 @@
                 pluginId = st.plugin_id || null;
             } catch (_) { /* optional */ }
 
-            if (!lockActive) {
-                panelTakenOver = onDemandActive;
-                if (onDemandActive && pluginId === 'pga-tour-leaderboard') {
-                    activeMode = 'golf';
-                } else {
-                    const data = await api('/games/live');
-                    const gameModeActive = !!data?.data?.game_mode_active;
-                    activeMode = gameModeActive ? 'game' : 'ticker';
-                }
+            let serverMode;
+            if (onDemandActive && pluginId === 'pga-tour-leaderboard') {
+                serverMode = 'golf';
+            } else {
+                const data = await api('/games/live');
+                serverMode = data?.data?.game_mode_active ? 'game' : 'ticker';
             }
-            // If lock is active: do NOT mutate activeMode here. The optimistic
-            // value set by setMode() / _setModeUIOptimistic() stands until the
-            // lock expires. Still fetch the endpoints above so other zones
-            // (Live Games list, Now Showing card) get fresh data.
+            const held = window.LiveCards.resolvePanelGame(serverMode, modePending, Date.now());
+            modePending = held.pending;
+            activeMode = held.id || 'ticker';
+            panelTakenOver = modePending ? (activeMode !== 'ticker') : onDemandActive;
         } catch (_) { /* leave last value */ }
 
         updateBackToTicker();
@@ -276,18 +267,12 @@
         return { ok: null, state: null };
     }
 
-    // 2026-05-28: optimistic UI for mode buttons. Previously the button
-    // aria-pressed state only updated AFTER refreshAll() finished polling
-    // 9 endpoints, so tapping Game showed a half-second+ where neither
-    // button looked active. Now we flip activeMode + aria-pressed inline
-    // BEFORE the API call. If the request fails, refreshMode() on the
-    // next poll cycle will correct the UI from authoritative server state.
+    // Optimistic UI: flip activeMode (and Back to ticker) before the API
+    // call, and hold it until the server agrees. On failure the caller
+    // releases the hold so the next poll takes server truth.
     function _setModeUIOptimistic(mode) {
         activeMode = mode;
-        // Arm the lock so refreshMode() doesn't snap activeMode back to
-        // server-truth while the request is still propagating to the
-        // display controller (on-demand state takes 1-2s to settle).
-        _modeChangeLockUntilTs = Date.now() + _MODE_CHANGE_LOCK_MS;
+        modePending = { id: mode, until: Date.now() + window.LiveCards.FOCUS_HOLD_MS };
         panelTakenOver = (mode !== 'ticker');
         updateBackToTicker();
     }
@@ -334,6 +319,7 @@
     };
 
     window.backToTicker = async function () {
+        holdPanel(null);
         await window.setMode('ticker');
         setTimeout(refreshPanelNow, 600);
     };
@@ -404,9 +390,38 @@
     };
 
     // --- Zone: Live games ---
-    let focusedGameId = null;
-    let selectedGameIds = new Set(); // empty = all selected (default behavior)
-    let allGameIds = [];             // ids of the cards currently visible (Select All / None)
+    // Which game is on the panel: the server's focused_game_id, overridden
+    // for up to FOCUS_HOLD_MS by the user's last tap (see resolvePanelGame).
+    let serverPanelId = null;
+    let panelPending = null;      // null | { id: string|null, until: ms }
+    let selectionChecked = false; // one-time leftover-selection clear done
+    let lastLiveData = null;
+
+    function panelGameId() {
+        const r = window.LiveCards.resolvePanelGame(serverPanelId, panelPending, Date.now());
+        panelPending = r.pending;
+        return r.id;
+    }
+
+    function holdPanel(id) {
+        panelPending = { id, until: Date.now() + window.LiveCards.FOCUS_HOLD_MS };
+        renderLiveGames(lastLiveGames);
+        renderUpcoming(lastLiveData);
+    }
+
+    function dropPanelHold() {
+        panelPending = null;
+        renderLiveGames(lastLiveGames);
+        renderUpcoming(lastLiveData);
+    }
+
+    // The remote no longer edits the game selection, but a leftover one still
+    // filters every Game Mode rotation on the server (and exits it when none
+    // of its ids are live). Clear it once per page load, as "None" used to.
+    function clearLeftoverSelection(ids) {
+        if (!Array.isArray(ids) || ids.length === 0) return;
+        api('/games/select', { method: 'POST', body: { selected_game_ids: [] } }).catch(() => {});
+    }
 
     // Sport tab + filter chip (view-only), remembered per phone.
     const LIVE_VIEW_KEY = 'remote.liveView';
@@ -435,40 +450,6 @@
         renderLiveGames(lastLiveGames);
     };
 
-    async function syncSelection() {
-        try {
-            await api('/games/select', {
-                method: 'POST',
-                body: { selected_game_ids: [...selectedGameIds] }
-            });
-        } catch (e) {
-            showToast('Selection sync failed');
-        }
-    }
-
-    window.toggleGameSelection = function (gameId, checkbox) {
-        if (checkbox.checked) {
-            selectedGameIds.add(String(gameId));
-        } else {
-            selectedGameIds.delete(String(gameId));
-        }
-        syncSelection();
-    };
-
-    function liveGameIds() { return lastLiveGames.map(g => String(g.game_id)); }
-
-    window.selectAllGames = function () {
-        selectedGameIds = window.LiveFilters.selectVisible(selectedGameIds, liveGameIds(), allGameIds);
-        document.querySelectorAll('.game-check').forEach(cb => { cb.checked = true; });
-        syncSelection();
-    };
-
-    window.selectNoGames = function () {
-        selectedGameIds = window.LiveFilters.deselectVisible(selectedGameIds, liveGameIds(), allGameIds);
-        document.querySelectorAll('.game-check').forEach(cb => { cb.checked = false; });
-        syncSelection();
-    };
-
     function renderUpcoming(data) {
         const upEl = document.getElementById('upcoming-games-content');
         if (!upEl) return;
@@ -479,12 +460,13 @@
             upEl.textContent = 'No upcoming games.';
         } else {
             upEl.className = '';
+            const onPanelId = panelGameId();
             const rows = upcoming.map(function (g) {
                 const m = sportMeta(g.league);
                 const accent = m ? m.color : '#888';
                 const bar = kalshiBar(g);
                 const gid = String(g.game_id || '');
-                const isFocused = gid !== '' && gid === String(focusedGameId);
+                const isFocused = gid !== '' && gid === onPanelId;
                 const focusBtn = '<button class="focus-btn focus-btn--sm" onclick="focusGame(\''
                     + gid + '\',\'' + (g.plugin_id || '') + '\',\'' + (g.league || '') + '\')"'
                     + (isFocused ? ' disabled' : '') + '>'
@@ -511,27 +493,19 @@
         try {
             const data = await api('/games/live');
             const games = data?.data?.games || [];
-            focusedGameId = data?.data?.focused_game_id || null;
-
-            // Sync selection state from server on first load / refresh
-            const serverIds = data?.data?.selected_game_ids || [];
-            if (serverIds.length > 0) {
-                selectedGameIds = new Set(serverIds.map(String));
+            serverPanelId = data?.data?.focused_game_id;
+            if (!selectionChecked) {
+                selectionChecked = true;
+                clearLeftoverSelection(data?.data?.selected_game_ids);
             }
             lastLiveGames = games;
+            lastLiveData = data;
             renderLiveGames(games);
             renderUpcoming(data);
         } catch (e) {
-            el.classList.add('empty');
-            el.textContent = 'Could not load live games.';
+            if (el) el.innerHTML = '<div class="lg-empty">Could not load live games.</div>';
             renderUpcoming(null);
         }
-    }
-
-    // &nbsp; keeps "#24" on the same line as its team; a normal space let it
-    // wrap next to the score ("24 #24 / FLA") on a phone.
-    function rankBadge(rank) {
-        return rank ? `<span class="team-rank">#${Number(rank)}</span>&nbsp;` : '';
     }
 
     // The 2s poll rebuilds the tab/chip rows; carry their sideways scroll across
@@ -549,119 +523,59 @@
         }
     }
 
+    // Tabs and chips live in the pinned top block; the list below them is a
+    // grid of fixed-height cards (desktop) / tiles (phone) from LiveCards.
     function renderLiveGames(games) {
         const el = document.getElementById('live-games-content');
-        if (!el) return;
-        if (games.length === 0) {
-            allGameIds = [];
-            el.classList.add('empty');
-            el.textContent = 'No live games right now.';
-            return;
-        }
-        el.classList.remove('empty');
-
+        const tabsEl = document.getElementById('live-tabs');
+        const chipsEl = document.getElementById('live-chips');
+        if (!el || !tabsEl || !chipsEl) return;
         const LF = window.LiveFilters;
+        const LC = window.LiveCards;
         const view = LF.resolveView(games, liveView);
-        const shown = LF.filterGames(games, view.tab, view.chip);
-        allGameIds = shown.map(g => String(g.game_id));
 
+        // The 2s poll rebuilds both rows; carry their sideways scroll across.
+        const tabsScroll = tabsEl.firstElementChild ? tabsEl.scrollLeft : null;
+        const chipsScroll = (chipsEl.firstElementChild && chipsEl.dataset.tab === view.tab)
+            ? chipsEl.scrollLeft : null;
         // Names ride in data-* so a space or quote can't break the onclick JS.
-        const tabBar = '<div class="live-tabs">' + LF.buildTabs(games).map(t =>
+        tabsEl.innerHTML = LF.buildTabs(games).map(t =>
             `<button type="button" class="live-tab${t.key === view.tab ? ' is-active' : ''}"`
             + ` data-tab="${escAttr(t.key)}" onclick="setLiveTab(this.dataset.tab)">`
-            + `${t.key}<span class="live-tab-count">${t.count}</span></button>`).join('') + '</div>';
-        const chipNames = LF.buildChips(games, view.tab);
-        const chipRow = chipNames.length
-            ? '<div class="live-chips">' + chipNames.map(c =>
-                `<button type="button" class="live-chip${c === view.chip ? ' is-active' : ''}"`
-                + ` data-chip="${escAttr(c)}" onclick="setLiveChip(this.dataset.chip)">${c}</button>`).join('') + '</div>'
-            : '';
+            + `${t.key}<span class="live-tab-count">${t.count}</span></button>`).join('');
+        chipsEl.innerHTML = LF.buildChips(games, view.tab).map(c =>
+            `<button type="button" class="live-chip${c === view.chip ? ' is-active' : ''}"`
+            + ` data-chip="${escAttr(c)}" onclick="setLiveChip(this.dataset.chip)">${c}</button>`).join('');
+        // Reserved (even empty) on chip tabs, so a college game going live
+        // never inserts a row above the cards mid-poll.
+        chipsEl.hidden = !LF.hasChipSlot(view.tab);
+        chipsEl.dataset.tab = view.tab;
+        restoreRowScroll(tabsEl, tabsScroll, '.live-tab.is-active');
+        restoreRowScroll(chipsEl, chipsScroll, '.live-chip.is-active');
 
-        // Selection toolbar
-        const toolbar = `<div class="select-toolbar">
-            <button class="select-link" onclick="selectAllGames()">Select All</button>
-            <button class="select-link" onclick="selectNoGames()">None</button>
-        </div>`;
-
-        const cards = shown.map(g => {
-            const gid = String(g.game_id);
-            const isFocused = gid === String(focusedGameId);
-            // Empty selection = nothing selected (placeholder state).
-            const isSelected = selectedGameIds.has(gid);
-            const m = sportMeta(g.league);
-            const accent = m ? m.color : 'var(--color-border-secondary)';
-            const leagueLabel = (m && m.label) || g.league || '';
-            const isGolf = String(g.league || '').toLowerCase() === 'pga';
-            // Sport-tinted card background (single source of truth: the
-            // SPORT_META accent). A left-weighted color wash over the dark
-            // base + the 4px accent bar makes each sport scannable at a
-            // glance. Skip the tint on the focused card so its blue
-            // highlight still reads; unknown leagues stay un-tinted.
-            const cardStyle = (m && !isFocused)
-                ? `border-left-color:${accent};background:linear-gradient(90deg, ${accent}38 0%, ${accent}12 48%, transparent 80%), var(--rmt-surface)`
-                : `border-left-color:${accent}`;
-
-            // Pulsing LIVE pill for in-progress games (ESPN status_state 'in').
-            const live = (g.status_state === 'in')
-                ? '<span class="live-badge"><span class="live-dot"></span>LIVE</span>' : '';
-
-            // Golf is a tournament, not a two-team matchup: get_live_games
-            // returns a single "LEADER" sentinel with 0–0 scores. Render a
-            // tournament card (name + round · league) instead of the team
-            // template, which would otherwise show "LEADER 0 – 0" with a
-            // stray "LEADER" badge. period_label is "<Tournament> · <Round>".
-            let cardInfo;
-            if (isGolf) {
-                const parts = String(g.period_label || '').split(/\s*·\s*/).filter(Boolean);
-                const title = parts[0] || 'Leaderboard';
-                const sub = parts.slice(1).concat(leagueLabel).filter(Boolean).join(' · ');
-                cardInfo = `
-                        <div>
-                            <div class="game-score-line">${title}</div>
-                            <div class="game-meta-line">${live}<span>${sub}</span></div>
-                        </div>`;
-            } else {
-                cardInfo = `
-                        <div class="game-logos">
-                            ${teamLogo(g.away_logo_url, g.away_team, accent)}
-                            ${teamLogo(g.home_logo_url, g.home_team, accent)}
-                        </div>
-                        <div>
-                            <div class="game-score-line">
-                                ${rankBadge(g.away_rank)}<span class="team">${g.away_team}</span> <span class="score">${g.away_score ?? ''}</span>
-                                <span class="dash">–</span>
-                                <span class="score">${g.home_score ?? ''}</span> ${rankBadge(g.home_rank)}<span class="team">${g.home_team}</span>
-                            </div>
-                            <div class="game-meta-line">${live}<span>${[g.period_label, leagueLabel].filter(Boolean).join(' · ')}</span></div>
-                            ${kalshiBar(g)}
-                        </div>`;
-            }
-            return `
-                <div class="game-card sport-accent" data-focused="${isFocused}" style="${cardStyle}">
-                    <div class="game-card-inner">
-                        <input type="checkbox" class="game-check"
-                               ${isSelected ? 'checked' : ''}
-                               onchange="toggleGameSelection('${gid}', this)">
-                        ${leagueLogo(g.league, accent)}
-                        ${cardInfo}
-                    </div>
-                    <button class="focus-btn" onclick="focusGame('${g.game_id}','${g.plugin_id || ''}','${g.league || ''}')"
-                            ${isFocused ? 'disabled' : ''}>
-                        ${isFocused ? 'FOCUSED' : 'FOCUS'}
-                    </button>
-                </div>
-            `;
-        }).join('');
-
-        const prevTabs = el.querySelector('.live-tabs');
-        const prevChips = el.querySelector('.live-chips');
-        const tabsScroll = prevTabs ? prevTabs.scrollLeft : null;
-        const chipsScroll = (prevChips && el.dataset.chipTab === view.tab) ? prevChips.scrollLeft : null;
-        el.innerHTML = tabBar + chipRow + toolbar + cards;
-        el.dataset.chipTab = view.tab;
-        restoreRowScroll(el.querySelector('.live-tabs'), tabsScroll, '.live-tab.is-active');
-        restoreRowScroll(el.querySelector('.live-chips'), chipsScroll, '.live-chip.is-active');
+        if (games.length === 0) {
+            el.innerHTML = '<div class="lg-empty">No live games right now.</div>';
+            return;
+        }
+        const onPanelId = panelGameId();
+        const shown = LF.filterGames(games, view.tab, view.chip);
+        el.innerHTML = '<div class="lg-grid">' + shown.map(g => {
+            const model = LC.cardModel(g);
+            const meta = sportMeta(g.league);
+            return LC.cardHtml(model, {
+                onPanel: LC.isOnPanel(model, onPanelId, activeMode),
+                enabled: controlsEnabled,
+                accent: meta ? meta.color : '',
+                teamLogo,
+            });
+        }).join('') + '</div>';
     }
+
+    // A tap anywhere on a card/tile focuses its game; the on-panel one is inert.
+    window.focusFromCard = function (el) {
+        if (el.classList.contains('is-on-panel')) return;
+        window.focusGame(el.dataset.gameId, el.dataset.pluginId, el.dataset.league);
+    };
 
     window.manualRefreshGames = async function () {
         const btn = document.getElementById('refresh-games-btn');
@@ -688,6 +602,10 @@
     };
 
     window.focusGame = async function (gameId, pluginId, league) {
+        const golf = String(league || '').toLowerCase() === 'pga';
+        // Show ON PANEL on the tapped game now; the server lags ~12s.
+        holdPanel(String(gameId));
+        _setModeUIOptimistic(golf ? 'golf' : 'game');
         try {
             // Always use game_focus, including for golf. game_focus is the
             // Kalshi-leaderboard view (Eric's only-acceptable golf experience
@@ -712,12 +630,16 @@
             if (outcome.ok === false) {
                 const reason = outcome.state?.error || 'unknown';
                 showToast(`Focus failed (${reason})`, 4000);
+                releaseModeHold();
+                dropPanelHold();
             } else {
                 setTimeout(refreshPanelNow, 600);
             }
             await refreshAll();
         } catch (e) {
             showToast('Focus failed');
+            releaseModeHold();
+            dropPanelHold();
         }
     };
 

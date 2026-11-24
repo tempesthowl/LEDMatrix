@@ -1503,32 +1503,6 @@ input[type="range"].remote-range::-moz-range-thumb {
 .health-value.crit { color: var(--color-error); }
 .health-value.ok   { color: var(--color-success); }
 
-.select-toolbar {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--space-3);
-    margin-bottom: var(--space-2);
-}
-.select-link {
-    font-size: 13px;
-    color: var(--color-primary);
-    cursor: pointer;
-    background: none;
-    border: none;
-    padding: 6px 8px;
-    font-weight: var(--font-weight-medium);
-    text-decoration: underline;
-    min-height: 32px;
-}
-.game-check {
-    width: 20px;
-    height: 20px;
-    accent-color: var(--color-primary);
-    cursor: pointer;
-    flex-shrink: 0;
-    margin-right: 10px;
-}
-
 .kalshi-select {
     width: 100%;
     min-height: 44px;
@@ -1794,6 +1768,95 @@ input[type="range"].remote-range::-moz-range-thumb {
     font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;
 }
 .caption-btn:disabled { border-color: var(--rmt-border-strong); color: var(--rmt-text-dim); opacity: .6; cursor: default; }
+/* Tabs + chips sit in the pinned top block. The chip row keeps one chip
+   row of height on the tabs that can show chips, chips or not. */
+.live-tabs-row { display: flex; align-items: flex-start; gap: 6px; }
+.live-tabs-row .live-tabs { flex: 1; min-width: 0; }
+.live-tabs-row .refresh-btn { float: none; flex: none; padding: 8px; }
+.live-chips { box-sizing: border-box; min-height: 33px; }
+
+/* The live list sits straight on the page; its cards are the surfaces. */
+#live-games.remote-section { background: none; border: none; box-shadow: none; padding: 0; }
+
+/* Live cards (≥700px) and tiles (<700px). Fixed height, one-line text,
+   an odds track that is always there: nothing moves after first paint. */
+.lg-grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+.lg-card {
+    box-sizing: border-box;
+    height: 74px;
+    width: 100%;
+    margin: 0;
+    padding: 8px 10px 8px 12px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 76px 76px;
+    grid-template-rows: 22px 22px 4px;
+    grid-template-areas: "away status focus" "home status focus" "odds status focus";
+    column-gap: 10px;
+    row-gap: 3px;
+    align-items: center;
+    font: inherit;
+    font-size: 14px;
+    color: var(--rmt-text);
+    text-align: left;
+    background: var(--rmt-surface);
+    border: 1px solid var(--rmt-border);
+    border-left: 3px solid var(--lg-accent, transparent);
+    border-radius: 12px;
+    cursor: pointer;
+}
+.lg-card.is-event { grid-template-areas: "title status focus" "title status focus" "odds status focus"; }
+.lg-card.is-on-panel { outline: 2px solid var(--rmt-accent); outline-offset: -1px; cursor: default; }
+.lg-card:disabled { cursor: default; opacity: .6; }
+.lg-card span, .lg-title {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+.lg-status {
+    grid-area: status;
+    display: flex; align-items: center; gap: 5px; min-width: 0;
+    font-size: 12px; font-weight: 600; color: #CBD5E1;
+}
+.lg-live-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--rmt-live); }
+.lg-tag { display: none; margin-left: auto; flex: none; font-size: 9px; font-weight: 800; letter-spacing: .5px; color: #93C5FD; }
+.lg-away { grid-area: away; }
+.lg-home { grid-area: home; }
+.lg-team { display: flex; align-items: center; gap: 6px; min-width: 0; height: 22px; }
+.lg-team .live-team-logo, .lg-team .live-team-badge { flex: none; width: 20px; height: 20px; margin: 0; }
+.lg-rank { flex: none; font-size: 11px; font-weight: 600; color: var(--rmt-text-dim); font-variant-numeric: tabular-nums; }
+.lg-abbr { flex: 1; font-weight: 700; letter-spacing: .3px; }
+.lg-pct { flex: none; font-size: 11px; font-weight: 600; color: #E2E8F0; font-variant-numeric: tabular-nums; }
+.lg-score { flex: none; min-width: 24px; text-align: right; font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.lg-title { grid-area: title; align-self: center; font-weight: 700; font-size: 15px; }
+.lg-odds { grid-area: odds; display: flex; height: 4px; border-radius: 2px; overflow: hidden; background: var(--rmt-surface-2); }
+.lg-odds i { display: block; height: 100%; }
+.lg-focus {
+    grid-area: focus;
+    display: block; padding: 8px 0; border-radius: 999px; border: 1px solid var(--rmt-accent);
+    background: var(--rmt-accent); color: #fff; text-align: center;
+    font-size: 12px; font-weight: 700;
+}
+.lg-card.is-on-panel .lg-focus { background: transparent; color: #93C5FD; font-size: 10px; }
+.lg-empty {
+    box-sizing: border-box; height: 74px; display: flex; align-items: center; justify-content: center;
+    background: var(--rmt-surface); border: 1px solid var(--rmt-border); border-radius: 12px;
+    color: var(--rmt-text-dim); font-style: italic;
+}
+@media (max-width: 699px) {
+    .lg-grid { grid-template-columns: 1fr 1fr; }
+    .lg-card {
+        height: 100px;
+        padding: 8px 10px;
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: 14px 22px 22px minmax(0, 1fr);
+        grid-template-areas: "status" "away" "home" "odds";
+        row-gap: 4px;
+    }
+    .lg-card.is-event { grid-template-areas: "status" "title" "title" "odds"; }
+    .lg-odds { align-self: end; }
+    .lg-status { font-size: 11px; }
+    .lg-tag { display: inline; }
+    .lg-focus { display: none; }
+}
+
 .settings-head {
     position: sticky; top: 0; z-index: 60;
     display: flex; align-items: center; gap: var(--space-3);

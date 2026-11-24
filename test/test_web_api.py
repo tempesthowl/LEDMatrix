@@ -811,3 +811,11 @@ def test_remote_has_panel_picture_in_pinned_top(client):
     html = client.get('/remote').data.decode('utf-8')
     assert 'id="panel-pic-img"' in html
     assert html.index('id="rmt-top"') < html.index('id="panel-pic"') < html.index('id="back-to-ticker"')
+
+
+def test_remote_tabs_and_chips_are_pinned_above_the_list(client):
+    html = client.get('/remote').data.decode('utf-8')
+    assert (html.index('id="rmt-top"') < html.index('id="live-tabs"')
+            < html.index('id="live-chips"') < html.index('id="live-games"'))
+    assert 'live_cards.js' in html
+    assert html.index('live_cards.js') < html.index('remote.js')

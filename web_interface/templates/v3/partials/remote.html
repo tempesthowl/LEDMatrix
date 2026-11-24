@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#0B1220">
     <title>Outdoor Ticker — Remote</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <link rel="stylesheet" href="/static/v3/app.css?v=42">
+    <link rel="stylesheet" href="/static/v3/app.css?v=43">
 </head>
 <body class="remote-body">
     <div id="live-view">
@@ -31,6 +31,14 @@
             <button id="back-to-ticker" type="button" class="caption-btn" disabled
                     onclick="backToTicker()">Back to ticker</button>
         </div>
+        <div class="live-tabs-row">
+            <div class="live-tabs" id="live-tabs"></div>
+            <button id="refresh-games-btn" class="refresh-btn" type="button"
+                    onclick="manualRefreshGames()" aria-label="Refresh live games">
+                <i class="fas fa-rotate-right"></i>
+            </button>
+        </div>
+        <div class="live-chips" id="live-chips" hidden></div>
     </div>
 
     <style>
@@ -49,6 +57,7 @@
       .live-tab.is-active { background: var(--rmt-accent); border-color: var(--rmt-accent); color: #fff; }
       .live-tab-count { font-variant-numeric: tabular-nums; font-size: 0.85em; opacity: 0.75; }
       .live-chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 8px; scrollbar-width: none; }
+      .live-chips[hidden] { display: none; }
       .live-chips::-webkit-scrollbar { display: none; }
       .live-chip { flex: 0 0 auto; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--rmt-border-strong); background: transparent;
         color: var(--rmt-text-dim); font-size: 0.8em; font-weight: 600; cursor: pointer; white-space: nowrap; }
@@ -70,14 +79,8 @@
       .upcoming-row-top .upcoming-teams { flex: 1; }
       .focus-btn--sm { padding: 3px 8px; font-size: 11px; line-height: 1; flex-shrink: 0; min-height: unset; min-width: unset; }
     </style>
-    <section class="remote-section" id="live-games">
-        <h3>Live Games
-            <button id="refresh-games-btn" class="refresh-btn" type="button"
-                    onclick="manualRefreshGames()" aria-label="Refresh live games">
-                <i class="fas fa-rotate-right"></i>
-            </button>
-        </h3>
-        <div id="live-games-content" class="empty">Loading…</div>
+    <section class="remote-section" id="live-games" aria-label="Live games">
+        <div id="live-games-content"><div class="lg-empty">Loading…</div></div>
     </section>
 
     <section class="remote-section" id="upcoming-games">
@@ -238,8 +241,9 @@
         <button type="button" class="pending-apply" onclick="applyPending()">Apply</button>
     </div>
 
-    <script src="/static/v3/js/live_filters.js?v=2" defer></script>
-    <script src="/static/v3/remote.js?v=54" defer></script>
+    <script src="/static/v3/js/live_filters.js?v=3" defer></script>
+    <script src="/static/v3/js/live_cards.js?v=1" defer></script>
+    <script src="/static/v3/remote.js?v=55" defer></script>
 
     <style>
         .health-trend {
