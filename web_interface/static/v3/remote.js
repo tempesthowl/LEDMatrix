@@ -450,11 +450,36 @@
         renderLiveGames(lastLiveGames);
     };
 
+    // Upcoming is one collapsed row by default; open/closed is remembered.
+    const UPCOMING_OPEN_KEY = 'remote.upcomingOpen';
+    function pageStorage() {
+        try { return window.localStorage; } catch (e) { return null; } // private mode can throw here
+    }
+    function applyUpcomingOpen(open) {
+        const content = document.getElementById('upcoming-games-content');
+        const toggle = document.getElementById('upcoming-toggle');
+        if (content) content.hidden = !open;
+        if (toggle) toggle.setAttribute('aria-expanded', String(open));
+    }
+    window.toggleUpcoming = function () {
+        const content = document.getElementById('upcoming-games-content');
+        const open = !!(content && content.hidden);
+        applyUpcomingOpen(open);
+        const store = pageStorage();
+        if (store) window.LiveCards.writeStoredFlag(store, UPCOMING_OPEN_KEY, open);
+    };
+    (function restoreUpcomingOpen() {
+        const store = pageStorage();
+        applyUpcomingOpen(store ? window.LiveCards.readStoredFlag(store, UPCOMING_OPEN_KEY) : false);
+    })();
+
     function renderUpcoming(data) {
         const upEl = document.getElementById('upcoming-games-content');
         if (!upEl) return;
         const upcoming = (data && data.data && data.data.upcoming) || [];
         const more = (data && data.data && data.data.upcoming_more) || 0;
+        const countEl = document.getElementById('upcoming-count');
+        if (countEl) countEl.textContent = String(upcoming.length + more);
         if (!upcoming.length) {
             upEl.className = 'empty';
             upEl.textContent = 'No upcoming games.';

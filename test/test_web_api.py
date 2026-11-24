@@ -819,3 +819,11 @@ def test_remote_tabs_and_chips_are_pinned_above_the_list(client):
             < html.index('id="live-chips"') < html.index('id="live-games"'))
     assert 'live_cards.js' in html
     assert html.index('live_cards.js') < html.index('remote.js')
+
+
+def test_remote_upcoming_starts_collapsed(client):
+    html = client.get('/remote').data.decode('utf-8')
+    assert 'id="upcoming-toggle"' in html
+    start = html.index('<div id="upcoming-games-content"')
+    tag = html[start:html.index('>', start)]
+    assert 'hidden' in tag

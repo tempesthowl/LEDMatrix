@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#0B1220">
     <title>Outdoor Ticker — Remote</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <link rel="stylesheet" href="/static/v3/app.css?v=43">
+    <link rel="stylesheet" href="/static/v3/app.css?v=44">
 </head>
 <body class="remote-body">
     <div id="live-view">
@@ -84,8 +84,13 @@
     </section>
 
     <section class="remote-section" id="upcoming-games">
-        <h3>Upcoming</h3>
-        <div id="upcoming-games-content" class="empty">Loading…</div>
+        <button type="button" id="upcoming-toggle" class="upcoming-toggle" aria-expanded="false"
+                aria-controls="upcoming-games-content" onclick="toggleUpcoming()">
+            <span class="upcoming-toggle-label">Upcoming</span>
+            <span id="upcoming-count" class="live-tab-count"></span>
+            <i class="fas fa-chevron-down" aria-hidden="true"></i>
+        </button>
+        <div id="upcoming-games-content" class="empty" hidden>Loading…</div>
     </section>
     </div>
 
@@ -243,7 +248,7 @@
 
     <script src="/static/v3/js/live_filters.js?v=3" defer></script>
     <script src="/static/v3/js/live_cards.js?v=1" defer></script>
-    <script src="/static/v3/remote.js?v=55" defer></script>
+    <script src="/static/v3/remote.js?v=56" defer></script>
 
     <style>
         .health-trend {
