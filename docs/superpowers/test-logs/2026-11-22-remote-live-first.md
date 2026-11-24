@@ -96,6 +96,28 @@ On a fresh `/v3/remote` load with 4+ polls, there were no new console errors and
 - Live view at 1440 with the fixture: ![](assets/2026-11-22-remote-live-first/live-1440-fixture.jpg)
 - Live view at 375 with real data and no live games, from Task 4: ![](assets/2026-11-22-remote-live-first/live-375-real-task4.jpg)
 
+## Review fixes (`db5656f7`)
+
+A whole-branch review (Opus) found no Critical issues and 4 Important ones. All four are fixed, each reproduced before the fix and passing after it:
+
+- **Stale game after Back to ticker.**
+  - After a stop, game mode is off, so the controller published nothing until a plugin's own update, which could take up to ~30s. The 10.2s clear in section 3 was a lucky timing.
+  - Now a stop or on-demand clear queues one forced publish for the next tick (`display_controller.py` `_live_games_publish_pending`).
+  - Re-measured: the server cleared in **1.3s**. ON PANEL stayed off and Back to ticker stayed disabled for 25 of 25 seconds.
+- **ON PANEL on the wrong card.**
+  - An on-demand expiry left the user's FOCUS pick published while the ticker ran. That pick now only counts while on-demand holds the panel.
+  - Golf focuses without a `game_id`, so the server still named the team game focused before it. No team card is ON PANEL while golf is (`live_cards.js` `isOnPanel`).
+  - Covered by pytest and node tests.
+- **Team names cut off at 1024 and 1920.**
+  - Measured before the fix: at 1920 (6 × 308px cards) BYU showed 9 of its 28px and TA&M 7 of 44px; at 1024, 26/28 and 24/44.
+  - Fix: cards are now at least 340px, and the odds % gives way before the name.
+  - After: no team name is cut at 375, 1024 (2 × 492), 1440 (4 × 346) or 1920 (5 × 371). At exactly 340px only TA&M's `55%` is trimmed.
+- **Picture flashed back to the old frame after a tap.**
+  - A `no-store` fetch doesn't update the browser cache, so the next poll repainted the pre-tap frame. Frame sequence after Back to ticker was `game > ticker > game > ticker`.
+  - The fetch now uses `cache: 'reload'`. After: `0>1` and `0>1>2`, with no revert.
+
+Nine minor findings were deferred: polish, plus a few pre-existing issues the review also flagged. They are listed in the final report.
+
 ## Tests
 
 - **pytest, new:** 5 in `test/test_display_controller.py` and 3 in `test/web/test_games_live_focus_api.py`. 5 in `test/test_web_api.py` (settings view, gear/no mode buttons, panel picture, pinned tabs, Upcoming collapsed). Each was red, then green.
