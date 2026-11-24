@@ -805,3 +805,9 @@ def test_remote_has_gear_and_back_to_ticker_but_no_mode_buttons(client):
     assert 'id="settings-btn"' in html and 'id="back-to-ticker"' in html
     assert 'id="btn-game"' not in html and 'id="btn-ticker"' not in html
     assert 'id="auto-focus-toggle"' in html and 'id="auto-cycle-toggle"' in html
+
+
+def test_remote_has_panel_picture_in_pinned_top(client):
+    html = client.get('/remote').data.decode('utf-8')
+    assert 'id="panel-pic-img"' in html
+    assert html.index('id="rmt-top"') < html.index('id="panel-pic"') < html.index('id="back-to-ticker"')

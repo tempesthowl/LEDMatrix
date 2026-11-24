@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#0B1220">
     <title>Outdoor Ticker — Remote</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <link rel="stylesheet" href="/static/v3/app.css?v=41">
+    <link rel="stylesheet" href="/static/v3/app.css?v=42">
 </head>
 <body class="remote-body">
     <div id="live-view">
@@ -23,6 +23,9 @@
                         onclick="openSettings()"><i class="fas fa-gear" aria-hidden="true"></i></button>
             </div>
         </header>
+        <div class="panel-pic" id="panel-pic">
+            <img id="panel-pic-img" alt="What the LED panel is showing" hidden>
+        </div>
         <div class="panel-caption">
             <span>On the panel now</span>
             <button id="back-to-ticker" type="button" class="caption-btn" disabled
@@ -236,7 +239,7 @@
     </div>
 
     <script src="/static/v3/js/live_filters.js?v=2" defer></script>
-    <script src="/static/v3/remote.js?v=53" defer></script>
+    <script src="/static/v3/remote.js?v=54" defer></script>
 
     <style>
         .health-trend {

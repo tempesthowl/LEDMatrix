@@ -103,6 +103,7 @@
             method: opts.method || 'GET',
             headers: { 'Content-Type': 'application/json' },
             body: opts.body ? JSON.stringify(opts.body) : undefined,
+            cache: opts.cache,
         }).then(r => {
             if (!r.ok) throw new Error(`HTTP ${r.status}`);
             return r.json();
@@ -129,6 +130,7 @@
 
         try {
             const curr = await api('/display/current');
+            renderPanelPicture(curr);
             const ts = curr?.data?.timestamp;
             if (typeof ts === 'number' && (Date.now() / 1000 - ts) < 30) {
                 running = true;
@@ -163,6 +165,26 @@
         }
 
         setControlsEnabled(running !== false);
+    }
+
+    // --- Zone: Panel picture ---
+    // /display/current carries the panel as base64 PNG. It is sometimes null
+    // mid-write; keep the last good frame rather than blanking the box.
+    function renderPanelPicture(resp) {
+        const image = resp?.data?.image;
+        if (typeof image !== 'string' || !image) return;
+        const img = document.getElementById('panel-pic-img');
+        if (!img) return;
+        img.src = 'data:image/png;base64,' + image;
+        img.hidden = false;
+    }
+
+    // The 2s poll is mostly served from the browser cache (~5s), so right
+    // after a tap fetch one fresh frame. Never used on the regular poll.
+    async function refreshPanelNow() {
+        try {
+            renderPanelPicture(await api('/display/current', { cache: 'no-store' }));
+        } catch (_) { /* next poll catches up */ }
     }
 
     function setControlsEnabled(enabled) {
@@ -311,8 +333,9 @@
         }
     };
 
-    window.backToTicker = function () {
-        return window.setMode('ticker');
+    window.backToTicker = async function () {
+        await window.setMode('ticker');
+        setTimeout(refreshPanelNow, 600);
     };
 
     // --- Live view / Settings view (same page, never remembered) ---
@@ -689,6 +712,8 @@
             if (outcome.ok === false) {
                 const reason = outcome.state?.error || 'unknown';
                 showToast(`Focus failed (${reason})`, 4000);
+            } else {
+                setTimeout(refreshPanelNow, 600);
             }
             await refreshAll();
         } catch (e) {
