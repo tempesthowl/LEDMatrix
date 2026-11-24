@@ -40,6 +40,10 @@
         return tabs;
     }
 
+    // The chip row's height stays reserved on these tabs even with no chips,
+    // so a college game going live never inserts a row above the cards.
+    function hasChipSlot(tab) { return CHIP_TABS.has(tab); }
+
     function buildChips(games, tab) {
         if (!CHIP_TABS.has(tab)) return [];
         const inTab = gamesInTab(games, tab);
@@ -96,7 +100,7 @@
     }
 
     const api = {
-        TAB_ORDER, sportTab, buildTabs, buildChips, filterGames, resolveView,
+        TAB_ORDER, sportTab, buildTabs, buildChips, hasChipSlot, filterGames, resolveView,
         selectVisible, deselectVisible,
     };
     root.LiveFilters = api;

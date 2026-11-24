@@ -3,7 +3,16 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
     sportTab, buildTabs, buildChips, filterGames, resolveView, selectVisible, deselectVisible,
+    hasChipSlot,
 } = require('../../web_interface/static/v3/js/live_filters.js');
+
+test('chip slot is reserved on Football and Basketball only', () => {
+    assert.equal(hasChipSlot('Football'), true);
+    assert.equal(hasChipSlot('Basketball'), true);
+    assert.deepEqual(buildChips([{ league: 'nba' }], 'Basketball'), []);
+    assert.equal(hasChipSlot('All'), false);
+    assert.equal(hasChipSlot('Baseball'), false);
+});
 
 const cfb = (away, home, a = {}, h = {}) => ({
     league: 'ncaa_fb', away_team: away, home_team: home,
