@@ -1095,10 +1095,10 @@ button.bg-white {
     background: var(--rmt-bg);
     color: var(--rmt-text);
     margin: 0;
-    padding: var(--space-4);
-    max-width: 560px;
-    margin-left: auto;
-    margin-right: auto;
+    /* The live list spans the full page width (no max-width column). The
+       sticky .rmt-top bleeds to the edges with -var(--rmt-pad) margins. */
+    --rmt-pad: var(--space-4);
+    padding: var(--rmt-pad);
 }
 
 .remote-section {
@@ -1733,58 +1733,68 @@ input[type="range"].remote-range::-moz-range-thumb {
    grid so nothing clips on a 360px viewport. */
 @media (max-width: 380px) {
     .btn-grid    { grid-template-columns: 1fr; }
-    .remote-body { padding: var(--space-3); }
+    .remote-body { --rmt-pad: var(--space-3); }
 }
 
-/* Desktop layout — use the dead side gutters at ≥1024px by flowing sections
-   into a 2-column masonry via CSS columns; 3-column at ≥1440px.
-   Mobile (<1024px) is intentionally untouched and stays single-column.
-   `break-inside: avoid` keeps each .remote-section atomic — never splits
-   a section across columns. `column-span: all` keeps the header full-width. */
-@media (min-width: 1024px) {
-    .remote-body {
-        max-width: 1200px;
-        padding: var(--space-6) var(--space-4);
-        column-count: 2;
-        column-gap: var(--space-6);
-        column-fill: balance;
-    }
-    .remote-header {
-        column-span: all;
-        margin-bottom: var(--space-6);
-        padding-bottom: 0;
-        border: none;
-    }
-    .remote-section {
-        break-inside: avoid;
-        margin-bottom: var(--space-6);
-    }
-}
-
-@media (min-width: 1440px) {
-    .remote-body {
-        max-width: 1500px;
-        column-count: 3;
-        column-gap: var(--space-6);
-    }
-}
-
-/* Remote-page chrome (header, control rows). */
-.remote-header {
+/* --- Live-first layout (2026-11-22) --------------------------------------
+   The old ≥1024px column-count masonry is gone: it re-balanced every section
+   whenever the live list changed height, so the list hopped columns. The
+   live view is one full-width column; Settings gets a plain grid. */
+.rmt-top {
     position: sticky;
     top: 0;
     z-index: 60;
+    margin: calc(-1 * var(--rmt-pad)) calc(-1 * var(--rmt-pad)) var(--space-3);
+    padding: 0 var(--rmt-pad) var(--space-2);
+    background: var(--rmt-bg);
+    border-bottom: 1px solid var(--rmt-border);
+}
+.remote-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     gap: var(--space-3);
-    margin: calc(-1 * var(--space-4)) calc(-1 * var(--space-4)) var(--space-4);
-    padding: var(--space-3) var(--space-4);
-    background: color-mix(in srgb, var(--rmt-bg) 82%, transparent);
-    backdrop-filter: blur(12px) saturate(140%);
-    -webkit-backdrop-filter: blur(12px) saturate(140%);
+    padding: var(--space-3) 0;
+}
+.header-actions { display: inline-flex; align-items: center; gap: var(--space-2); }
+.icon-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px; padding: 0;
+    border: 1px solid var(--rmt-border-strong); border-radius: 50%;
+    background: var(--rmt-surface-2); color: var(--rmt-text);
+    font-size: 16px; cursor: pointer;
+}
+.panel-caption {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+    margin: var(--space-2) 0;
+    font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--rmt-text-dim);
+}
+.caption-btn {
+    padding: 6px 12px; border-radius: 999px;
+    border: 1px solid var(--rmt-accent); background: transparent; color: var(--rmt-text);
+    font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.caption-btn:disabled { border-color: var(--rmt-border-strong); color: var(--rmt-text-dim); opacity: .6; cursor: default; }
+.settings-head {
+    position: sticky; top: 0; z-index: 60;
+    display: flex; align-items: center; gap: var(--space-3);
+    margin: calc(-1 * var(--rmt-pad)) calc(-1 * var(--rmt-pad)) var(--space-4);
+    padding: var(--space-3) var(--rmt-pad);
+    background: var(--rmt-bg);
     border-bottom: 1px solid var(--rmt-border);
 }
+.settings-title { margin: 0; font-size: 18px; font-weight: var(--font-weight-bold); color: var(--rmt-text); }
+@media (min-width: 1024px) {
+    .settings-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+        gap: var(--space-6);
+        align-items: start;
+    }
+    .settings-grid > .remote-section { margin-bottom: 0; }
+}
+
+/* Remote-page chrome (header, control rows). */
 .remote-title {
     font-size: 20px;
     margin: 0;

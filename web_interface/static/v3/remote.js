@@ -174,6 +174,9 @@
     // Track which of ticker|game|golf is active. 'game' = any Game Mode
     // EXCEPT the PGA one; 'golf' = on-demand pinned to pga-tour-leaderboard.
     let activeMode = 'ticker';
+    // True while any on-demand plugin holds the panel (last server read, or
+    // the optimistic value after a tap).
+    let panelTakenOver = false;
 
     // 2026-05-28: optimistic-mode lock. When the user taps Ticker/Game,
     // we flip activeMode immediately for snappy UI. But refreshMode polls
@@ -206,6 +209,7 @@
             } catch (_) { /* optional */ }
 
             if (!lockActive) {
+                panelTakenOver = onDemandActive;
                 if (onDemandActive && pluginId === 'pga-tour-leaderboard') {
                     activeMode = 'golf';
                 } else {
@@ -220,13 +224,14 @@
             // (Live Games list, Now Showing card) get fresh data.
         } catch (_) { /* leave last value */ }
 
-        document.getElementById('btn-ticker').setAttribute('aria-pressed', (activeMode === 'ticker').toString());
-        document.getElementById('btn-game').setAttribute('aria-pressed',   (activeMode === 'game').toString());
-        // btn-golf is currently hidden from the UI (the plan is to fold
-        // golf into GAME MODE auto-detection later). Guard the lookup so
-        // refreshMode() still works if the button is absent. setMode('golf')
-        // remains a dispatchable code path for programmatic activation.
-        document.getElementById('btn-golf')?.setAttribute('aria-pressed', (activeMode === 'golf').toString());
+        updateBackToTicker();
+    }
+
+    // Back to ticker is live whenever something has taken the panel over:
+    // a game or golf (activeMode), or any other on-demand plugin.
+    function updateBackToTicker() {
+        const btn = document.getElementById('back-to-ticker');
+        if (btn) btn.disabled = (activeMode === 'ticker' && !panelTakenOver);
     }
 
     // 2026-05-28: exponential backoff. Was constant 250ms × 6 = up to 1.5s
@@ -261,12 +266,8 @@
         // server-truth while the request is still propagating to the
         // display controller (on-demand state takes 1-2s to settle).
         _modeChangeLockUntilTs = Date.now() + _MODE_CHANGE_LOCK_MS;
-        const tBtn = document.getElementById('btn-ticker');
-        const gBtn = document.getElementById('btn-game');
-        const golfBtn = document.getElementById('btn-golf');
-        if (tBtn) tBtn.setAttribute('aria-pressed', (mode === 'ticker').toString());
-        if (gBtn) gBtn.setAttribute('aria-pressed', (mode === 'game').toString());
-        if (golfBtn) golfBtn.setAttribute('aria-pressed', (mode === 'golf').toString());
+        panelTakenOver = (mode !== 'ticker');
+        updateBackToTicker();
     }
 
     window.setMode = async function (mode) {
@@ -275,27 +276,6 @@
                 _setModeUIOptimistic('ticker');
                 showToast('Switching to ticker…');
                 await api('/display/on-demand/stop', { method: 'POST' });
-                await refreshAll();
-                return;
-            }
-            if (mode === 'game') {
-                _setModeUIOptimistic('game');
-                showToast('Switching to game mode…');
-                // Send game_focus WITHOUT a pre-selected plugin/game. The display
-                // will render the "Select a game" placeholder if no favorite is
-                // live, or auto-focus a favorite that is live. User taps a
-                // FOCUS button below to commit to a specific game.
-                await api('/display/on-demand/start', {
-                    method: 'POST',
-                    body: { mode: 'game_focus', start_service: false }
-                });
-
-                const outcome = await awaitOnDemandOutcome();
-                if (outcome.ok === false) {
-                    const reason = outcome.state?.error || 'unknown';
-                    showToast(`Game mode failed (${reason})`, 4000);
-                    _setModeUIOptimistic('ticker');  // revert
-                }
                 await refreshAll();
                 return;
             }
@@ -330,6 +310,19 @@
             showToast('Failed to switch mode');
         }
     };
+
+    window.backToTicker = function () {
+        return window.setMode('ticker');
+    };
+
+    // --- Live view / Settings view (same page, never remembered) ---
+    function showSettings(open) {
+        document.getElementById('live-view').hidden = open;
+        document.getElementById('settings-view').hidden = !open;
+        window.scrollTo(0, 0);
+    }
+    window.openSettings = function () { showSettings(true); };
+    window.closeSettings = function () { showSettings(false); };
 
     // --- Zone: Auto-focus toggle ---
     let autoFocusEnabled = false;

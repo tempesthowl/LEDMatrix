@@ -786,3 +786,22 @@ def test_games_refresh_writes_nonce_and_returns_202():
     payload = fake_cache.set.call_args[0][1]
     assert key == "live_games_refresh_request"
     assert "nonce" in payload
+
+
+# --- /v3/remote live-first layout ---
+
+def test_remote_settings_view_holds_settings_sections(client):
+    html = client.get('/remote').data.decode('utf-8')
+    settings = html.index('id="settings-view"')
+    assert html.index('id="live-games"') < settings
+    assert html.index('id="upcoming-games"') < settings
+    for sid in ('diag-section', 'mode-controls', 'plugin-toggles', 'kalshi-collection',
+                'brightness-control', 'stock-speed-control', 'pi-health'):
+        assert html.index(f'id="{sid}"') > settings, sid
+
+
+def test_remote_has_gear_and_back_to_ticker_but_no_mode_buttons(client):
+    html = client.get('/remote').data.decode('utf-8')
+    assert 'id="settings-btn"' in html and 'id="back-to-ticker"' in html
+    assert 'id="btn-game"' not in html and 'id="btn-ticker"' not in html
+    assert 'id="auto-focus-toggle"' in html and 'id="auto-cycle-toggle"' in html

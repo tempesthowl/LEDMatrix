@@ -6,59 +6,29 @@
     <meta name="theme-color" content="#0B1220">
     <title>Outdoor Ticker — Remote</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <link rel="stylesheet" href="/static/v3/app.css?v=40">
+    <link rel="stylesheet" href="/static/v3/app.css?v=41">
 </head>
 <body class="remote-body">
-    <header class="remote-header" role="banner">
-        <h1 class="remote-title">Outdoor Ticker</h1>
-        <div id="status-pill" class="pill pill-off" role="status"
-             aria-label="Display controller status: loading">
-            <span class="pill-dot" aria-hidden="true"></span>
-            <span id="status-text">Loading…</span>
-        </div>
-    </header>
-
-    <section class="remote-section diag-section" id="diag-section" hidden>
-        <h3>
-            <span class="diag-header-label">Diagnostics</span>
-            <span id="diag-status-dot" class="diag-status-dot" aria-hidden="true"></span>
-            <button type="button" id="diag-toggle" class="diag-toggle-btn"
-                    onclick="toggleDiagPanel()" aria-expanded="false"
-                    aria-controls="diag-content"
-                    aria-label="Show diagnostics trace details">
-                Show
-            </button>
-        </h3>
-        <div id="diag-content" hidden>
-            <div id="diag-traces" class="diag-traces" aria-live="polite">
-                <div class="diag-skeleton" aria-hidden="true">
-                    <div class="diag-skeleton-row"></div>
-                    <div class="diag-skeleton-row"></div>
-                    <div class="diag-skeleton-row"></div>
+    <div id="live-view">
+    <div class="rmt-top" id="rmt-top">
+        <header class="remote-header" role="banner">
+            <h1 class="remote-title">Outdoor Ticker</h1>
+            <div class="header-actions">
+                <div id="status-pill" class="pill pill-off" role="status"
+                     aria-label="Display controller status: loading">
+                    <span class="pill-dot" aria-hidden="true"></span>
+                    <span id="status-text">Loading…</span>
                 </div>
+                <button type="button" id="settings-btn" class="icon-btn" aria-label="Settings"
+                        onclick="openSettings()"><i class="fas fa-gear" aria-hidden="true"></i></button>
             </div>
+        </header>
+        <div class="panel-caption">
+            <span>On the panel now</span>
+            <button id="back-to-ticker" type="button" class="caption-btn" disabled
+                    onclick="backToTicker()">Back to ticker</button>
         </div>
-    </section>
-
-    <section class="remote-section" id="mode-controls">
-        <h3>Mode</h3>
-        <div class="btn-grid">
-            <button class="btn-big" id="btn-ticker" aria-pressed="true"  onclick="setMode('ticker')">TICKER</button>
-            <button class="btn-big" id="btn-game"   aria-pressed="false" onclick="setMode('game')">GAME MODE</button>
-        </div>
-        <div class="toggle-row">
-            <label for="auto-focus-toggle">Auto-focus live game</label>
-            <button class="toggle" id="auto-focus-toggle" role="switch" aria-checked="false"
-                    aria-label="Auto-focus live game toggle"
-                    onclick="toggleAutoFocus()"></button>
-        </div>
-        <div class="toggle-row">
-            <label for="auto-cycle-toggle">Auto-cycle games</label>
-            <button class="toggle" id="auto-cycle-toggle" role="switch" aria-checked="true"
-                    aria-label="Auto-cycle games toggle"
-                    onclick="toggleAutoCycle()"></button>
-        </div>
-    </section>
+    </div>
 
     <style>
       .refresh-btn { background:none; border:none; color:var(--rmt-accent,#4da3ff);
@@ -110,6 +80,52 @@
     <section class="remote-section" id="upcoming-games">
         <h3>Upcoming</h3>
         <div id="upcoming-games-content" class="empty">Loading…</div>
+    </section>
+    </div>
+
+    <div id="settings-view" hidden>
+    <div class="settings-head">
+        <button type="button" id="settings-back" class="icon-btn" onclick="closeSettings()"
+                aria-label="Back to live games"><i class="fas fa-arrow-left" aria-hidden="true"></i></button>
+        <h2 class="settings-title">Settings</h2>
+    </div>
+    <div class="settings-grid">
+    <section class="remote-section diag-section" id="diag-section" hidden>
+        <h3>
+            <span class="diag-header-label">Diagnostics</span>
+            <span id="diag-status-dot" class="diag-status-dot" aria-hidden="true"></span>
+            <button type="button" id="diag-toggle" class="diag-toggle-btn"
+                    onclick="toggleDiagPanel()" aria-expanded="false"
+                    aria-controls="diag-content"
+                    aria-label="Show diagnostics trace details">
+                Show
+            </button>
+        </h3>
+        <div id="diag-content" hidden>
+            <div id="diag-traces" class="diag-traces" aria-live="polite">
+                <div class="diag-skeleton" aria-hidden="true">
+                    <div class="diag-skeleton-row"></div>
+                    <div class="diag-skeleton-row"></div>
+                    <div class="diag-skeleton-row"></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="remote-section" id="mode-controls">
+        <h3>Mode</h3>
+        <div class="toggle-row">
+            <label for="auto-focus-toggle">Auto-focus live game</label>
+            <button class="toggle" id="auto-focus-toggle" role="switch" aria-checked="false"
+                    aria-label="Auto-focus live game toggle"
+                    onclick="toggleAutoFocus()"></button>
+        </div>
+        <div class="toggle-row">
+            <label for="auto-cycle-toggle">Auto-cycle games</label>
+            <button class="toggle" id="auto-cycle-toggle" role="switch" aria-checked="true"
+                    aria-label="Auto-cycle games toggle"
+                    onclick="toggleAutoCycle()"></button>
+        </div>
     </section>
 
     <section class="remote-section" id="plugin-toggles">
@@ -202,6 +218,8 @@
         </div>
     </section>
     {% endif %}
+    </div>
+    </div>
 
     <div id="power-overlay" class="power-overlay" aria-hidden="true">
         <div class="power-spinner"></div>
@@ -218,7 +236,7 @@
     </div>
 
     <script src="/static/v3/js/live_filters.js?v=2" defer></script>
-    <script src="/static/v3/remote.js?v=49" defer></script>
+    <script src="/static/v3/remote.js?v=53" defer></script>
 
     <style>
         .health-trend {
